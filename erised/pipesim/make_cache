@@ -1,0 +1,159 @@
+#!/usr/bin/python3
+#
+#  Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+#
+
+import sys
+
+if len(sys.argv) != 2:
+    print("usage:  ./make_cache <log base 2 ways associativity>")
+    exit(0)
+    
+N = 1 << int(sys.argv[1])
+filename = 'cache_{:d}way.h'.format(N)
+print('Making', N, 'way associative cache in file ', filename)
+
+def cacheHit(state, hit):
+    new = state.copy()
+#    print("cacheHit(", state, hit, ")")
+    way = new.pop(hit)
+    new.insert(0, way)
+    return new
+
+def makeKey(state):
+    key = '-'
+    key = key.join(state)
+    return key
+
+def factorial(state):
+    key = makeKey(state)
+    for i in range(N):
+        nextState = cacheHit(state, i)
+        nextKey = makeKey(nextState)
+        if nextKey not in table:
+            table[nextKey] = [ None ]*N
+            factorial(nextState)
+        table[key][i] = nextKey
+
+initial = []
+for i in range(N-1, -1, -1):
+    initial.append(str(i))
+table = {}
+table[makeKey(initial)] = [ None ]*N
+factorial(initial)
+
+number = {}
+k = 0
+for key in sorted(table):
+    number[key] = k
+    k += 1
+
+
+
+f = open(filename, 'w');
+f.write("""
+
+#ifndef CACHE_T
+#define CACHE_T
+struct cache_t {	      /* cache descriptor */
+  int line;		      /* line size in bytes */
+  int rows;		      /* number of rows */
+  int ways;		      /* number of ways */
+  int lg_line;		      /* all cache specified in */
+  int lg_rows, lg_ways;	      /*   log-base-2 units */
+  long* tags;		      /* cache tag array [rows*ways] */
+  unsigned char* states;      /* LRU state vector [rows] */
+  long* ready;		      /* cycle line available [rows*ways] */
+  long evicted;               /* tag of evicted line, 0 if clean */
+  long refs, misses;	      /* number of */
+  long updates, evictions;    /* if writeable */
+  char* dirty;		      /* dirty bits [row*ways] */
+  long row_mask;	      /* row index mask */
+  long index_mask;	      /* mask positioned for tags and ready */
+  long index_shift;	      /* = lg_line - lg_ways */
+};
+
+static inline void flush_cache( struct cache_t* c )
+{
+  memset((char*)c->tags, 0, c->rows*c->ways*sizeof(long));
+  memset((char*)c->states, 0, c->rows*sizeof(unsigned char));
+  memset((char*)c->ready, 0, c->rows*c->ways*sizeof(long));
+  if (c->dirty)
+    memset((char*)c->dirty, 0, c->rows*c->ways*sizeof(char));
+}
+
+static inline void init_cache( struct cache_t* c, int lg_line_size, int lg_rows_per_way, int lg_num_ways, int writeable )
+{
+  c->lg_line = lg_line_size;
+  c->lg_rows = lg_rows_per_way;
+  c->lg_ways = lg_num_ways;
+  c->line = 1 << c->lg_line;
+  c->rows = 1 << c->lg_rows;
+  c->ways = 1 << c->lg_ways;
+  c->tags = (long*)malloc(c->rows*c->ways*sizeof(long));
+  c->states = (unsigned char*)malloc(c->rows*sizeof(unsigned char));
+  c->ready = (long*)malloc(c->rows*c->ways*sizeof(long));
+  c->dirty = !writeable ? 0 : (char*)malloc(c->rows*c->ways*sizeof(char)); 
+  flush_cache(c);
+  c->evicted = 0;
+  c->refs = c->misses = 0;
+  c->updates = c->evictions = 0;
+  /* see cache_lookup for position of mask bits */
+  c->index_shift = c->lg_line - c->lg_ways;
+  c->row_mask   =  (1L<<c->lg_rows)-1            ;
+  c->index_mask = ((1L<<c->lg_rows)-1) << c->lg_ways;
+}
+
+
+#endif
+/* returns cycle when line available (may be in past)
+     cache miss if return value == when_miss_arrive */
+""")
+
+f.write("static inline long lookup_{:d}way".format(N))
+
+f.write("""( struct cache_t* c, long addr, int write, long when_miss_arrive )
+{
+  /* first right-shift byte-in-line bits, then left-shift way bits */
+  long index = (addr >> c->index_shift) & c->index_mask;
+  long* tag = &c->tags[index];
+  addr >>= c->lg_line;		/* make proper tag (ok to include index) */
+  unsigned char* state = &c->states[addr & c->row_mask];
+  c->refs++;
+  if (write) c->updates++;
+  int way;
+  switch (*state) {
+""")
+
+k = 0
+for key in sorted(table):
+    f.write('    case {:3d}: /* {:s} */\n'.format(k, key))
+    ways = key.split('-')
+    for (i, ww) in enumerate(ways):
+        w = int(ww)
+        f.write('\tif (addr==tag[{:d}]) {{ *state={:3d} /* {:s} */; way={:d}; goto cache_hit; }}\n'.format(w, number[table[key][i]], table[key][i], w))
+        lru_w = w
+        lru_i = i
+    f.write('\tway={:d}; *state={:3d}; goto cache_miss;\n'.format(lru_w, number[table[key][lru_i]]))
+    k += 1
+
+f.write("""  default: abort();
+  }
+ cache_miss:
+  c->misses++;
+  if (c->dirty) {
+    c->evicted = c->dirty[index+way] ? tag[way] : 0;
+    if (c->evicted)  c->evictions++;
+    c->dirty[index+way] = 0;
+  }
+  tag[way] = addr;
+  c->ready[index+way] = when_miss_arrive;
+ cache_hit:
+  if (write)  c->dirty[index+way] = 1;
+  return c->ready[index+way];
+
+}
+""")
+
+f.close()
+exit(0)

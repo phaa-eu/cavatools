@@ -1,0 +1,49 @@
+/*
+ *  Vectors-no-Vector implementation of SPMV.
+ *  (c) 2020 Peter Hsu
+ */
+
+#ifndef SPMV_OP
+#error Define SPMV_OP as += or -= then follow with subroutine header:
+#error static inline double vnv_spmv_plus( long nnz, const int* c, const double* v, const double* x, double ac)
+#error static inline double vnv_spmv_minus(long nnz, const int* c, const double* v, const double* x, double ac)
+#endif
+
+#define Stage(label)  asm volatile (label);
+
+{
+#ifdef CAREFULLY
+  double sum = ac;
+#endif
+  
+?limit=nnz
+?iter=j
+  register int j=0;
+?{
+  register int    c$;
+  register double v$;
+  register double x$;
+?}
+?[
+0	c$ = c[j+@];
+3	v$ = v[j+@];
+3	x$ = x[c$];
+7	ac SPMV_OP v$*x$;
+?]
+
+#ifdef CAREFULLY
+  {
+    for (int k=0; k<nnz; k++)
+      sum SPMV_OP v[k]*x[c[k]];
+    double epsilon = abs(sum-ac);
+    if (epsilon > 1e-12) {
+#define Q(x)  #x
+#define QUOTE(x) Q(x)
+      fprintf(stderr, "epsilon=%12e nnz=%ld sum=%12e ac=%12e vnv_spmv(" QUOTE(SPMV_OP) ")\n", epsilon, nnz, sum, ac);
+      //exit(-1);
+    }
+  }
+#endif
+    
+  return ac;
+}
