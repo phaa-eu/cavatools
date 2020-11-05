@@ -18,8 +18,8 @@
 #include "softfloat_types.h"
 #include "softfloat.h"
 
-#define RM  cpu->state.fcsr.frm
-#define SRM(rm)  softfloat_roundingMode=(rm==7?RM:rm);
+#define RM  cpu->state.fcsr.rmode
+#define SRM(m)  softfloat_roundingMode=((m)==7?RM:(m))
 #define SET_FPX  /* set_fp_exceptions() */
 
 static inline float32_t defaultNaNF32UI() { union ui32_f32 u; u.ui=         0x7FC00000; return u.f; }

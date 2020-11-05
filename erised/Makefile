@@ -6,8 +6,8 @@ nothing:
 install:
 	make -C pipesim install
 	make -C cachesim install
-	make -C traceinfo traceinfo
-	make -C softpipe softpipe
+	make -C traceinfo install
+	make -C softpipe install
 
 clean:
 	make -C pipesim clean

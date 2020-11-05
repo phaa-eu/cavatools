@@ -9,7 +9,7 @@
 #include <math.h>
 #include <string.h>
 
-#include "encoding.h"
+//#include "encoding.h"
 
 //#define NO_FP_MACROS
 #include "caveat_fp.h"
@@ -20,6 +20,7 @@
 #include "insn.h"
 #include "shmfifo.h"
 #include "core.h"
+#include "riscv-opc.h"
 #include "ecall_nums.h"
 
 //#define DEBUG
@@ -29,7 +30,7 @@ int proxy_ecall( struct core_t* cpu )
   assert(insn(cpu->pc)->op_code == Op_ecall);
   
 #ifdef DEBUG
-  fprintf(stderr, "System call ra=%lx ", IR[RA].l);
+  fprintf(stderr, "System call ra=%lx ", cpu->reg[RA].l);
 #endif
   long rvnum = cpu->reg[17].l;
   if (rvnum < 0 || rvnum >= rv_syscall_entries) {
@@ -107,26 +108,26 @@ static void set_csr( struct core_t* cpu, int which, long val )
     cpu->state.ustatus = val;
     return;
   case CSR_FFLAGS:
-    cpu->state.fcsr.f.flags = val;
+    cpu->state.fcsr.flags = val;
 #ifdef SOFT_FP
     softfloat_exceptionFlags = val;
 #else
 #endif
     return;
   case CSR_FRM:
-    cpu->state.fcsr.f.rm = val;
+    cpu->state.fcsr.rmode = val;
     break;
   case CSR_FCSR:
-    cpu->state.fcsr.v = val;
+    cpu->state.fcsr_v = val;
     break;
   default:
     fprintf(stderr, "Unsupported set_csr(%d, val=%lx)\n", which, val);
     abort();
   }
 #ifdef SOFT_FP
-  softfloat_roundingMode = cpu->state.fcsr.f.rm;
+  softfloat_roundingMode = cpu->state.fcsr.rmode;
 #else
-  fesetround(riscv_to_c_rm(cpu->state.fcsr.f.rm));
+  fesetround(riscv_to_c_rm(cpu->state.fcsr.rmode));
 #endif
 }
 
@@ -137,14 +138,14 @@ static long get_csr( struct core_t* cpu, int which )
     return cpu->state.ustatus;
   case CSR_FFLAGS:
 #ifdef SOFT_FP
-    cpu->state.fcsr.f.flags = softfloat_exceptionFlags;
+    cpu->state.fcsr.flags = softfloat_exceptionFlags;
 #else
 #endif
-    return cpu->state.fcsr.f.flags;
+    return cpu->state.fcsr.flags;
   case CSR_FRM:
-    return cpu->state.fcsr.f.rm;
+    return cpu->state.fcsr.rmode;
   case CSR_FCSR:
-    return cpu->state.fcsr.v;
+    return cpu->state.fcsr_v;
   default:
     fprintf(stderr, "Unsupported get_csr(%d)\n", which);
     abort();

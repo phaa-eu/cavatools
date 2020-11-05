@@ -26,12 +26,10 @@ struct core_t {
     union {
       struct {
 	unsigned flags	:  5;
-	unsigned rm	:  3;
-	unsigned	: 24;
-	unsigned	: 32;
-      } f;
-      unsigned long v;
-    } fcsr;
+	unsigned rmode	:  3;
+      } fcsr;
+      unsigned long fcsr_v;
+    };
   } state;
   
   struct {

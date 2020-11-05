@@ -2,9 +2,10 @@
   Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
-#include "config.h"
+//#include "config.h"
 
 #include <unistd.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,11 +14,12 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <elf.h>
 
 // BFD files pulled from riscv-gnu-toolchain
-#include "bfd.h"
-#include "ansidecl.h"
-#include "elf.h"
+//#include "bfd.h"
+//#include "ansidecl.h"
+//#include "elf.h"
 
 #include "caveat.h"
 #include "opcodes.h"
@@ -192,7 +194,8 @@ Addr_t load_elf_binary( const char* file_name, int include_data )
   insnSpace_init(low_bound, high_bound);
   close(file);
   
-  info->stack_top = MEM_END + 0x1000;
+  //  info->stack_top = MEM_END + 0x1000;
+  info->stack_top = MEM_END;
   stack_lowest = (Addr_t)mmap((void*)(info->stack_top-STACK_SIZE), STACK_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   dieif(stack_lowest != info->stack_top-STACK_SIZE, "Could not allocate stack\n");
 

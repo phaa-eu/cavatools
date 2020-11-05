@@ -93,8 +93,8 @@ inline float64_t NF64(int rn)  { float64_t x=F64(rn); x.v^=F64_SIGN; return x; }
   while (cpu->state.mcause == 0) {
     register const struct insn_t* p = insn(PC);
     on_every_insn(p);
-    //    print_pc(PC, 1);
-    //    print_instruction(PC, 1);
+    //print_pc(PC, 1);
+    //print_instruction(PC, 1);
     switch (p->op_code) {
       
 #include "execute_insn.h"

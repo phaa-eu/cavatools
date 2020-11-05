@@ -7,26 +7,29 @@ import re
 symlinks = '../symlinks/'
 
 
-NRpattern = re.compile(r'#define\s+TARGET_NR_(\S+)\s+(\d+)')
-SYSpattern = re.compile(r'#define\s+SYS_(\S+)\s+(\d+)')
+RVpattern = re.compile(r'#define\s+TARGET_NR_(\S+)\s+(\d+)')
+PKpattern = re.compile(r'#define\s+SYS_(\S+)\s+(\d+)')
+X86pattern = re.compile(r'#define\s+__NR_(\S+)\s+(\d+)')
 
 rnum = {}
 highest = -1
-rfile = open(symlinks+'riscv-gnu-toolchain/qemu/linux-user/riscv/syscall_nr.h', 'r')
+rfile = open('../include/syscall64_nr.h', 'r')
 for line in rfile:
-    m = NRpattern.match(line)
+    m = RVpattern.match(line)
     if m:
         name, num = m.groups()
         num = int(num)
+#        print("RV name={:s}, num={:d}".format(name, num))
         rnum[name] = num
         highest = max(num, highest)
 
-pfile = open(symlinks+'riscv-pk/pk/syscall.h', 'r')
+pfile = open('../include/pk-syscall.h', 'r')
 for line in pfile:
-    m = SYSpattern.match(line)
+    m = PKpattern.match(line)
     if m:
         name, num = m.groups()
         num = int(num)
+#        print("PK name={:s}, num={:d}".format(name, num))
         if name in rnum:
             if num != rnum[name]:
                 print('Mismatch RV syscall numbers', name, rnum[name], num)
@@ -35,12 +38,13 @@ for line in pfile:
             highest = max(num, highest)
 
 xnum = {}
-xfile = open(symlinks+'riscv-gnu-toolchain/qemu/linux-user/x86_64/syscall_nr.h', 'r')
+xfile = open('/usr/include/x86_64-linux-gnu/asm/unistd_64.h', 'r')
 for line in xfile:
-    m = NRpattern.match(line)
+    m = X86pattern.match(line)
     if m:
         name, num = m.groups()
         num = int(num)
+#        print("X86 name={:s}, num={:d}".format(name, num))
         xnum[name] = num
 
 map = [ None ]*(highest+1)

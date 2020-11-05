@@ -38,7 +38,7 @@ for line in FPdef:
         (srm, fpx) = ('', '')
         if rm != '-':
             srm = ' SRM(rm);'
-            rrm = ' SRM(cpu->state.fcsr.frm);'
+            rrm = ' SRM(cpu->state.fcsr.rmode);'
         if fpx != '-':
             fpx = ' SET_FPX;'
         f.write('#define {:s}{:s} {:s};{:s}{:s}\n'.format(macro, srm, soft, fpx, rrm))
