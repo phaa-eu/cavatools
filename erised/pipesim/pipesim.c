@@ -13,6 +13,7 @@
 #include "opcodes.h"
 #include "insn.h"
 #include "shmfifo.h"
+#include "pipesim.h"
 
 unsigned char fu_latency[Number_of_units] =
   { 4,	/* a FP Adder */
@@ -33,15 +34,11 @@ unsigned char fu_latency[Number_of_units] =
 #define DEFAULT_DLGLINE    6	/* 2^ cache line length in bytes */ 
 #define DEFAULT_DLGSETS    6	/* 2^ cache lines per way */ 
 
-#define D_WAYS  2	       /* 2^ ways associativity */
-#define lookup_Nway  lookup_4way
-#include "cache_4way.h"
-
 
 #define REPORT_FREQUENCY 1000000000
 long report_frequency = REPORT_FREQUENCY;
-clock_t start_tick;
 int quiet =0;
+int visible =0;
 
 
 struct cache_t dcache;
@@ -51,40 +48,18 @@ int hart;
 uint64_t mem_queue[tr_memq_len];
 
 
-void status_report(long now, long insn_count, long segments)
+struct statistics_t stats;
+
+
+void status_report(struct statistics_t* stats)
 {
   if (quiet)
     return;
-  double elapse_time = (clock()-start_tick) / CLOCKS_PER_SEC;
+  double elapse_time = (clock()-stats->start_tick) / CLOCKS_PER_SEC;
   fprintf(stderr, "\r%3.1fB insns (%ld segments) %3.1fB cycles %3.1fM Dmisses %3.1f Dmiss/Kinsns %5.3f IPC %3.1f MIPS",
-	  insn_count/1e9, segments, now/1e9, dcache.misses/1e6, dcache.misses/(insn_count/1e3),
-	  (double)insn_count/now, insn_count/(1e6*elapse_time));
+	  stats->instructions/1e9, stats->segments, stats->cycles/1e9, dcache.misses/1e6, dcache.misses/(stats->instructions/1e3),
+	  (double)stats->instructions/stats->cycles, stats->instructions/(1e6*elapse_time));
 }
-
-
-static long cycles_taken, insn_executed, segments, branches_taken;
-static long memory_references, store_insns;
-
-
-
-void no_L2_version(long pc, long read_latency, long next_report)
-{
-#include "mainloop.h"
-}
-
-void writeback_version(long pc, long read_latency, long next_report)
-{
-#define L2CODE
-#include "mainloop.h"
-}
-
-void writethru_version(long pc, long read_latency, long next_report)
-{
-#define WRITETHRU  
-#include "mainloop.h"
-}
-
-
 
 
 int main(int argc, const char** argv)
@@ -109,6 +84,7 @@ int main(int argc, const char** argv)
        { "--dpenalty=",	.v = &dpenalty		},
        { "--report=",	.v = &report		},
        { "--quiet",	.f = &quiet		},
+       { "--visible",	.f = &visible		},
        { 0					}
     };
   int numopts = parse_options(flags, argv+1);
@@ -120,7 +96,7 @@ int main(int argc, const char** argv)
   fprintf(stderr, "Text segment [0x%lx, 0x%lx)\n", insnSpace.base, insnSpace.bound);
   if (report)
     report_frequency = atoi(report);
-  start_tick = clock();
+  stats.start_tick = clock();
   trace_init(&trace_buffer, in_path, 1);
   if (out_path)
     fifo_init(&l2, out_path, 0);
@@ -135,33 +111,31 @@ int main(int argc, const char** argv)
   long read_latency = dpenalty ? atoi(dpenalty) : DEFAULT_DPENALTY;
   if (wflag) {
     if (wflag[0] == 'b')
-      writeback_version(entry, read_latency, report_frequency);
+      slow_pipe(entry, read_latency, report_frequency, &dcache_writeback);
     else if (wflag[0] == 't')
-      writethru_version(entry, read_latency, report_frequency);
+      slow_pipe(entry, read_latency, report_frequency, &dcache_writethru);
     else {
       fprintf(stderr, "usage: pipesim --in=shm_path [--write=back|thru] ... elf_binary\n");
       exit(0);
     }
   }
   else
-    no_L2_version(entry, read_latency, report_frequency);
+    fast_pipe(entry, read_latency, report_frequency, 0);
   if (out_path) {
     fifo_put(&l2, trM(tr_eof, 0));
     fifo_fini(&l2);
   }
   fifo_fini(&trace_buffer);
-  status_report(cycles_taken, insn_executed, segments);
+  status_report(&stats);
   fprintf(stderr, "\n\n");
-  fprintf(stderr, "%12ld instructions executed\n", insn_executed);
-  fprintf(stderr, "%12ld taken branches\n", branches_taken);
-  fprintf(stderr, "%12ld memory reads\n", memory_references-store_insns);
-  fprintf(stderr, "%12ld memory writes\n", store_insns);
-  if (wflag) {
-    fprintf(stderr, "%12ld L1 Dcache reads\n", dcache.refs-dcache.updates);
-    fprintf(stderr, "%12ld L1 Dcache writes\n", dcache.updates);
-    fprintf(stderr, "%12ld L1 Dcache misses\n", dcache.misses);
-    fprintf(stderr, "%12ld L1 Dcache evictions\n", dcache.evictions);
-  }
+  fprintf(stderr, "%12ld instructions executed\n", stats.instructions);
+  fprintf(stderr, "%12ld taken branches (%4.1f%%)\n", stats.branches_taken, 100.0*stats.branches_taken/stats.instructions);
+  fprintf(stderr, "%12ld memory reads (%4.1f%%)\n", stats.mem_refs-stats.stores, 100.0*(stats.mem_refs-stats.stores)/stats.instructions);
+  fprintf(stderr, "%12ld memory writes (%4.1f%%)\n", stats.stores, 100.0*stats.stores/stats.instructions);
+  fprintf(stderr, "%12ld L1 Dcache reads\n", dcache.refs-dcache.updates);
+  fprintf(stderr, "%12ld L1 Dcache writes\n", dcache.updates);
+  fprintf(stderr, "%12ld L1 Dcache misses (%6.3f%%)\n", dcache.misses, 100.0*dcache.misses/stats.instructions);
+  fprintf(stderr, "%12ld L1 Dcache evictions (%6.3f%%)\n", dcache.evictions,  100.0*dcache.evictions/stats.instructions);
   return 0;
 }
 

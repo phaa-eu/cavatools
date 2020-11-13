@@ -16,4 +16,4 @@ install: cachesim
 	cp cachesim $R/bin/
 
 clean:
-	rm -f *.o *~
+	rm -f cachesim *.o *~

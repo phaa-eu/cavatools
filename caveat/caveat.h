@@ -36,6 +36,7 @@ nnnnnnnnnn......p.......p.......p.......p.......p.......pccccccc  P format
 #define tr_fence	0b0000011L		/* P-format */
 #define tr_ecall	0b0000100L		/* M-format */
 #define tr_csr		0b0000101L		/* M-format */
+#define tr_issue	0b0000110L		/* P-format */
 
 #define is_goto(tr)   ((0b1110100L & tr_code(tr)) == \
 		       (0b0010100L))		/* P-format (all) */
