@@ -13,6 +13,7 @@
 #include "opcodes.h"
 #include "insn.h"
 #include "shmfifo.h"
+#include "cache.h"
 #include "pipesim.h"
 
 

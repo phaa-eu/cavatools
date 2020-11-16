@@ -152,7 +152,7 @@ for op in OriginalOrder:
     if have_immed:
         format += ' [0x%x]'
         params += have_immed
-    af.write('        case {:s}: n = sprintf(buf, \"{:s}\\n\"{:s}); break;\n'.format(op, format, params))
+    af.write('        case {:s}: fprintf(f, \"{:s}\\n\"{:s}); break;\n'.format(op, format, params))
 
 
 def ExpandField(x):

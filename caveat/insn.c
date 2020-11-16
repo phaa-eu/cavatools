@@ -82,57 +82,49 @@ void decode_instruction( const struct insn_t* cp, Addr_t PC )
 
 
 
-int print_pc( long pc, int file_descr )
+int print_pc( long pc, FILE* f)
 {
-  char buf[1024];
-  int n;
+  const char* func;
+  Addr_t offset;
   int known = 0;
   if (valid_pc(pc))  {
-    const char* func;
     long offset;
     known = find_pc(pc, &func, &offset);
     if (known)
-      n = sprintf(buf, "%28s+0x%-8lx ", func, offset);
+      fprintf(f, "%28s+0x%-8lx ", func, offset);
     else
-      n = sprintf(buf, "%28s %-10s ", "UNKNOWN", "");
+      fprintf(f, "%28s %-10s ", "UNKNOWN", "");
   }
   else
-    n = sprintf(buf, "%28s %-10s ", "INVALID", "");
-  ssize_t rc = write(file_descr, buf, n);
+    fprintf(f, "%28s %-10s ", "INVALID", "");
   return known;
 }
 
 
-void print_instruction(Addr_t pc, int fd)
+void print_insn(Addr_t pc, FILE* f)
 {
-  char buf[1024];
-  int n;
   if (!valid_pc(pc))  {
-    n = sprintf(buf, "%16lx  %8s\n", pc, "NOT TEXT");
-    ssize_t rc = write(fd, buf, n);
+    fprintf(f, "%16lx  %8s\n", pc, "NOT TEXT");
     return;
   }
   const struct insn_t* p = insn(pc);
   if (shortOp(p->op_code))
-    n = sprintf(buf, "%16lx      %04x  %-16s", pc, *((unsigned short*)pc), insnAttr[p->op_code].name);
+    fprintf(f, "%16lx      %04x  %-16s", pc, *((unsigned short*)pc), insnAttr[p->op_code].name);
   else
-    n = sprintf(buf, "%16lx  %08x  %-16s", pc, *((unsigned*)pc), insnAttr[p->op_code].name);
-  ssize_t rc = write(fd, buf, n);
+    fprintf(f, "%16lx  %08x  %-16s", pc, *((unsigned*)pc), insnAttr[p->op_code].name);
   switch (p->op_code) {
 #include "disasm_insn.h"
   }
-  rc = write(fd, buf, n);
 }
 
 
-void print_registers(struct reg_t reg[], int fd)
+void print_registers(struct reg_t reg[], FILE* f)
 {
   char buf[1024];
   for (int i=0; i<64; i++) {
-    int n = sprintf(buf, "%-4s: 0x%016lx  ", regName[i], reg[i].ul);
-    ssize_t rc = write(fd, buf, n);
+    fprintf(f, "%-4s: 0x%016lx  ", regName[i], reg[i].ul);
     if ((i+1) % 4 == 0)
-      rc = write(fd, "\n", 1);
+      fprintf(f, "\n");
   }
 }
 

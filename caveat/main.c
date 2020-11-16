@@ -109,8 +109,8 @@ int run_program(struct core_t* cpu)
   sigaction(SIGSEGV, &action, NULL);
   if (setjmp(return_to_top_level) != 0) {
     //fprintf(stderr, "Back to main\n");
-    print_instruction(cpu->pc, 2);
-    print_registers(cpu->reg, 2);
+    print_insn(cpu->pc, stderr);
+    print_registers(cpu->reg, stderr);
     return -1;
   }
   return outer_loop(cpu);

@@ -14,12 +14,11 @@ extern "C" {
 #include <fcntl.h>
 #include <semaphore.h>
 
-
-  //#define LG_BUFFER_SIZE	0
-  //#define NUM_BUFFERS	2	/* one always empty */
+  //#define LG_BUFFER_SIZE	14
+  //#define NUM_BUFFERS	16	/* one always empty */
   
-#define LG_BUFFER_SIZE	14
-#define NUM_BUFFERS	16
+#define LG_BUFFER_SIZE	11
+#define NUM_BUFFERS	16	/* one always empty */
 
 #define BUFFER_SIZE	(1<<LG_BUFFER_SIZE)  
 #define FIFO_SIZE	(NUM_BUFFERS*BUFFER_SIZE)

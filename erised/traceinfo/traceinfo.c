@@ -64,14 +64,14 @@ void do_nothing(long pc, int checking)
 	  char buf[1024];
 	  for (int i=0; i<NUM; i++) {
 	    long tpc = circle[(ptr+i)%NUM];
-	    print_pc(tpc, 1);
-	    print_instruction(tpc, 1);
+	    print_pc(tpc, stdout);
+	    print_insn(tpc, stdout);
 	  }
-	  print_pc(pc, 1);
-	  print_instruction(pc, 1);
+	  print_pc(pc, stdout);
+	  print_insn(pc, stdout);
 	  printf("PC MISMATCH, expecting\n");
-	  print_pc(vpc, 1);
-	  print_instruction(vpc, 1);
+	  print_pc(vpc, stdout);
+	  print_insn(vpc, stdout);
 	  exit(-1);
 	}
 	circle[ptr] = pc;
@@ -93,7 +93,38 @@ void do_nothing(long pc, int checking)
   }
 }
 
-void print_trace(long pc)
+
+void print_timing_trace(long begin, long end)
+{
+  fprintf(stdout, "Printing timing trace [%lx, %lx]\n", begin, end);
+  long previous_time = 0;
+  long cache_miss = 0;
+  for (uint64_t tr=fifo_get(&trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(&trace_buffer)) {
+    if (tr_code(tr) == tr_issue) {
+      long pc = tr_pc(tr);
+      long now = previous_time + tr_number(tr);
+      if (begin <= pc && pc <= end) {
+	while (++previous_time < now)
+	  fprintf(stdout, "%18s%8ld:\n", "", previous_time);
+	if (cache_miss) {
+	  fprintf(stdout, "[%016lx]", cache_miss);
+	  cache_miss = 0;
+	}
+	else
+	  fprintf(stdout, "%18s", "");
+	fprintf(stdout, "%8ld: ", now);
+	print_insn(tr_pc(tr), stdout);
+      }
+      previous_time = now;
+    }
+    else if (tr_code(tr) == tr_d1get) {
+      cache_miss = tr_value(tr);
+    }
+  }
+}
+
+
+void print_listing(long pc)
 {
   uint64_t* memq = mem_queue;	/* help compiler allocate in register */
   long tail =0;
@@ -116,7 +147,7 @@ void print_trace(long pc)
     long epc = pc + tr_number(tr);
     long head = 0;
     while (pc < epc) {
-      print_pc(pc, 1);
+      print_pc(pc, stdout);
       const struct insn_t* p = insn(pc);
       if (is_mem(p->op_code))
 	n = sprintf(buf, "%c[%016lx]", bing, memq[head++]);
@@ -125,7 +156,7 @@ void print_trace(long pc)
       else
 	n = sprintf(buf, "%c %16s ", bing, "");
       n = write(1, buf, n);
-      print_instruction(pc, 1);
+      print_insn(pc, stdout);
       ++insn_count;
       pc += shortOp(p->op_code) ? 2 : 4;
       bing = ' ';
@@ -137,18 +168,38 @@ void print_trace(long pc)
 }
 
 
+long atohex(const char* p)
+{
+  for (long n=0; ; p++) {
+    long digit;
+    if ('0' <= *p && *p <= '9')
+      digit = *p - '0';
+    else if ('a' <= *p && *p <= 'f')
+      digit = 10 + (*p - 'a');
+    else if ('A' <= *p && *p <= 'F')
+      digit = 10 + (*p - 'F');
+    else
+      return n;
+    n = 16*n + digit;
+  }
+}
+
 
 int main(int argc, const char** argv)
 {
   static const char* shm_path =0;
   static int list =0;
+  static int trace =0;
+  static const char* see_range =0;
   
   static const char* veri_path =0;
-  static int seemem  =0;
   static const char* report =0;
+  
   static struct options_t flags[] =
     {  { "--in=",	.v = &shm_path		},
        { "--list",	.f = &list		},
+       { "--trace",	.f = &trace		},
+       { "--see=",	.v = &see_range		},
        { "--report=",	.v = &report		},
        { "--verify=",	.v = &veri_path		},
        { 0					}
@@ -164,7 +215,15 @@ int main(int argc, const char** argv)
   trace_init(&trace_buffer, shm_path, 1);
   start_tick = clock();
   if (list)
-    print_trace(entry);
+    print_listing(entry);
+  else if (trace)
+    print_timing_trace(insnSpace.base, insnSpace.bound);
+  else if (see_range) {
+    long begin = atohex(see_range);
+    const char* comma = strchr(see_range, ',');
+    long end = atohex(comma+1);
+    print_timing_trace(begin, end);
+  }
   else {
     if (veri_path)
       fifo_init(&verify, veri_path, 1);

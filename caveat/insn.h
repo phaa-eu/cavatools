@@ -118,7 +118,7 @@ void print_symbol( long address, FILE* output_file );
 */
 
 
-int print_pc( long pc, int file_descr );
+int print_pc( long pc, FILE* output_file );
 /*
   Print symbolic program counter
   returns whether address associated with known function
@@ -126,14 +126,14 @@ int print_pc( long pc, int file_descr );
   file_descr	- write to this file descriptor
 */
 
-void print_instruction( long address, int file_descr );
+void print_insn( long address, FILE* output_file );
 /*
   Disassemble instruction and print
   address	- program counter in text segment
   file_descr	- write to this file descriptor
 */
 
-void print_registers( struct reg_t regs[], int file_descr );
+void print_registers( struct reg_t regs[], FILE* output_file );
 /*  
   Print register files
   regs		- register files, IR+FR

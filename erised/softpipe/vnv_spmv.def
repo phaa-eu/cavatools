@@ -1,7 +1,9 @@
 /*
- *  Vectors-no-Vector implementation of SPMV.
+ *  Vector-no-Vector implementation of SPMV.
  *  (c) 2020 Peter Hsu
  */
+
+#define CAREFULLY
 
 #ifndef SPMV_OP
 #error Define SPMV_OP as += or -= then follow with subroutine header:
@@ -26,24 +28,22 @@
 ?}
 ?[
 0	c$ = c[j+@];
-3	v$ = v[j+@];
-3	x$ = x[c$];
-7	ac SPMV_OP v$*x$;
+5	v$ = v[j+@];
+5	x$ = x[c$];
+10	ac SPMV_OP v$*x$;
 ?]
 
 #ifdef CAREFULLY
   {
     for (int k=0; k<nnz; k++)
       sum SPMV_OP v[k]*x[c[k]];
-    double epsilon = abs(sum-ac);
-    if (epsilon > 1e-12) {
+    if (sum != ac) {
 #define Q(x)  #x
 #define QUOTE(x) Q(x)
-      fprintf(stderr, "epsilon=%12e nnz=%ld sum=%12e ac=%12e vnv_spmv(" QUOTE(SPMV_OP) ")\n", epsilon, nnz, sum, ac);
-      //exit(-1);
+      fprintf(stderr, "nnz=%ld sum=%12e ac=%12e vnv_spmv(" QUOTE(SPMV_OP) ")\n", nnz, sum, ac);
+      exit(-1);
     }
   }
 #endif
-    
   return ac;
 }

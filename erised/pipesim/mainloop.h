@@ -4,27 +4,17 @@
 
 #define SAVE_STATS()  \
   stats.cycles = now; \
-  stats.instructions = insn_count; \
-  stats.branches_taken = jump_count; \
-  stats.mem_refs = mem_count; \
-  stats.stores = write_count;
+  stats.insns = insn_count; \
+  stats.branches_taken = jump_count;
 
 #define max(a, b)  a > b ? a : b
 
 {
-  register long now =0;		/* current cycle */
-  register long insn_count =0;	/* instructions executed */
-  register long jump_count =0;	/* taken branches */
-  register long mem_count =0;	/* memory references */
-  register long write_count =0;	/* number of stores */
-
   static long busy[256];	/* cycle when register becomes available */
-  extern uint64_t mem_queue[];
-  register uint64_t* memq = mem_queue; /* help compiler allocate in register */
-  register long cursor =0;	       /* into memq[] */
-  
-  extern struct fifo_t trace_buffer;
-  extern int hart;
+  long now =0;			/* current cycle */
+  long insn_count =0;		/* instructions executed */
+  long jump_count =0;		/* taken branches */
+  int cursor =0;		/* into mem_queue[] */
 
   for (uint64_t tr=fifo_get(&trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(&trace_buffer)) {
     /* must come first, but rare and branch prediction will skip */
@@ -44,31 +34,31 @@
       continue;
     }
     if (is_mem(tr)) {
-      memq[cursor++] = tr;
+      mem_queue[cursor++] = tr;
       continue;
     }
-    register long epc = pc + tr_number(tr);
+    long epc = pc + tr_number(tr);
     cursor = 0;			/* read list of memory addresses */
     while (pc < epc) {
-      register const struct insn_t* p = insn(pc);
+      const struct insn_t* p = insn(pc);
       /* scoreboarding: advance time until source registers not busy */
       now = max(now, busy[p->op_rs1]);
       now = max(now, busy[p->op.rs2]);
-      now = max(now, busy[p->op.rs3]);
+      if (threeOp(p->op_code))
+	now = max(now, busy[p->op.rs3]);
       /* model loads and stores */
-      long when = now;
+      long ready = now;
       if (memOp(p->op_code)) {
-	mem_count++;
-	if (writeOp(p->op_code))
-	  write_count++;
 #ifdef SLOW
-	when = model_dcache(memq[cursor++], p, now+read_latency);
-#else
-	when = lookup_Nway(&dcache, tr_value(memq[cursor++]), writeOp(p->op_code), now+read_latency);
+	if (model_dcache)
+	  ready = model_dcache(mem_queue[cursor++], p, now+read_latency);
+	else
 #endif
-	when += insnAttr[p->op_code].latency;
+	  ready = lookup_cache(&dcache, tr_value(mem_queue[cursor++]), writeOp(p->op_code), now+read_latency);
+	/* note ready may be long in the past */
       }
-      busy[p->op_rd] = when;
+      /* model function unit latency */
+      busy[p->op_rd] = ready + insnAttr[p->op_code].latency;
       busy[NOREG] = 0;		/* in case p->op_rd not valid */
 #ifdef SLOW
       if (visible) {

@@ -3,20 +3,18 @@
 */
 
 
-/* Associativity is global compile parameter! */
-
-#define D_WAYS  2	       /* 2^ ways associativity */
-#define lookup_Nway  lookup_4way
-#include "cache_4way.h"
+struct mru_cache_t {
+  long tag;
+  char dirty;
+  long avail : 56;
+};
 
 
 struct statistics_t {
   long cycles;
-  long instructions;
+  long insns;
   long segments;
   long branches_taken;
-  long mem_refs;
-  long stores;
   clock_t start_tick;
 };
 
@@ -32,6 +30,7 @@ extern int visible;
 extern int quiet;
 
 
+
 extern long report_frequency;
 void status_report(struct statistics_t* stats);
 
@@ -43,3 +42,4 @@ void fast_pipe(long pc, long read_latency, long next_report,
 	       long (*model_dcache)(long tr, const struct insn_t* p, long available));
 void slow_pipe(long pc, long read_latency, long next_report,
 	       long (*model_dcache)(long tr, const struct insn_t* p, long available));
+

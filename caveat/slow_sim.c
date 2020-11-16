@@ -24,13 +24,14 @@
 #define trace_any(code, v)  ( fifo_put(&cpu->tb, trP(code,  since, v)), restart() )
 #define advance(sz)  { since+=sz; if (since >= tr_max_number-4L) { fifo_put(&cpu->tb, trP(tr_any, since, 0)); restart(); } }
 #define restart()  since=0
-#define on_every_insn(p)  if (cpu->params.verify) { fifo_put(&verify, cpu->holding_pc); cpu->holding_pc=PC; }
+//#define on_every_insn(p)  if (cpu->params.verify) { fifo_put(&verify, cpu->holding_pc); cpu->holding_pc=PC; }
+#define on_every_insn(p)  
 
 #define amo_lock_begin
 #define amo_lock_end
 
 
-#define ICOUNT_INTERVAL 1000
+#define ICOUNT_INTERVAL 10000
 
   
 void slow_sim( struct core_t* cpu, long total_max_count )

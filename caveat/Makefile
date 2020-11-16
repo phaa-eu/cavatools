@@ -5,6 +5,8 @@
 R = /home/peterhsu
 B = build
 
+_dummy := $(shell mkdir -p $B)
+
 # Object files for libcava.a
 aobj := elf_loader.o insn.o
 
@@ -45,7 +47,7 @@ install:  all
 .PHONY:  clean
 clean:
 	rm -f decode_insn.h disasm_insn.h execute_insn.h ecall_nums.h opcodes.h opcodes_attr.h *.o *~ ./#*#
-	( cd build; rm -f * )
+	rm -rf build
 
 
 # Emulator and library

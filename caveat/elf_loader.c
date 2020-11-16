@@ -279,7 +279,8 @@ int find_symbol( const char* name, Addr_t* begin, Addr_t* end )
 {
   if (strtbl) {
     for (int i=0; i<num_syms; i++) {
-      if (strcmp(strtbl+symtbl[i].st_name, name) == 0) {
+      int n = strlen(name);
+      if (strncmp(strtbl+symtbl[i].st_name, name, n) == 0) {
 	*begin = symtbl[i].st_value;
 	if (end)
 	  *end = *begin + symtbl[i].st_size;
