@@ -6,6 +6,7 @@ R = /home/peterhsu
 B = build
 
 _dummy := $(shell mkdir -p $B)
+_dummy := $(shell mkdir -p $R/include/cava)
 
 # Object files for libcava.a
 aobj := elf_loader.o insn.o
@@ -42,7 +43,7 @@ all:  $B/libcava.a $B/caveat
 install:  all
 	-cp $B/caveat  $R/bin/caveat
 	-cp $B/libcava.a  $R/lib/libcava.a
-	-cp $(incf)  $R/include/
+	-cp $(incf)  $R/include/cava
 
 .PHONY:  clean
 clean:

@@ -5,6 +5,12 @@ B = build
 
 _dummy := $(shell mkdir -p $B)
 
+# Dependent headers
+hdrs := opcodes.h insn.h shmfifo.h caveat.h
+
+# Text substitutions
+hdrs := $(addprefix $R/include/cava/,$(hdrs))
+
 aobj := tagonlycache.o container.o queues.o utilities.o
 cobj := cachesim.o
 
@@ -12,7 +18,7 @@ cobj := cachesim.o
 aobj := $(addprefix $B/,$(aobj))
 cobj := $(addprefix $B/,$(cobj))
 
-CFLAGS	= -I$R/include/ -g -Ofast
+CFLAGS	= -I$R/include/cava -g -Ofast
 LIBS	= $R/lib/libcava.a -lrt -lpthread
 
 $B/cachesim:  $(cobj) $R/lib/libcava.a
@@ -21,7 +27,7 @@ $B/cachesim:  $(cobj) $R/lib/libcava.a
 $R/lib/libcava.a:  $(aobj)
 	ar rs $@ $^
 
-$B/cachesim.o:  $R/include/opcodes.h $R/include/insn.h $R/include/shmfifo.h $R/include/caveat.h
+$B/cachesim.o:  $(hdrs)
 
 $B/%.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $<

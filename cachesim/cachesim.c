@@ -118,7 +118,7 @@ int main(int argc, const char** argv)
       reftype |= RT_LDST;
     else {
       reftype |= RT_GETPUT;
-      reftype |= (1L<<tr_level(tr)) << RT_LEVEL_SHIFT;
+      reftype |= (1L<<tr_clevel(tr)) << RT_LEVEL_SHIFT;
     }
     if (reftype & filter) {
       cacheWay* way;

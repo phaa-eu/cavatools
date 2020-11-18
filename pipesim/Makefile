@@ -2,18 +2,24 @@
 # Path where things should be installed
 R = /home/peterhsu
 
-CFLAGS   = -I$R/include/ -g -Ofast
-#CFLAGS   = -I$R/include/ -g -O0
+CFLAGS   = -I$R/include/cava -g -Ofast
 LIBS     = $R/lib/libcava.a -lrt -lpthread
 LDFLAGS  = -Wl,-Ttext=70000000
+
+# Dependent headers
+hdrs := opcodes.h insn.h shmfifo.h caveat.h
+
+# Text substitutions
+hdrs := $(addprefix $R/include/cava/,$(hdrs))
+
 
 pipesim:  pipesim.o fast_pipe.o slow_pipe.o cache.o $(LIBS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-pipesim.o fast_pipe.o slow_pipe.o:  pipesim.h cache.h $R/include/opcodes.h $R/include/insn.h $R/include/shmfifo.h $R/include/caveat.h
+pipesim.o fast_pipe.o slow_pipe.o:  pipesim.h cache.h $(hdrs)
 
 fast_pipe.o slow_pipe.o:  mainloop.h
-fast_pipe.o slow_pipe.o pipesim.o:  lru_fsm_4way.h
+fast_pipe.o slow_pipe.o pipesim.o:  lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
 
 lru_fsm_1way.h:  make_cache
 	./make_cache 1

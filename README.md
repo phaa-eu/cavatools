@@ -38,15 +38,12 @@ will create the following files:
 
 In addition, header files are installed in
 ```
-    ~/include/caveat
+    ~/include/cava/
 ```
 and the caveat trace handling library in
 ```
     ~/lib/libcava.a
 ```
-
-Please create directories ~/include/softfloat, ~/include/caveat, etc.
-before installation.
 
 
 ###  Running Cavatools
@@ -71,10 +68,14 @@ and this in another window:
 ```
 The shared memory buffer 'bufname' appears in /dev/shm while processes are running.
 
-There are various other options to traceinfo, and other analysis tools in
+There is a pipeline simulator and a cache simulator.  Run the following command lines in separate windows for more clarity:
 ```
-    cavatools/erised/
+    $ caveat --trace=b1 testpgm &
+    $ pipesim --in=b1 --out=b2 --visible testpgm &
+    $ cachesim --in=b2 --out=b3 --filter=rw &
+    $ traceinfo --in=b3 --paraver=10000 --cutoff=3 testgpm > trace.prv
 ```
+produces a BSC Paraver trace of 10000 cycles with instruction stall events of 3 or more cycles, plus all cache misses.  In this simulation pipesim has a built-in L1 data cache, and cachesim is modeling an L2 cache, all with default parameters.
 
 In the future there will be a presentation slide deck and a brief paper describing
 how to use the example analysis tools.

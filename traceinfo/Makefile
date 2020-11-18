@@ -2,18 +2,21 @@
 # Path where things should be installed
 R = /home/peterhsu
 
-#CFLAGS   = -I$R/include/ -g -Ofast
-CFLAGS   = -I$R/include/ -g -O0
+CFLAGS   = -I$R/include/cava -g -Ofast
 LIBS     = $R/lib/libcava.a -lrt -lpthread
 LDFLAGS  = -Wl,-Ttext=70000000
+
+# Dependent headers
+hdrs := opcodes.h insn.h shmfifo.h caveat.h
+
+# Text substitutions
+hdrs := $(addprefix $R/include/cava/,$(hdrs))
+
 
 traceinfo:  traceinfo.o $(LIBS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-cache_4way.h:  make_cache
-	./make_cache 2
-
-traceinfo.o:  $R/include/opcodes.h $R/include/insn.h $R/include/shmfifo.h $R/include/caveat.h
+traceinfo.o:  $(hdrs)
 
 install:  traceinfo
 	-cp $^ $R/bin/
