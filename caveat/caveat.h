@@ -91,12 +91,14 @@ nnnnnnnnnn......p.......p.......p.......p.......p.......pccccccc  P format
 #define tr_d1put	0b1100101L	/* L1 data cache write back to L2 */
 #define tr_d2get	0b1100010L	/* L2 data cache load from L3 */
 #define tr_d2put	0b1100110L	/* L2 data cache write back to L3 */
-
+#define is_dcache(tr) ((0b1111000L & tr_code(tr)) == \
+		       (0b1100000L))
 #define tr_i0get	0b1110000L	/* instruction buffer fetchfrom L1 */
 #define tr_i1get	0b1110001L	/* L1 instruction cache load from L2 */
 #define tr_i2get	0b1110010L	/* L2 instruction cache load from L3 */
-
-#define tr_level(tr)           (tr_code(tr)&0x3L)
+#define is_icache(tr) ((0b1111000L & tr_code(tr)) == \
+		       (0b1110000L))
+#define tr_clevel(tr)          (tr_code(tr)&0x3L)
 
 
 

@@ -58,11 +58,22 @@ int outer_loop( struct core_t* cpu )
       break;
       
     case 3:  /* Breakpoint */
-      if (fast_mode) {  /* insert breakpoint at subroutine return */
-	if (cpu->reg[RA].a)	/* _start called with RA==0 */
-	  insert_breakpoint(cpu->reg[RA].a);
-	fast_mode = 0;		/* start tracing */
-	fifo_put(&cpu->tb, trP(tr_start, 0, cpu->pc)); 
+      if (fast_mode) {
+	if (--cpu->params.after > 0) { /* not ready to trace yet */
+	  /* put instruction back and single step */
+	  decode_instruction(insn(cpu->pc), cpu->pc);
+	  cpu->state.mcause = 0;
+	  cpu->holding_pc = 0L;	/* do not include current pc */
+	  fast_sim(cpu, 1);
+	  /* reinserting breakpoint at subroutine entry */	  
+	  insert_breakpoint(cpu->params.breakpoint);
+	}
+	else { /* insert breakpoint at subroutine return */
+	  if (cpu->reg[RA].a)	/* _start called with RA==0 */
+	    insert_breakpoint(cpu->reg[RA].a);
+	  fast_mode = 0;		/* start tracing */
+	  fifo_put(&cpu->tb, trP(tr_start, 0, cpu->pc));
+	}
       }
       else {  /* reinserting breakpoint at subroutine entry */
 	insert_breakpoint(cpu->params.breakpoint);

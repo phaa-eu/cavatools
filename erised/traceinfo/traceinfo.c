@@ -22,6 +22,8 @@ long report_frequency = REPORT_FREQUENCY;
 time_t start_tick;
 long insn_count =0;
 long segments =0;
+long pvr_cycles =0;
+long pvr_cutoff =0;
 
 struct fifo_t trace_buffer;
 int hart;
@@ -96,29 +98,57 @@ void do_nothing(long pc, int checking)
 
 void print_timing_trace(long begin, long end)
 {
-  fprintf(stdout, "Printing timing trace [%lx, %lx]\n", begin, end);
+  if (pvr_cycles) {
+    time_t T = time(NULL);
+    struct tm tm = *localtime(&T);
+    fprintf(stdout, "#Paraver (%02d/%02d/%02d at %02d:%02d):%ld:1(1):1:1(1:1)\n",
+	    tm.tm_mday, tm.tm_mon+1, tm.tm_year, tm.tm_hour, tm.tm_min, pvr_cycles);
+  }
+  else {
+    fprintf(stdout, "Timing trace [%lx, %lx]\n", begin, end);
+  }
   long previous_time = 0;
   long cache_miss = 0;
   for (uint64_t tr=fifo_get(&trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(&trace_buffer)) {
+    long pc, now;
     if (tr_code(tr) == tr_issue) {
-      long pc = tr_pc(tr);
-      long now = previous_time + tr_number(tr);
+      pc = tr_pc(tr);
+      now = previous_time + tr_number(tr);
       if (begin <= pc && pc <= end) {
-	while (++previous_time < now)
-	  fprintf(stdout, "%18s%8ld:\n", "", previous_time);
-	if (cache_miss) {
-	  fprintf(stdout, "[%016lx]", cache_miss);
-	  cache_miss = 0;
+	if (pvr_cycles) {
+	  if (now-previous_time > pvr_cutoff) {
+	    fprintf(stdout, "2:0:1:1:1:%ld:%d:%ld\n", previous_time,  0, pc);
+	    fprintf(stdout, "2:0:1:1:1:%ld:%d:%ld\n",           now, 10, pc);
+	  }
 	}
-	else
-	  fprintf(stdout, "%18s", "");
-	fprintf(stdout, "%8ld: ", now);
-	print_insn(tr_pc(tr), stdout);
+	else {
+	  while (++previous_time < now)
+	    fprintf(stdout, "%18s%8ld:\n", "", previous_time);
+	  if (cache_miss) {
+	    fprintf(stdout, "[%016lx]", cache_miss);
+	    cache_miss = 0;
+	  }
+	  else
+	    fprintf(stdout, "%18s", "");
+	  fprintf(stdout, "%8ld: ", now);
+	  
+	  if (pvr_cycles)
+	    fprintf(stdout, "2:0:1:1:1:%ld:%ld:%ld\n", now, now-previous_time, pc);
+	  print_insn(tr_pc(tr), stdout);
+	}
       }
       previous_time = now;
     }
     else if (tr_code(tr) == tr_d1get) {
       cache_miss = tr_value(tr);
+    }
+    if (pvr_cycles) {
+      if (is_dcache(tr))
+	fprintf(stdout, "2:0:1:1:1:%ld:%ld:%ld\n", now, tr_clevel(tr),    tr_value(tr));
+      else if (is_icache(tr))
+	fprintf(stdout, "2:0:1:1:1:%ld:%ld:%ld\n", now, tr_clevel(tr)+10, tr_value(tr));
+      if (now >= pvr_cycles)
+	return;
     }
   }
 }
@@ -194,6 +224,8 @@ int main(int argc, const char** argv)
   
   static const char* veri_path =0;
   static const char* report =0;
+  static const char* paraver =0;
+  static const char* cutoff =0;
   
   static struct options_t flags[] =
     {  { "--in=",	.v = &shm_path		},
@@ -202,6 +234,8 @@ int main(int argc, const char** argv)
        { "--see=",	.v = &see_range		},
        { "--report=",	.v = &report		},
        { "--verify=",	.v = &veri_path		},
+       { "--paraver=",	.v = &paraver		},
+       { "--cutoff=",	.v = &cutoff		},
        { 0					}
     };
   int numopts = parse_options(flags, argv+1);
@@ -218,10 +252,19 @@ int main(int argc, const char** argv)
     print_listing(entry);
   else if (trace)
     print_timing_trace(insnSpace.base, insnSpace.bound);
-  else if (see_range) {
-    long begin = atohex(see_range);
-    const char* comma = strchr(see_range, ',');
-    long end = atohex(comma+1);
+  else if (paraver || see_range) {
+    if (paraver) {
+      pvr_cycles = atoi(paraver);
+      if (cutoff)
+	pvr_cutoff = atoi(cutoff);
+    }
+    long begin = insnSpace.base;
+    long end = insnSpace.bound;
+    if (see_range) {
+      begin = atohex(see_range);
+      const char* comma = strchr(see_range, ',');
+      end = atohex(comma+1);
+    }
     print_timing_trace(begin, end);
   }
   else {

@@ -61,10 +61,8 @@
       busy[p->op_rd] = ready + insnAttr[p->op_code].latency;
       busy[NOREG] = 0;		/* in case p->op_rd not valid */
 #ifdef SLOW
-      if (visible) {
-	//	if (begin <= pc && pc <= end)
+      if (visible)
 	issue_insn(pc, p, now);
-      }
 #endif
       now += 1;  /* single issue machine */
       pc += shortOp(p->op_code) ? 2 : 4;
