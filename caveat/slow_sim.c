@@ -19,35 +19,47 @@
 #include "shmfifo.h"
 #include "core.h"
 
+
+
+static inline int dump_regs( struct core_t* cpu, int n)
+{
+  for (int i=0; i<n; i++)
+    fifo_put(&cpu->tb, regval[i]);
+  return 0;
+}
+
+#define update_regfile(rd, val)  (withregs && (rd) != NOREG ? regval[updates++]=(val) : 0)
 #define trace_mem(code, a)  fifo_put(&cpu->tb, trM(code, a))
-#define trace_jmp(code, a)  ( fifo_put(&cpu->tb, trP(tr_jump, since, a)), restart() )
-#define trace_any(code, v)  ( fifo_put(&cpu->tb, trP(code,  since, v)), restart() )
+#define trace_bbk(code, v)  ( fifo_put(&cpu->tb, trP(code, since, v)), restart() )
 #define advance(sz)  { since+=sz; if (since >= tr_max_number-4L) { fifo_put(&cpu->tb, trP(tr_any, since, 0)); restart(); } }
-#define restart()  since=0
+#define restart()  (withregs ? dump_regs(cpu, updates) : 0, since=updates=0 )
 //#define on_every_insn(p)  if (cpu->params.verify) { fifo_put(&verify, cpu->holding_pc); cpu->holding_pc=PC; }
-#define on_every_insn(p)  
+#define on_every_insn(p)
 
 #define amo_lock_begin
 #define amo_lock_end
 
 
 #define ICOUNT_INTERVAL 10000
-
   
 void slow_sim( struct core_t* cpu, long total_max_count )
 {
-  register Addr_t PC = cpu->pc;
-  register long since = 0;
+  Addr_t PC = cpu->pc;
+  int since =0, updates=0;
+  int withregs = (cpu->params.has_flags & tr_has_reg) != 0;
   
   while (cpu->state.mcause == 0 && total_max_count > 0) {
-    register long max_count = ICOUNT_INTERVAL;
-    register long countdown = max_count;
+    long max_count = ICOUNT_INTERVAL;
+    long countdown = max_count;
 
 #include "sim_body.h"
 
-    trace_mem(tr_icount, cpu->counter.insn_executed);
+    //    trace_mem(tr_icount, cpu->counter.insn_executed);
+    //    if (withregs)
+    //      dump_regs(cpu, updates);
     total_max_count -= max_count;
   }
-  if (since > 0)
-    fifo_put(&cpu->tb, trP(tr_any, since, 0));
+  if (since > 0) {
+    trace_bbk(tr_any, 0);
+  }
 }

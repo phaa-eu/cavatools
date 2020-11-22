@@ -27,7 +27,8 @@ long pvr_cutoff =0;
 
 struct fifo_t trace_buffer;
 int hart;
-uint64_t mem_queue[1024];
+uint64_t mem_queue[tr_memq_len];
+
 
 static inline void status_report()
 {
@@ -45,7 +46,7 @@ void do_nothing(long pc, int checking)
   int ptr =0;			/* check pc circular buffer */
   for (uint64_t tr=fifo_get(&trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(&trace_buffer)) {
     /* must come first, but rare and branch prediction will skip */
-    if (tr_code(tr) == tr_start) {
+    if (is_frame(tr)) {
       hart = tr_number(tr);
       pc = tr_pc(tr);
       ++segments;
@@ -89,7 +90,7 @@ void do_nothing(long pc, int checking)
     }
     if (is_goto(tr)) {
       pc = tr_pc(tr);
-      if (tr_code(tr) == tr_start)
+      if (is_frame(tr))
 	hart = tr_number(tr);
     }
   }
@@ -158,42 +159,52 @@ void print_listing(long pc)
 {
   uint64_t* memq = mem_queue;	/* help compiler allocate in register */
   long tail =0;
-  
-  for (uint64_t tr=fifo_get(&trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(&trace_buffer)) {
-    /* must come first, but rare and branch prediction will skip */
-    if (tr_code(tr) == tr_start) {
-      hart = tr_number(tr);
-      pc = tr_pc(tr);
-      continue;
-    }
+  int withregs =0;
+  for (uint64_t tr=fifo_get(&trace_buffer); tr!=tr_eof; tr=fifo_get(&trace_buffer)) {
     if (is_mem(tr)) {
       memq[tail++] = tr_value(tr);
       continue;
     }
-    static char buf[1024];
-    long n;
-    char bing = '@';
-    
-    long epc = pc + tr_number(tr);
-    long head = 0;
-    while (pc < epc) {
-      print_pc(pc, stdout);
-      const struct insn_t* p = insn(pc);
-      if (is_mem(p->op_code))
-	n = sprintf(buf, "%c[%016lx]", bing, memq[head++]);
-      else if (is_goto(p->op_code))
-	n = sprintf(buf, "%c<%016lx>", bing, tr_pc(tr));
-      else
-	n = sprintf(buf, "%c %16s ", bing, "");
-      n = write(1, buf, n);
-      print_insn(pc, stdout);
-      ++insn_count;
-      pc += shortOp(p->op_code) ? 2 : 4;
-      bing = ' ';
+    if (is_bbk(tr)) {
+      static char buf[1024];
+      char bing = is_goto(tr) ? '@' : '!';
+      long epc = pc + tr_number(tr);
+      long head = 0;
+      while (pc < epc) {
+	const struct insn_t* p = insn(pc);
+	if (memOp(p->op_code))
+	  printf("%c[%016lx]", bing, memq[head++]);
+	else if (insnAttr[p->op_code].unit == Unit_b && (pc+(shortOp(p->op_code)?2:4)) == epc)
+	  printf("%c<%16lx>", bing, tr_pc(tr));
+	else
+	  printf("%c %16s ", bing, "");
+	if (withregs) {
+	  if (p->op_rd == NOREG && p->op_rd != 0)
+	    printf("%22s", "");
+	  else {
+	    long val = fifo_get(&trace_buffer);
+	    printf("%4s=%016lx ", regName[p->op_rd], val);
+	  }
+	}
+	print_pc(pc, stdout);
+	print_insn(pc, stdout);
+	++insn_count;
+	pc += shortOp(p->op_code) ? 2 : 4;
+	bing = ' ';
+      }
+      if (is_goto(tr))
+	pc = tr_pc(tr);
+      tail = 0;
+      continue;
     }
-    if (is_goto(tr))
+    if (is_frame(tr)) {
+      hart = tr_number(tr);
       pc = tr_pc(tr);
-    tail = 0;
+      withregs = (tr & tr_has_reg) != 0;
+      continue;
+    }
+    /* ignore other trace record types */
+    tr_print(tr, stderr);
   }
 }
 

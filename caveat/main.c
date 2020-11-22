@@ -30,10 +30,12 @@ int main(int argc, const char* argv[], const char* envp[])
   static const char* func = 0;
   static const char* after = 0;
   static const char* report = 0;
+  static int withregs = 0;
   static int quiet = 0;
   static struct options_t flags[] =
     {  { "--func=",	.v = &func		},
        { "--trace=",	.v = &tracing		},
+       { "--withregs",	.f = &withregs		},
        { "--verify=",	.v = &listing		},
        { "--after=",	.v = &after		},
        { "--report=",	.v = &report		},
@@ -64,8 +66,10 @@ int main(int argc, const char* argv[], const char* envp[])
   cpu->params.report_interval = report ? atoi(report) : DEFAULT_REPORT_INTERVAL;
   cpu->params.quiet = quiet;
   if (tracing) {
+    if (withregs)
+      cpu->params.has_flags |= tr_has_reg;
     trace_init(&cpu->tb, tracing, 0);
-    fifo_put(&cpu->tb, trP(tr_start, 0, entry_pc));
+    fifo_put(&cpu->tb, trP(cpu->params.has_flags, 0, entry_pc));
     if (listing) {
       fifo_init(&verify, listing, 0);
       cpu->params.verify = 1;

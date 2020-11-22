@@ -67,8 +67,9 @@ struct insnSpace_t {
 
 extern struct insnSpace_t insnSpace;
 extern struct insnAttr_t insnAttr[];	/* Attribute array indexed by Opcode_t */
+extern const char* regName[];
 
-
+  
   
 void insnSpace_init( Addr_t low, Addr_t high );
 void decode_instruction( const struct insn_t* p, Addr_t PC );

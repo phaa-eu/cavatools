@@ -26,34 +26,43 @@ nnnnnnnnnn......p.......p.......p.......p.......p.......pccccccc  P format
 #define tr_pc(tr)      (((uint64_t)(tr) & 0x003fffffffffff80L) >>  6)
 #define tr_number(tr)  ( (uint64_t)(tr)                        >> 54)
 
-/*
-  The opcodes are defined here.  You may add additional encodings.
-*/
+/*  Trace file is broken into frames.  Each frame comes from a single HART.
+    Frame records are P-format with number=hart# and pc=begining value. */
+#define is_frame(tr)  ((0b1111000L & tr_code(tr)) == \
+		       (0b0000000L))
+#define tr_eof		0b0000000L
+#define tr_has_pc	0b0000001L /* taken branch targets */
+#define tr_has_mem	0b0000010L /* load/store addresses */
+#define tr_has_reg	0b0000100L /* register update values */
 
-#define tr_eof		0b0000000L		/* M-format */
-#define tr_icount	0b0000001L 		/* M-format */
-#define tr_any		0b0000010L		/* P-format */
-#define tr_fence	0b0000011L		/* P-format */
-#define tr_ecall	0b0000100L		/* M-format */
-#define tr_csr		0b0000101L		/* M-format */
-#define tr_issue	0b0000110L		/* P-format */
-
-#define is_goto(tr)   ((0b1110100L & tr_code(tr)) == \
-		       (0b0010100L))		/* P-format (all) */
-#define tr_start	0b0010000L
-#define tr_jump		0b0010100L
-#define tr_branch	0b0010101L
-#define tr_call		0b0010110L
-#define tr_return	0b0010111L
-
-/*
-  All memory reference opcodes have MSB=1
-  There is a consistent bit for read/write
-  Divided into is_ldst() load/store group, with tr_size() 1, 2, 4 8 bytes
-  and cache line is_getput() group, for tr_level() 0, 1, 2, 3 caches
-*/
+/*  The main trace file record types are memory and basic block records. */
 #define is_mem(tr)    ((0b1000000L & tr_code(tr)) == \
-		       (0b1000000L))		/* M-format (all) */
+		       (0b1000000L))		/* M-format */
+#define is_bbk(tr)    ((0b1100000L & tr_code(tr)) == \
+		       (0b0100000L))		/* P-format */
+
+/*  Basic block records are P-format, describing a series sequential instructions.
+    The number tr_field gives the length of the instruction block in bytes.
+    If the block ends in a taken branch, the tr_pc field gives the target address.
+    Otherwise the tr_pc field is the next sequential basic block beginning address. */
+
+#define tr_jump		0b0100000L
+#define tr_branch	0b0100001L
+#define tr_call		0b0100010L
+#define tr_return	0b0100011L
+#define is_goto(tr)   ((0b1111000L & tr_code(tr)) == \
+		       (0b0100000L)) /* 4 spare opcodes */
+/* Below are basic block records not ending in taken branch. */
+#define tr_any		0b0101000L		/* P-format */
+#define tr_fence	0b0101001L		/* P-format */
+#define tr_ecall	0b0101010L		/* M-format */
+#define tr_csr		0b0101011L		/* M-format */
+
+/*
+  All memory records are M-format, have consistent bit for read/write, are
+  divided into is_ldst() load/store group with tr_size() 1, 2, 4 8 bytes,
+  and cache line is_getput() group for tr_level() 0, 1, 2, 3 caches.
+*/
 #define is_write(tr)  ((0b1000100L & tr_code(tr)) == \
 		       (0b1000100L))
 #define is_ldst(tr)   ((0b1100000L & tr_code(tr)) == \
@@ -100,6 +109,16 @@ nnnnnnnnnn......p.......p.......p.......p.......p.......pccccccc  P format
 		       (0b1110000L))
 #define tr_clevel(tr)          (tr_code(tr)&0x3L)
 
+/*  Out-Of-Band Records.  These records can be inserted anytime between
+    mem and bbk records, but not in the register value section because
+    there the 64-bit values have no opcode field.  */
+
+/* Tracing instruction issue cycle time */
+#define tr_issue	0b0010000L		/* P-format */
+
+/* Periodical instruction execution counter to help synchronize cache simulator. */ 
+#define tr_icount	0b0010001L 		/* M-format */
+
 
 
 /*
@@ -114,16 +133,16 @@ nnnnnnnnnn......p.......p.......p.......p.......p.......pccccccc  P format
 #define dieif(bad, fmt, ...)  if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n");  abort(); }
 
 
-static inline uint64_t tr_print(uint64_t tr)
+static inline uint64_t tr_print(uint64_t tr, FILE* f)
 {
   if (is_mem(tr))
-    fprintf(stderr, "MemOp: code=%02lx, w=%d, sz=%ldB, addr=0x%lx\n", tr_code(tr), is_write(tr), tr_size(tr), tr_value(tr));
-  else if (is_goto(tr) && tr!=tr_start)
-    fprintf(stderr, "GotoOp: code=%02lx, number=%ld, pc=0x%lx\n", tr_code(tr), tr_number(tr), tr_pc(tr));
-  else if (tr_code(tr) == tr_any)
-    fprintf(stderr, "tr_any: number=%ld, pc should be zero 0x%lx\n", tr_number(tr), tr_pc(tr));
+    fprintf(f, "MemOp: code=%02lx, w=%d, sz=%ldB, addr=0x%lx\n", tr_code(tr), is_write(tr), tr_size(tr), tr_value(tr));
+  else if (is_goto(tr))
+    fprintf(f, "GotoOp: code=%02lx, number=%ld, pc=0x%lx\n", tr_code(tr), tr_number(tr), tr_pc(tr));
+  else if (is_bbk(tr))
+    fprintf(f, "BbkOp: code=%02lx, number=%ld\n", tr_code(tr), tr_number(tr));
   else
-    fprintf(stderr, "OtherOp: code=%02lx, number=%ld, pc=0x%lx\n", tr_code(tr), tr_number(tr), tr_pc(tr));
+    fprintf(f, "OtherOp=%016lx, code=%02lx, number=%ld, pc=0x%lx\n", tr, tr_code(tr), tr_number(tr), tr_pc(tr));
   return tr;
 }
 

@@ -18,17 +18,17 @@ inline float64_t NF64(int rn)  { float64_t x=F64(rn); x.v^=F64_SIGN; return x; }
 
 
 // Use only this macro to advance program counter
-#define INCPC(bytes)  { PC+=bytes; advance(bytes); }
+#define INCPC(bytes)  { update_regfile(p->op_rd, IR(p->op_rd).l); PC+=bytes; advance(bytes); }
 
 // Discontinuous program counter macros
-#define CALL(npc, sz)    { Addr_t tgt=npc;  INCPC(sz); trace_jmp(tr_call,   tgt);  IR(p->op_rd).l=PC;  PC=tgt;  break; }
-#define RETURN(npc, sz)  { Addr_t tgt=npc;  INCPC(sz); trace_jmp(tr_return, tgt);                      PC=tgt;  break; }
-#define JUMP(npc, sz)    { Addr_t tgt=npc;  INCPC(sz); trace_jmp(tr_jump,   tgt);                      PC=tgt;  break; }
-#define GOTO(npc, sz)    { Addr_t tgt=npc;  INCPC(sz); trace_jmp(tr_branch, tgt);                      PC=tgt;  break; }
+#define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; INCPC(sz); trace_bbk(tr_call,   tgt); PC=tgt; break; }
+#define RETURN(npc, sz)  { Addr_t tgt=npc;                       INCPC(sz); trace_bbk(tr_return, tgt); PC=tgt; break; }
+#define JUMP(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); trace_bbk(tr_jump,   tgt); PC=tgt; break; }
+#define GOTO(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); trace_bbk(tr_branch, tgt); PC=tgt; break; }
 
 #define EBREAK(num, sz)     { cpu->state.mcause= 3;  cpu->state.mtval=num;                                                     continue; }
-#define CSRACTION(num, sz)  { cpu->state.mcause=14;  cpu->state.mtval=num;  advance(sz);  trace_any(tr_csr,               0L); continue; }
-#define ECALL(sz)           { cpu->state.mcause= 8;                         advance(sz);  trace_any(tr_ecall, cpu->reg[17].l); continue; }
+#define CSRACTION(num, sz)  { cpu->state.mcause=14;  cpu->state.mtval=num;  advance(sz);  trace_bbk(tr_csr,               0L); continue; }
+#define ECALL(sz)           { cpu->state.mcause= 8;                         advance(sz);  trace_bbk(tr_ecall, cpu->reg[17].l); continue; }
 
 // Memory reference instructions
 #define LOAD_B( a, sz)  ( trace_mem(tr_read1, a), *((          char*)(a)) )
@@ -86,15 +86,13 @@ inline float64_t NF64(int rn)  { float64_t x=F64(rn); x.v^=F64_SIGN; return x; }
 
 
 // Define i-stream synchronization instruction
-#define FENCE(rd, r1, immed)  {  __sync_synchronize();  trace_any(tr_fence, immed); }
+#define FENCE(rd, r1, immed)  {  __sync_synchronize();  INCPC(4); trace_bbk(tr_fence, immed); break; }
 
 
 {
   while (cpu->state.mcause == 0) {
     register const struct insn_t* p = insn(PC);
     on_every_insn(p);
-    //print_pc(PC, 1);
-    //print_instruction(PC, 1);
     switch (p->op_code) {
       
 #include "execute_insn.h"

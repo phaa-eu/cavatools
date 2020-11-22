@@ -21,7 +21,8 @@
 #include "core.h"
 
 
-unsigned long lrsc_set = 0;  // global atomic lock
+unsigned long lrsc_set = 0;	/* global atomic lock */
+long regval[tr_memq_len];	/* space for maximum number of instructions */
 
 void init_core( struct core_t* cpu )
 {
@@ -72,7 +73,7 @@ int outer_loop( struct core_t* cpu )
 	  if (cpu->reg[RA].a)	/* _start called with RA==0 */
 	    insert_breakpoint(cpu->reg[RA].a);
 	  fast_mode = 0;		/* start tracing */
-	  fifo_put(&cpu->tb, trP(tr_start, 0, cpu->pc));
+	  fifo_put(&cpu->tb, trP(cpu->params.has_flags, 0, cpu->pc));
 	}
       }
       else {  /* reinserting breakpoint at subroutine entry */

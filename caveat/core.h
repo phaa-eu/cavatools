@@ -8,6 +8,7 @@
 #define box(rd)
 
 extern unsigned long lrsc_set;  // globally shared location for atomic lock
+extern long regval[];
 
 struct core_t {
   struct fifo_t tb;
@@ -42,6 +43,7 @@ struct core_t {
     Addr_t breakpoint;
     long after;
     long report_interval;
+    long has_flags;
     int quiet;
     int verify;
   } params;

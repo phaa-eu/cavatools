@@ -19,11 +19,11 @@
 
 
 #define trace_mem(code, a)  0
-#define trace_jmp(code, a)
-#define trace_any(code, v)
+#define trace_bbk(code, v)
 #define advance(sz)
 #define restart()
 #define on_every_insn(p)
+#define update_regfile(rd, val)
 
 #define amo_lock_begin
 #define amo_lock_end
