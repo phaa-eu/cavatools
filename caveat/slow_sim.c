@@ -40,7 +40,7 @@ static inline int dump_regs( struct core_t* cpu, int n)
 #define amo_lock_end
 
 
-#define ICOUNT_INTERVAL 10000
+#define ICOUNT_INTERVAL 100000
   
 void slow_sim( struct core_t* cpu, long total_max_count )
 {
@@ -54,9 +54,7 @@ void slow_sim( struct core_t* cpu, long total_max_count )
 
 #include "sim_body.h"
 
-    //    trace_mem(tr_icount, cpu->counter.insn_executed);
-    //    if (withregs)
-    //      dump_regs(cpu, updates);
+    trace_mem(tr_icount, cpu->counter.insn_executed);
     total_max_count -= max_count;
   }
   if (since > 0) {

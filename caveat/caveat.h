@@ -28,12 +28,13 @@ nnnnnnnnnn......p.......p.......p.......p.......p.......pccccccc  P format
 
 /*  Trace file is broken into frames.  Each frame comes from a single HART.
     Frame records are P-format with number=hart# and pc=begining value. */
-#define is_frame(tr)  ((0b1111000L & tr_code(tr)) == \
+#define is_frame(tr)  ((0b1110000L & tr_code(tr)) == \
 		       (0b0000000L))
 #define tr_eof		0b0000000L
 #define tr_has_pc	0b0000001L /* taken branch targets */
 #define tr_has_mem	0b0000010L /* load/store addresses */
 #define tr_has_reg	0b0000100L /* register update values */
+#define tr_has_timing	0b0001000L /* pipeline timing information */
 
 /*  The main trace file record types are memory and basic block records. */
 #define is_mem(tr)    ((0b1000000L & tr_code(tr)) == \

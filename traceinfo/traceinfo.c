@@ -38,61 +38,48 @@ static inline void status_report()
 }
 
 
-static struct fifo_t verify;
-
-void do_nothing(long pc, int checking)
+void do_nothing(long pc)
 {
   long next_report =report_frequency;
-  int ptr =0;			/* check pc circular buffer */
-  for (uint64_t tr=fifo_get(&trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(&trace_buffer)) {
-    /* must come first, but rare and branch prediction will skip */
-    if (is_frame(tr)) {
-      hart = tr_number(tr);
-      pc = tr_pc(tr);
-      ++segments;
-      continue;
-    }
+  int withregs =0;
+  for (uint64_t tr=fifo_get(&trace_buffer); tr!=tr_eof; tr=fifo_get(&trace_buffer)) {
     if (is_mem(tr)) {
       continue;
     }
-    long epc = pc + tr_number(tr);
-    while (pc < epc) {
-      if (checking) {
-#define NUM  32
-	static long circle[NUM];
-	long vpc = fifo_get(&verify);
-	while (vpc == 0L)	/* skip over breakpoints */
-	  vpc = fifo_get(&verify);
-	if (pc != vpc) {
-	  char buf[1024];
-	  for (int i=0; i<NUM; i++) {
-	    long tpc = circle[(ptr+i)%NUM];
-	    print_pc(tpc, stdout);
-	    print_insn(tpc, stdout);
+    if (is_bbk(tr)) {
+      if (withregs) {
+	long epc = pc + tr_number(tr);
+	while (pc < epc) {
+	  const struct insn_t* p = insn(pc);
+	  if (p->op_rd != NOREG) {
+	    long val = fifo_get(&trace_buffer);
 	  }
-	  print_pc(pc, stdout);
-	  print_insn(pc, stdout);
-	  printf("PC MISMATCH, expecting\n");
-	  print_pc(vpc, stdout);
-	  print_insn(vpc, stdout);
-	  exit(-1);
+	  pc += shortOp(p->op_code) ? 2 : 4;
 	}
-	circle[ptr] = pc;
-	ptr = (ptr+1) % NUM;
       }
-      /* advance to next instruction */
-      const struct insn_t* p = insn(pc);
-      pc += shortOp(p->op_code) ? 2 : 4;
-      if (++insn_count >= next_report) {
+      else
+	pc += tr_number(tr);
+      if (is_goto(tr))
+	pc = tr_pc(tr);
+      continue;
+    }
+    if (is_frame(tr)) {
+      hart = tr_number(tr);
+      pc = tr_pc(tr);
+      withregs = (tr & tr_has_reg) != 0;
+      fprintf(stderr, "Frame(pc=%d, mem=%d, reg=%d), hart#=%d, pc=0x%lx\n", (tr&tr_has_pc)!=0, (tr&tr_has_mem)!=0, withregs, hart, pc);
+      ++segments;
+      continue;
+    }
+    if (tr_code(tr) == tr_icount) {
+      insn_count = tr_value(tr);
+      if (insn_count >= next_report) {
 	status_report();
 	next_report += report_frequency;
       }
+      continue;
     }
-    if (is_goto(tr)) {
-      pc = tr_pc(tr);
-      if (is_frame(tr))
-	hart = tr_number(tr);
-    }
+    /* ignore other trace record types */
   }
 }
 
@@ -201,10 +188,10 @@ void print_listing(long pc)
       hart = tr_number(tr);
       pc = tr_pc(tr);
       withregs = (tr & tr_has_reg) != 0;
+      fprintf(stderr, "Frame(pc=%d, mem=%d, reg=%d, timing=%d), hart#=%d, pc=0x%lx\n", (tr&tr_has_pc)!=0, (tr&tr_has_mem)!=0, withregs, (tr&tr_has_timing)!=0, hart, pc);
       continue;
     }
     /* ignore other trace record types */
-    tr_print(tr, stderr);
   }
 }
 
@@ -233,7 +220,6 @@ int main(int argc, const char** argv)
   static int trace =0;
   static const char* see_range =0;
   
-  static const char* veri_path =0;
   static const char* report =0;
   static const char* paraver =0;
   static const char* cutoff =0;
@@ -244,7 +230,6 @@ int main(int argc, const char** argv)
        { "--trace",	.f = &trace		},
        { "--see=",	.v = &see_range		},
        { "--report=",	.v = &report		},
-       { "--verify=",	.v = &veri_path		},
        { "--paraver=",	.v = &paraver		},
        { "--cutoff=",	.v = &cutoff		},
        { 0					}
@@ -278,13 +263,8 @@ int main(int argc, const char** argv)
     }
     print_timing_trace(begin, end);
   }
-  else {
-    if (veri_path)
-      fifo_init(&verify, veri_path, 1);
-    do_nothing(entry, veri_path!=0);
-    if (veri_path)
-      fifo_fini(&verify);
-  }
+  else
+    do_nothing(entry);
   trace_fini(&trace_buffer);
   fprintf(stderr, "\n%ld Instructions in trace\n", insn_count);
   return 0;

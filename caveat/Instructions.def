@@ -57,7 +57,7 @@
  
 @                         100     0     00001        00000 10		C.RET		rd			bC,RA			RETURN(IR( rd).l, 2)
 @                         100     0     rd[5]        00000 10		C.JR		rd			bC,rd			GOTO(  IR( rd).l, 2)
-@                         100     1     00000        00000 10		C.EBREAK	-			bC,RA			EBREAK(0L, 2)
+@                         100     1     00000        00000 10		C.EBREAK	-			bC,RA			EBRK(0L, 2)
 @                         100     1     rd[5]        00000 10		C.JALR		rd,rs1			bC,RA,rd		CALL(  IR(rs1).l, 2)
 
 @                         100     0     rd[5]      crs2[5] 10		C.MV		rd,rs2			iC,rd,-,crs2		IR(rd).l =            IR(rs2).l
@@ -278,15 +278,15 @@
 # Special Instructions
 
 @ 00000000000 0        00000 000         00000        11100 11		ECALL		-			x,-		ECALL(4)
-@ {10:0}      1        00000 000         00000        11100 11		EBREAK		constant		x,-		EBREAK(constant, 4)
+@ {10:0}      1        00000 000         00000        11100 11		EBREAK		constant		x,-		EBRK(constant, 4)
 
-@ {11:0}             rs1[5] 001         rd[5]        11100 11		CSRRW		rd,rs1,constant		x,rd,rs1	CSRACTION(constant, 4)
-@ {11:0}             rs1[5] 010         rd[5]        11100 11		CSRRS		rd,rs1,constant		x,rd,rs1	CSRACTION(constant,4)
-@ {11:0}             rs1[5] 011         rd[5]        11100 11		CSRRC		rd,rs1,constant		x,rd,rs1	CSRACTION(constant, 4)
+@ {11:0}             rs1[5] 001         rd[5]        11100 11		CSRRW		rd,rs1,constant		x,rd,rs1	DOCSR(constant, 4)
+@ {11:0}             rs1[5] 010         rd[5]        11100 11		CSRRS		rd,rs1,constant		x,rd,rs1	DOCSR(constant,4)
+@ {11:0}             rs1[5] 011         rd[5]        11100 11		CSRRC		rd,rs1,constant		x,rd,rs1	DOCSR(constant, 4)
 
-@ {11:0}            {16:12} 101         rd[5]        11100 11		CSRRWI		rd,constant		x,rd		CSRACTION(constant & 0xfff, 4)
-@ {11:0}            {16:12} 110         rd[5]        11100 11		CSRRSI		rd,constant		x,rd		CSRACTION(constant & 0xfff, 4)
-@ {11:0}            {16:12} 111         rd[5]        11100 11		CSRRCI		rd,constant		x,rd		CSRACTION(constant & 0xfff, 4)
+@ {11:0}            {16:12} 101         rd[5]        11100 11		CSRRWI		rd,constant		x,rd		DOCSR(constant & 0xfff, 4)
+@ {11:0}            {16:12} 110         rd[5]        11100 11		CSRRSI		rd,constant		x,rd		DOCSR(constant & 0xfff, 4)
+@ {11:0}            {16:12} 111         rd[5]        11100 11		CSRRCI		rd,constant		x,rd		DOCSR(constant & 0xfff, 4)
 
 @ 00010 {1:0}  00000 rs1[5] 010         rd[5]        01011 11		LR.W		rd,rs1			rA,rd,rs1	LR_W(rd, rs1)
 @ 00010 {1:0}  00000 rs1[5] 011         rd[5]        01011 11		LR.D		rd,rs1			rA,rd,rs1	LR_L(rd, rs1)

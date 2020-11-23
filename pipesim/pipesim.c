@@ -56,6 +56,7 @@ uint64_t mem_queue[tr_memq_len];
 
 
 struct statistics_t stats;
+long frame_header;
 
 
 void status_report(struct statistics_t* stats)
@@ -123,7 +124,8 @@ int main(int argc, const char** argv)
   }
   init_cache(&dcache, lg_line_size, lg_rows_per_way, fsm, !(wflag && wflag[0]=='t'));
   //  show_cache(&dcache);
-   long read_latency = dpenalty ? atoi(dpenalty) : DEFAULT_DPENALTY;
+  long read_latency = dpenalty ? atoi(dpenalty) : DEFAULT_DPENALTY;
+  frame_header = tr_has_mem | (visible ? tr_has_timing : 0);
   if (wflag) {
     if (wflag[0] == 'b')
       slow_pipe(entry, read_latency, report_frequency, &dcache_writeback);

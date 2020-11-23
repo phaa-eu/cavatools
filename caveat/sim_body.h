@@ -26,9 +26,9 @@ inline float64_t NF64(int rn)  { float64_t x=F64(rn); x.v^=F64_SIGN; return x; }
 #define JUMP(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); trace_bbk(tr_jump,   tgt); PC=tgt; break; }
 #define GOTO(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); trace_bbk(tr_branch, tgt); PC=tgt; break; }
 
-#define EBREAK(num, sz)     { cpu->state.mcause= 3;  cpu->state.mtval=num;                                                     continue; }
-#define CSRACTION(num, sz)  { cpu->state.mcause=14;  cpu->state.mtval=num;  advance(sz);  trace_bbk(tr_csr,               0L); continue; }
-#define ECALL(sz)           { cpu->state.mcause= 8;                         advance(sz);  trace_bbk(tr_ecall, cpu->reg[17].l); continue; }
+#define EBRK(num, sz)   { cpu->state.mcause= 3; cpu->state.mtval=num;                                                         continue; }
+#define ECALL(sz)       { cpu->state.mcause= 8; cpu->state.mtval=0;   INCPC(sz); trace_bbk(tr_ecall, cpu->reg[17].l); PC-=sz; continue; }
+#define DOCSR(num, sz)  { cpu->state.mcause=14; cpu->state.mtval=num; INCPC(sz); trace_bbk(tr_csr,               0L); PC-=sz; continue; }
 
 // Memory reference instructions
 #define LOAD_B( a, sz)  ( trace_mem(tr_read1, a), *((          char*)(a)) )

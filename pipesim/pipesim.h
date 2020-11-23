@@ -19,6 +19,7 @@ struct statistics_t {
 };
 
 extern struct statistics_t stats;
+extern long frame_header;
 
 extern struct cache_t dcache;
 extern struct fifo_t trace_buffer;
