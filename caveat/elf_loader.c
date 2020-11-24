@@ -27,21 +27,12 @@
 
 
 
-#define RISCV_PGSHIFT 12
-#define RISCV_PGSIZE (1 << RISCV_PGSHIFT)
-
 #define MEM_END		0x60000000L
 #define STACK_SIZE	0x01000000L
 #define BRK_SIZE	0x01000000L
 
-static struct Info_t {
-  long phnum;
-  long phent;
-  size_t phdr;
-  size_t phdr_size;
-  size_t entry;
-  size_t stack_top;
-} current;
+struct pinfo_t current;
+
 
 static long phdrs[128];
 
@@ -49,8 +40,6 @@ static char* strtbl;
 static Elf64_Sym* symtbl;
 static long num_syms;
 
-#define ROUNDUP(a, b) ((((a)-1)/(b)+1)*(b))
-#define ROUNDDOWN(a, b) ((a)/(b)*(b))
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -96,7 +85,7 @@ Addr_t load_elf_binary( const char* file_name, int include_data )
 {
   current.phdr = (uint64_t)phdrs;
   current.phdr_size = sizeof(phdrs);
-  struct Info_t* info = &current;
+  struct pinfo_t* info = &current;
   int flags = MAP_FIXED | MAP_PRIVATE;
   ssize_t ehdr_size;
   size_t phdr_size;
@@ -133,12 +122,12 @@ Addr_t load_elf_binary( const char* file_name, int include_data )
 
   info->entry = eh.e_entry + bias;
   for (int i = eh.e_phnum - 1; i >= 0; i--) {
-    //    printf("p_vaddr=%lx, p_filesz=%lx, p_memsz=%lx, p_flags=%x\n",
-    //	   ph[i].p_vaddr, ph[i].p_filesz, ph[i].p_memsz, ph[i].p_flags);
     quitif(ph[i].p_type==PT_INTERP, "Not a statically linked ELF program");
     if(ph[i].p_type == PT_LOAD && ph[i].p_memsz) {
       uintptr_t prepad = ph[i].p_vaddr % RISCV_PGSIZE;
       uintptr_t vaddr = ph[i].p_vaddr + bias;
+      if (vaddr + ph[i].p_memsz > info->brk_min)
+        info->brk_min = vaddr + ph[i].p_memsz;
       int flags2 = flags | (prepad ? MAP_POPULATE : 0);
       int prot = get_prot(ph[i].p_flags);
       void* rc = mmap((void*)(vaddr-prepad), ph[i].p_filesz + prepad, prot | PROT_WRITE, flags2, file, ph[i].p_offset - prepad);
@@ -150,6 +139,7 @@ Addr_t load_elf_binary( const char* file_name, int include_data )
       if (ph[i].p_memsz > mapped)
         dieif(mmap((void*)(vaddr+mapped), ph[i].p_memsz - mapped, prot, flags|MAP_ANONYMOUS, 0, 0) != (void*)(vaddr+mapped), "Could not mmap()\n");      
     }
+    info->brk_max = info->brk_min + BRK_SIZE;
   }
 
   /* Read section header string table. */

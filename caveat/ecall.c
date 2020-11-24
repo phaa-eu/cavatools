@@ -23,15 +23,35 @@
 #include "riscv-opc.h"
 #include "ecall_nums.h"
 
-//#define DEBUG
+#define DEBUG
+
+
+static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
+{
+  Addr_t newbrk = addr;
+  if (addr < info->brk_min)
+    newbrk = info->brk_min;
+  else if (addr > info->brk_max)
+    newbrk = info->brk_max;
+
+  if (info->brk == 0)
+    info->brk = ROUNDUP(info->brk_min, RISCV_PGSIZE);
+
+  uintptr_t newbrk_page = ROUNDUP(newbrk, RISCV_PGSIZE);
+  if (info->brk > newbrk_page)
+    munmap((void*)newbrk_page, info->brk - newbrk_page);
+  else if (info->brk < newbrk_page)
+    assert(mmap((void*)info->brk, newbrk_page - info->brk, -1, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0) == (void*)info->brk);
+  info->brk = newbrk_page;
+
+  return newbrk;
+}
+
 
 int proxy_ecall( struct core_t* cpu )
 {
+  static long previous =0;
   assert(insn(cpu->pc)->op_code == Op_ecall);
-  
-#ifdef DEBUG
-  fprintf(stderr, "System call ra=%lx ", cpu->reg[RA].l);
-#endif
   long rvnum = cpu->reg[17].l;
   if (rvnum < 0 || rvnum >= rv_syscall_entries) {
     fprintf(stderr, "%ld out of range (%lx, %lx, %lx, %lx, %lx, %lx)\n",
@@ -40,14 +60,16 @@ int proxy_ecall( struct core_t* cpu )
   }
   long x86num = rv_to_x64_syscall[rvnum].x64num;
 #ifdef DEBUG
-  fprintf(stderr, "%ld:%ld %s(%lx, %lx, %lx, %lx, %lx, %lx)",
-          rvnum, x86num, rv_to_x64_syscall[rvnum].name, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+  fprintf(stderr, "%10ld: %s[%ld:%ld](%lx, %lx, %lx, %lx, %lx, %lx)", cpu->counter.insn_executed-previous,
+	  rv_to_x64_syscall[rvnum].name, rvnum, x86num,
+	  cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+  previous = cpu->counter.insn_executed;
 #endif
-
-  //  if (x86num != 12)
-  //    fprintf(stderr, "\rsyscall %ld %s(%ld, %ld)\n", x86num, rv_to_x64_syscall[rvnum].name, cpu->reg[10].l, cpu->reg[11].l);
-
   switch (x86num) {
+
+  case 12:  /* sys_brk */
+    cpu->reg[10].l = emulate_brk(cpu->reg[10].l, &current);
+    break;
 
   case 60:  /* sys_exit */
   case 231: /* sys_exit_group */\
@@ -62,7 +84,6 @@ int proxy_ecall( struct core_t* cpu )
     abort();
 
   case 96:  /* gettimeofday */
-    //#define PRETEND_MIPS 100
 #define PRETEND_MIPS 1000
 #ifdef PRETEND_MIPS
     {

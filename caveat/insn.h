@@ -7,6 +7,13 @@ extern "C" {
 #endif
 
   
+#define RISCV_PGSHIFT 12
+#define RISCV_PGSIZE (1 << RISCV_PGSHIFT)
+
+#define ROUNDUP(a, b) ((((a)-1)/(b)+1)*(b))
+#define ROUNDDOWN(a, b) ((a)/(b)*(b))
+
+  
 typedef long Addr_t;
 #define GEN_SEGV  (*((char*)0) = 0)
 
@@ -63,6 +70,21 @@ struct insnSpace_t {
   Addr_t base, bound;
 };
 
+
+/*  Process information  */
+struct pinfo_t {
+  long phnum;
+  long phent;
+  long phdr;
+  long phdr_size;
+  Addr_t entry;
+  Addr_t stack_top;
+  Addr_t brk;
+  Addr_t brk_min;
+  Addr_t brk_max;
+};
+
+extern struct pinfo_t current;
   
 
 extern struct insnSpace_t insnSpace;
