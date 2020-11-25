@@ -7,27 +7,22 @@ _dummy := $(shell mkdir -p $R/include/cava)
 
 # Object files for libcava.a
 aobj := elf_loader.o insn.o
+aobj := $(addprefix $B/,$(aobj))
+
+# Object files for caveat not in libcava.a
+cobj := main.o core.o fast_sim.o slow_sim.o ecall.o
+cobj := $(addprefix $B/,$(cobj))
 
 # Include files for libcava.a
 incf := opcodes.h insn.h caveat.h shmfifo.h
 
-# Object files for caveat not in libcava.a
-cobj := main.o core.o fast_sim.o slow_sim.o ecall.o
+# Libraries
+libs := $R/lib/softfloat.a -lrt -lpthread -lm
 
 # Compiler flags
-cflags := -I../include -I$R/include -I$R/include/softfloat -g -O3
-#cflags := -g -O3
-
-CFLAGS := $(cflags)
-CXXFLAGS := $(cflags)
-FASTFLAGS := $(cflags) -Ofast
-
-LIBS := $R/lib/softfloat.a -lrt -lpthread -lm
+CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O3
 LDFLAGS	:= -Wl,-Ttext=70000000
 
-# Text substitutions
-aobj := $(addprefix $B/,$(aobj))
-cobj := $(addprefix $B/,$(cobj))
 
 #$(info $$aobj is [${aobj}])
 #$(info $$cobj is [${cobj}])
@@ -51,7 +46,7 @@ clean:
 # Emulator and library
 
 $B/caveat : $(cobj) $B/libcava.a
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(libs)
 
 $B/libcava.a : $(aobj)
 	ar rcs $@ $^
@@ -66,8 +61,8 @@ $B/ecall.o:  core.h ecall_nums.h
 $B/insn.o:  decode_insn.h disasm_insn.h
 $B/trace.o:  fifo.h
 
-$B/%_sim.o:  %_sim.c
-	$(CC) $(FASTFLAGS) -o $@ -c $<
+$B/fast_sim.o:  fast_sim.c
+	$(CC) $(CFLAGS) -Ofast -o $@ -c $<
 
 $B/core.o:  core.c core.h
 	$(CC) $(CFLAGS) -o $@ -c $<

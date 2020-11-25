@@ -46,7 +46,7 @@
 
 #include "ecall_nums.h"
 
-#define DEBUG
+//#define DEBUG
 
 
 static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
