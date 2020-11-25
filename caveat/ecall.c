@@ -1,9 +1,11 @@
+#include <linux/version.h>
+#include <unistd.h>
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
 #include <errno.h>
-#include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <math.h>
@@ -20,11 +22,27 @@
 #include "insn.h"
 #include "shmfifo.h"
 #include "core.h"
+
 #include "riscv-opc.h"
 
 #define __NR_arch_specific_syscall	244	/* in RISC-V but not X86_64 */
 #define __NR_syscalls			436	/* in RISC-V but not X86_64 */
 #define __NR_getmainvars		436	/* in RISC-V but not X86_64 */
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
+
+#define __NR_pidfd_send_signal		424
+#define __NR_open_tree			428
+#define __NR_move_mount			429
+#define __NR_fsopen			430
+#define __NR_fsconfig			431
+#define __NR_fsmount			432
+#define __NR_fspick			433
+#define __NR_pidfd_open			434
+#define __NR_clone3			435
+
+#endif
+
 
 #include "ecall_nums.h"
 
@@ -72,9 +90,11 @@ int proxy_ecall( struct core_t* cpu )
 #endif
   switch (x86num) {
 
+#if 0
   case 12:  /* sys_brk */
     cpu->reg[10].l = emulate_brk(cpu->reg[10].l, &current);
     break;
+#endif
 
   case 60:  /* sys_exit */
   case 231: /* sys_exit_group */\

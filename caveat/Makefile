@@ -1,8 +1,5 @@
-
-
-
 # Path where things should be installed
-R = /home/peterhsu
+R = $(HOME)
 B = build
 
 _dummy := $(shell mkdir -p $B)

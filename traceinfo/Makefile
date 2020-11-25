@@ -1,6 +1,5 @@
-
 # Path where things should be installed
-R = /home/peterhsu
+R = $(HOME)
 
 CFLAGS   = -I$R/include/cava -g -O3
 LIBS     = $R/lib/libcava.a -lrt -lpthread
