@@ -21,6 +21,11 @@
 #include "shmfifo.h"
 #include "core.h"
 #include "riscv-opc.h"
+
+#define __NR_arch_specific_syscall	244	/* in RISC-V but not X86_64 */
+#define __NR_syscalls			436	/* in RISC-V but not X86_64 */
+#define __NR_getmainvars		436	/* in RISC-V but not X86_64 */
+
 #include "ecall_nums.h"
 
 #define DEBUG
