@@ -1,6 +1,4 @@
-#include <linux/version.h>
 #include <unistd.h>
-
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -22,28 +20,7 @@
 #include "insn.h"
 #include "shmfifo.h"
 #include "core.h"
-
 #include "riscv-opc.h"
-
-#define __NR_arch_specific_syscall	244	/* in RISC-V but not X86_64 */
-#define __NR_syscalls			436	/* in RISC-V but not X86_64 */
-#define __NR_getmainvars		436	/* in RISC-V but not X86_64 */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
-
-#define __NR_pidfd_send_signal		424
-#define __NR_open_tree			428
-#define __NR_move_mount			429
-#define __NR_fsopen			430
-#define __NR_fsconfig			431
-#define __NR_fsmount			432
-#define __NR_fspick			433
-#define __NR_pidfd_open			434
-#define __NR_clone3			435
-
-#endif
-
-
 #include "ecall_nums.h"
 
 //#define DEBUG
@@ -77,19 +54,26 @@ int proxy_ecall( struct core_t* cpu )
   assert(insn(cpu->pc)->op_code == Op_ecall);
   long rvnum = cpu->reg[17].l;
   if (rvnum < 0 || rvnum >= rv_syscall_entries) {
-    fprintf(stderr, "%ld out of range (%lx, %lx, %lx, %lx, %lx, %lx)\n",
-            rvnum, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+  no_mapping:
+    fprintf(stderr, "RISC-V system call %ld has no mapping to host system\n", rvnum);
+    fprintf(stderr, "Arguments(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
+            cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
     abort();
   }
-  long x86num = rv_to_x64_syscall[rvnum].x64num;
+  long sysnum = rv_to_host[rvnum].sysnum;
 #ifdef DEBUG
   fprintf(stderr, "%10ld: %s[%ld:%ld](%lx, %lx, %lx, %lx, %lx, %lx)", cpu->counter.insn_executed-previous,
-	  rv_to_x64_syscall[rvnum].name, rvnum, x86num,
+	  rv_to_host[rvnum].name, rvnum, sysnum,
 	  cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
   previous = cpu->counter.insn_executed;
 #endif
-  switch (x86num) {
-
+  switch (sysnum) {
+  case -1:
+    goto no_mapping;
+  case -2:
+    fprintf(stderr, "RISCV-V system call %s(#%ld) not supported on host system\n", rv_to_host[rvnum].name, sysnum);
+    abort();
+    
 #if 0
   case 12:  /* sys_brk */
     cpu->reg[10].l = emulate_brk(cpu->reg[10].l, &current);
@@ -137,7 +121,7 @@ int proxy_ecall( struct core_t* cpu )
 
   default:
   default_case:
-    cpu->reg[10].l = syscall(x86num, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+    cpu->reg[10].l = syscall(sysnum, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
     break;
   }
 #ifdef DEBUG

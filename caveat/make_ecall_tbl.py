@@ -13,6 +13,7 @@ RVpattern = re.compile(r'#define\s+TARGET_NR_(\S+)\s+(\d+)')
 # 'asm/unistd_64.h' file to get the correct mapping.
 
 ecall = {}
+enames = {}
 highest = -1
 rv = open('../include/pk-syscall.h', 'r')
 for line in rv:
@@ -21,6 +22,7 @@ for line in rv:
         name, num = m.groups()
         num = int(num)
         ecall[num] = name
+        enames[name] = num
         highest = max(num, highest)
 rv.close()
 
@@ -33,23 +35,30 @@ for line in rv:
         if num in ecall and name != ecall[num]:
             print('libc {:s} override pk {:s} ecall'.format(name, ecall[num]))
         ecall[num] = name
+        enames[name] = num
         highest = max(num, highest)
 
-sf = open('ecall_nums.h', 'w')
-sf.write("""
-const struct {
-    int x64num;
+en = open('ecall_nums.h', 'w')
+
+for name in sorted(enames.keys()):
+    en.write('#ifndef __NR_{:s}\n'.format(name))
+    en.write('#define __NR_{:s}  -2\n'.format(name))
+    en.write('#endif\n')
+
+en.write("""\n
+static const struct {
+    int sysnum;
     const char*name;
-} rv_to_x64_syscall[] = {
+} rv_to_host[] = {
 """)
 
 for n in range(0, highest+1):
     if n in ecall:
         name = ecall[n]
-        sf.write('    /* {:5d} */ {{ __NR_{:s}, "{:s}" }},\n'.format(n, name, name))
+        en.write('    /* {:5d} */ {{ __NR_{:s}, "{:s}" }},\n'.format(n, name, name))
     else:
-        sf.write('    /* {:5d} */ {{ -1, "UNKNOWN" }},\n'.format(n))
+        en.write('    /* {:5d} */ {{ -1, 0 }},\n'.format(n))
     
-sf.write('};\n\n')
-sf.write('const int rv_syscall_entries = {:d};\n\n'.format(highest+1))
-sf.close()
+en.write('};\n\n')
+en.write('const int rv_syscall_entries = {:d};\n\n'.format(highest+1))
+en.close()
