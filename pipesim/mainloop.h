@@ -22,11 +22,14 @@
       continue;
     }
     if (is_bbk(tr)) {
-      long epc = pc + tr_number(tr);
+      long epc = pc + tr_delta(tr);
       cursor = 0;			/* read list of memory addresses */
       while (pc < epc) {
 	const struct insn_t* p = insn(pc);
 	/* scoreboarding: advance time until source registers not busy */
+#ifdef SLOW
+	long stall_begin = now;
+#endif
 	now = max(now, busy[p->op_rs1]);
 	now = max(now, busy[p->op.rs2]);
 	if (threeOp(p->op_code))
@@ -46,8 +49,10 @@
 	busy[p->op_rd] = ready + insnAttr[p->op_code].latency;
 	busy[NOREG] = 0;	/* in case p->op_rd not valid */
 #ifdef SLOW
-	if (visible)
-	  issue_insn(pc, p, now);
+	if (visible && now-stall_begin > 0) {
+	  fifo_put(&l2, trM(tr_stall, stall_begin));
+	  fifo_put(&l2, trP(tr_issue, now-stall_begin, pc));
+	}
 #endif
 	now += 1;		/* single issue machine */
 	pc += shortOp(p->op_code) ? 2 : 4;

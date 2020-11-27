@@ -56,15 +56,6 @@ long dcache_writeback(long tr, const struct insn_t* p, long available)
 }
 
 
-static long last_issue =0;	/* time last instruction issued */
-
-static inline void issue_insn(long pc, const struct insn_t* p, long now)
-{
-  fifo_put(&l2, trP(tr_issue, now-last_issue, pc));
-  last_issue = now;
-}
-
-
 void slow_pipe(long pc, long read_latency, long next_report,
 	       long (*model_dcache)(long tr, const struct insn_t* p, long available))
 

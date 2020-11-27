@@ -24,7 +24,8 @@ nnnnnnnnnn......p.......p.......p.......p.......p.......pccccccc  P format
 #define tr_code(tr)     ((uint64_t)(tr) & 0x000000000000007fL)
 #define tr_value(tr)   ( ( int64_t)(tr)                        >>  7)
 #define tr_pc(tr)      (((uint64_t)(tr) & 0x003fffffffffff80L) >>  6)
-#define tr_number(tr)  ( (uint64_t)(tr)                        >> 54)
+#define tr_delta(tr)   ( (uint64_t)(tr)                        >> 54)
+#define tr_number(tr)  (((uint64_t)(tr) & 0x003fffffffffff80L) >>  7)
 
 /*  Trace file is broken into frames.  Each frame comes from a single HART.
     Frame records are P-format with number=hart# and pc=begining value. */
@@ -115,10 +116,11 @@ nnnnnnnnnn......p.......p.......p.......p.......p.......pccccccc  P format
     there the 64-bit values have no opcode field.  */
 
 /* Tracing instruction issue cycle time */
-#define tr_issue	0b0010000L		/* P-format */
+#define tr_stall	0b0010000L		/* begin stall cycle time (M-fmt) */
+#define tr_issue	0b0010001L		/* issue after number cycles (P-fmt) */
 
 /* Periodical instruction execution counter to help synchronize cache simulator. */ 
-#define tr_icount	0b0010001L 		/* M-format */
+#define tr_icount	0b0010010L 		/* M-format */
 
 
 
@@ -139,11 +141,15 @@ static inline uint64_t tr_print(uint64_t tr, FILE* f)
   if (is_mem(tr))
     fprintf(f, "MemOp: code=%02lx, w=%d, sz=%ldB, addr=0x%lx\n", tr_code(tr), is_write(tr), tr_size(tr), tr_value(tr));
   else if (is_goto(tr))
-    fprintf(f, "GotoOp: code=%02lx, number=%ld, pc=0x%lx\n", tr_code(tr), tr_number(tr), tr_pc(tr));
+    fprintf(f, "GotoOp: code=%02lx, delta=%ld, pc=0x%lx\n", tr_code(tr), tr_delta(tr), tr_pc(tr));
   else if (is_bbk(tr))
-    fprintf(f, "BbkOp: code=%02lx, number=%ld\n", tr_code(tr), tr_number(tr));
+    fprintf(f, "BbkOp: code=%02lx, delta=%ld\n", tr_code(tr), tr_delta(tr));
+  else if (tr_code(tr) == tr_stall)
+    fprintf(f, "Stall: number=%ld\n", tr_number(tr));
+  else if (tr_code(tr) == tr_issue)
+    fprintf(f, "after=%ld, pc=0x%lx\n", tr_delta(tr), tr_pc(tr));
   else
-    fprintf(f, "OtherOp=%016lx, code=%02lx, number=%ld, pc=0x%lx\n", tr, tr_code(tr), tr_number(tr), tr_pc(tr));
+    fprintf(f, "OtherOp=%016lx, code=%02lx, delta=%ld, pc=0x%lx\n", tr, tr_code(tr), tr_delta(tr), tr_pc(tr));
   return tr;
 }
 

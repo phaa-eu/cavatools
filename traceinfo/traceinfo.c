@@ -48,7 +48,7 @@ void do_nothing(long pc)
     }
     if (is_bbk(tr)) {
       if (withregs) {
-	long epc = pc + tr_number(tr);
+	long epc = pc + tr_delta(tr);
 	while (pc < epc) {
 	  const struct insn_t* p = insn(pc);
 	  if (p->op_rd != NOREG) {
@@ -58,13 +58,13 @@ void do_nothing(long pc)
 	}
       }
       else
-	pc += tr_number(tr);
+	pc += tr_delta(tr);
       if (is_goto(tr))
 	pc = tr_pc(tr);
       continue;
     }
     if (is_frame(tr)) {
-      hart = tr_number(tr);
+      hart = tr_delta(tr);
       pc = tr_pc(tr);
       withregs = (tr & tr_has_reg) != 0;
       fprintf(stderr, "Frame(pc=%d, mem=%d, reg=%d), hart#=%d, pc=0x%lx\n", (tr&tr_has_pc)!=0, (tr&tr_has_mem)!=0, withregs, hart, pc);
@@ -83,61 +83,51 @@ void do_nothing(long pc)
   }
 }
 
-
-void print_timing_trace(long begin, long end)
+void print_paraver_trace(long begin, long end)
 {
-  if (pvr_cycles) {
-    time_t T = time(NULL);
-    struct tm tm = *localtime(&T);
-    fprintf(stdout, "#Paraver (%02d/%02d/%02d at %02d:%02d):%ld:1(1):1:1(1:1)\n",
-	    tm.tm_mday, tm.tm_mon+1, tm.tm_year, tm.tm_hour, tm.tm_min, pvr_cycles);
-  }
-  else {
-    fprintf(stdout, "Timing trace [%lx, %lx]\n", begin, end);
-  }
-  long previous_time = 0;
-  long cache_miss = 0;
+  time_t T = time(NULL);
+  struct tm tm = *localtime(&T);
+  fprintf(stdout, "#Paraver (%02d/%02d/%02d at %02d:%02d):%ld:1(1):1:1(1:1)\n",
+	  tm.tm_mday, tm.tm_mon+1, tm.tm_year, tm.tm_hour, tm.tm_min, pvr_cycles);
+  fprintf(stdout, "Paraver trace [%lx, %lx]\n", begin, end);
+  long now =0;
   for (uint64_t tr=fifo_get(&trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(&trace_buffer)) {
-    long pc, now;
-    if (tr_code(tr) == tr_issue) {
-      pc = tr_pc(tr);
-      now = previous_time + tr_number(tr);
-      if (begin <= pc && pc <= end) {
-	if (pvr_cycles) {
-	  if (now-previous_time > pvr_cutoff) {
-	    fprintf(stdout, "2:0:1:1:1:%ld:%d:%ld\n", previous_time,  0, pc);
-	    fprintf(stdout, "2:0:1:1:1:%ld:%d:%ld\n",           now, 10, pc);
-	  }
-	}
-	else {
-	  while (++previous_time < now)
-	    fprintf(stdout, "%18s%8ld:\n", "", previous_time);
-	  if (cache_miss) {
-	    fprintf(stdout, "[%016lx]", cache_miss);
-	    cache_miss = 0;
-	  }
-	  else
-	    fprintf(stdout, "%18s", "");
-	  fprintf(stdout, "%8ld: ", now);
-	  
-	  if (pvr_cycles)
-	    fprintf(stdout, "2:0:1:1:1:%ld:%ld:%ld\n", now, now-previous_time, pc);
-	  print_insn(tr_pc(tr), stdout);
-	}
+    if (tr_code(tr) == tr_stall) {
+      long stall_begin = tr_number(tr);
+      tr = fifo_get(&trace_buffer);
+      now = stall_begin + tr_delta(tr);
+      if (now >= pvr_cycles)
+	break;
+      if (tr_delta(tr) >= pvr_cutoff) {
+	long pc = tr_pc(tr);
+	fprintf(stdout, "2:0:1:1:1:%ld:0:%ld\n",  stall_begin, pc);
+	fprintf(stdout, "2:0:1:1:1:%ld:10:%ld\n", now,         pc);
       }
-      previous_time = now;
+      continue;
     }
-    else if (tr_code(tr) == tr_d1get) {
-      cache_miss = tr_value(tr);
-    }
-    if (pvr_cycles) {
+    if (is_mem(tr)) {
       if (is_dcache(tr))
 	fprintf(stdout, "2:0:1:1:1:%ld:%ld:%ld\n", now, tr_clevel(tr),    tr_value(tr));
       else if (is_icache(tr))
 	fprintf(stdout, "2:0:1:1:1:%ld:%ld:%ld\n", now, tr_clevel(tr)+10, tr_value(tr));
-      if (now >= pvr_cycles)
-	return;
+      /* we ignore individual loads and stores */
+      continue;
     }
+    if (is_frame(tr)) {
+      hart = tr_delta(tr);
+      int withtime = (tr & tr_has_timing) != 0;
+      fprintf(stderr, "Frame(pc=%d, mem=%d, reg=%d, timing=%d), hart#=%d, pc=0x%lx\n", (tr&tr_has_pc)!=0, (tr&tr_has_mem)!=0,  (tr&tr_has_reg)!=0, withtime, hart, tr_pc(tr));
+      if (!withtime) {
+	fprintf(stderr, "Cannot make paraver trace from trace without timing!\n");
+	exit(-1);
+      }
+      continue;
+    }
+    if (tr_code(tr) == tr_icount) {
+      insn_count = tr_value(tr);
+      continue;
+    }
+    tr_print(tr, stderr);
   }
 }
 
@@ -155,7 +145,7 @@ void print_listing(long pc)
     if (is_bbk(tr)) {
       static char buf[1024];
       char bing = is_goto(tr) ? '@' : '!';
-      long epc = pc + tr_number(tr);
+      long epc = pc + tr_delta(tr);
       long head = 0;
       while (pc < epc) {
 	const struct insn_t* p = insn(pc);
@@ -185,10 +175,15 @@ void print_listing(long pc)
       continue;
     }
     if (is_frame(tr)) {
-      hart = tr_number(tr);
+      hart = tr_delta(tr);
       pc = tr_pc(tr);
       withregs = (tr & tr_has_reg) != 0;
-      fprintf(stderr, "Frame(pc=%d, mem=%d, reg=%d, timing=%d), hart#=%d, pc=0x%lx\n", (tr&tr_has_pc)!=0, (tr&tr_has_mem)!=0, withregs, (tr&tr_has_timing)!=0, hart, pc);
+      int withpc = (tr & tr_has_pc) != 0;
+      fprintf(stderr, "Frame(pc=%d, mem=%d, reg=%d, timing=%d), hart#=%d, pc=0x%lx\n", withpc, (tr&tr_has_mem)!=0, withregs, (tr&tr_has_timing)!=0, hart, pc);
+      if (!withpc) {
+	fprintf(stderr, "Cannot print listing of trace without pc!\n");
+	exit(-1);
+      }
       continue;
     }
     /* ignore other trace record types */
@@ -246,8 +241,6 @@ int main(int argc, const char** argv)
   start_tick = clock();
   if (list)
     print_listing(entry);
-  else if (trace)
-    print_timing_trace(insnSpace.base, insnSpace.bound);
   else if (paraver || see_range) {
     if (paraver) {
       pvr_cycles = atoi(paraver);
@@ -261,7 +254,7 @@ int main(int argc, const char** argv)
       const char* comma = strchr(see_range, ',');
       end = atohex(comma+1);
     }
-    print_timing_trace(begin, end);
+    print_paraver_trace(begin, end);
   }
   else
     do_nothing(entry);
