@@ -64,6 +64,8 @@ static inline long lookup_cache( struct cache_t* c, long addr, int write, long w
     c->evictions++;		/* can conveniently point to your location */
     tag->dirty = 0;
   }
+  else if (c->evicted)
+    *c->evicted = 0;
   tag->addr = addr;
   tag->ready = when_miss_arrive;
   
