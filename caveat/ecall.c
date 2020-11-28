@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <errno.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <math.h>

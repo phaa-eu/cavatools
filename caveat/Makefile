@@ -6,7 +6,7 @@ _dummy := $(shell mkdir -p $B)
 _dummy := $(shell mkdir -p $R/include/cava)
 
 # Object files for libcava.a
-aobj := elf_loader.o insn.o
+aobj := elf_loader.o insn.o shmfifo.o
 aobj := $(addprefix $B/,$(aobj))
 
 # Object files for caveat not in libcava.a
