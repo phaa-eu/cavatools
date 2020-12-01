@@ -16,34 +16,38 @@
 #include "core.h"
 
 
-#define DEFAULT_REPORT_INTERVAL  1000000000
+#define DEFAULT_REPORT_INTERVAL  1000
 
 
 const char* tracing = 0;
-const char* listing = 0;
 struct core_t* cpu;
-struct fifo_t verify;
 
 
 int main(int argc, const char* argv[], const char* envp[])
 {
   static const char* func = 0;
   static const char* after = 0;
+  static const char* every = 0;
   static const char* report = 0;
   static int withregs = 0;
   static int quiet = 0;
-  static struct options_t flags[] =
-    {  { "--func=",	.v = &func		},
-       { "--trace=",	.v = &tracing		},
-       { "--withregs",	.f = &withregs		},
-       { "--verify=",	.v = &listing		},
-       { "--after=",	.v = &after		},
-       { "--report=",	.v = &report		},
-       { "--quiet",	.f = &quiet		},
-       { 0					}
+  static struct options_t opt[] =
+    {
+     { "--out=",	.v=&tracing,	.h="Create trace file/fifo =name [no trace]" },
+     { "--trace=",	.v=&tracing,	.h="synonym for --out" },
+     { "--func=",	.v=&func,	.h="Trace function =name [_start]" },       
+     { "--withregs",	.f=&withregs,	.h="Include register values in trace" },
+     { "--after=",	.v=&after,	.h="Start tracing function after =number calls [1]" },
+     { "--every=",	.v=&every,	.h="Trace only every =number times function is called [1]" },
+     { "--report=",	.v=&report,	.h="Progress report every =number million instructions [1000]" },
+     { "--quiet",	.f=&quiet,	.h="Don't report progress to stderr" },
+     { "-q",		.f=&quiet,	.h="short for --quiet" },
+     { 0 }
     };
-  int numopts = parse_options(flags, argv+1);
-  
+  int numopts = parse_options(opt, argv+1,
+			      "caveat [caveat-options] target-program [target-options]");
+  if (argc == numopts+1)
+    help_exit();
   Addr_t entry_pc = load_elf_binary(argv[1+numopts], 1);
   Addr_t stack_top = initialize_stack(argc-1-numopts, argv+1+numopts, envp);
   cpu = malloc(sizeof(struct core_t));
@@ -51,7 +55,7 @@ int main(int argc, const char* argv[], const char* envp[])
   init_core(cpu);
   cpu->pc = entry_pc;
   cpu->reg[SP].a = stack_top;
-  if (tracing || listing) {
+  if (tracing) {
     if (!func)
       func = "_start";
     if (! find_symbol(func, &cpu->params.breakpoint, 0)) {
@@ -63,26 +67,19 @@ int main(int argc, const char* argv[], const char* envp[])
   else
     cpu->params.breakpoint = 0;
   cpu->params.after = after ? atoi(after) : 0;
-  cpu->params.report_interval = report ? atoi(report) : DEFAULT_REPORT_INTERVAL;
+  cpu->params.every = every ? atoi(after) : 1;
+  cpu->params.skip = cpu->params.every-1;
+  cpu->params.report_interval = (report ? atoi(report) : DEFAULT_REPORT_INTERVAL) * 1000000;
   cpu->params.quiet = quiet;
   if (tracing) {
     cpu->params.has_flags = tr_has_pc | tr_has_mem;
     if (withregs)
       cpu->params.has_flags |= tr_has_reg;
     trace_init(&cpu->tb, tracing, 0);
-    //fifo_put(&cpu->tb, trP(cpu->params.has_flags, 0, entry_pc));
-    if (listing) {
-      fifo_init(&verify, listing, 0);
-      cpu->params.verify = 1;
-    }
   }
   int rc = run_program(cpu);
   if (tracing) {
     fifo_flush(&cpu->tb);
-    if (listing) {
-      fifo_put(&verify, cpu->holding_pc);
-      fifo_fini(&verify);
-    }
     trace_fini(&cpu->tb);
   }
   return rc;

@@ -27,7 +27,7 @@ extern struct fifo_t l2;
 extern int hart;
 extern uint64_t mem_queue[tr_memq_len];
 
-extern int visible;
+extern int timing;
 extern int quiet;
 
 

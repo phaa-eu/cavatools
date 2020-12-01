@@ -40,12 +40,13 @@ struct core_t {
   } counter;
 
   struct {
-    Addr_t breakpoint;
-    long after;
+    Addr_t breakpoint;		/* entrypoint of traced function */
+    long after;			/* countdown, negative=start tracing */
+    long every;			/* but only trace once per n-1 calls */
+    long skip;			/* skip until negative, reset to every */
     long report_interval;
     long has_flags;
     int quiet;
-    int verify;
   } params;
 };
 

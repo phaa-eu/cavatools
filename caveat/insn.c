@@ -129,12 +129,28 @@ void print_registers(struct reg_t reg[], FILE* f)
 }
 
 
+static struct options_t* opt_ptr;
+static const char* usage_ptr;
 
-int parse_options(struct options_t opt[], const char** argv)
+void help_exit()
 {
+  fprintf(stderr, "Usage: %s\n", usage_ptr);
+  fprintf(stderr, "Options:  [choice, default (1st) value]\n");
+  for (int i=0; opt_ptr[i].name; ++i)
+    fprintf(stderr, "  %-14s  %s\n", opt_ptr[i].name, opt_ptr[i].h);
+  exit(0);
+}
+  
+
+int parse_options(struct options_t opt[], const char** argv, const char* usage)
+{
+  opt_ptr = opt;
+  usage_ptr = usage;
   int numargs = 0;
   while (argv[numargs] && argv[numargs][0]=='-') {
     const char* arg = argv[numargs++];
+    if (strcmp(arg, "--help") == 0)
+      help_exit();
     for (int i=0; opt[i].name; ++i) {
       int len = strlen(opt[i].name);
       if (arg[len-1] == '=') {

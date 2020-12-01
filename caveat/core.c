@@ -60,11 +60,13 @@ int outer_loop( struct core_t* cpu )
       
     case 3:  /* Breakpoint */
       if (fast_mode) {
-	if (--cpu->params.after > 0) { /* not ready to trace yet */
+	if (--cpu->params.after >= 0 || /* not ready to trace yet */
+	    --cpu->params.skip >= 0) {  /* only trace every n call */
+	  cpu->holding_pc = 0L;	/* do not include current pc */
+	  cpu->params.skip = cpu->params.every-1;
 	  /* put instruction back and single step */
 	  decode_instruction(insn(cpu->pc), cpu->pc);
 	  cpu->state.mcause = 0;
-	  cpu->holding_pc = 0L;	/* do not include current pc */
 	  fast_sim(cpu, 1);
 	  /* reinserting breakpoint at subroutine entry */	  
 	  insert_breakpoint(cpu->params.breakpoint);

@@ -49,7 +49,7 @@
 	busy[p->op_rd] = ready + insnAttr[p->op_code].latency;
 	busy[NOREG] = 0;	/* in case p->op_rd not valid */
 #ifdef SLOW
-	if (visible && now-stall_begin > 0) {
+	if (timing && now-stall_begin > 0) {
 	  fifo_put(&l2, trM(tr_stall, stall_begin));
 	  fifo_put(&l2, trP(tr_issue, now-stall_begin, pc));
 	}
@@ -69,6 +69,13 @@
       cursor = 0;	       /* get ready to enqueue another list */
       continue;
     }
+    if (tr_code(tr) == tr_icount) {
+#ifdef SLOW
+      fifo_put(&l2, trM(tr_icount, insn_count));
+      fifo_put(&l2, trM(tr_cycles, now));
+#endif
+      continue;
+    }
     if (is_frame(tr)) {
       hart = tr_value(tr);
       pc = tr_pc(tr);
@@ -81,14 +88,6 @@
 #endif
       continue;
     }
-    if (tr_code(tr) == tr_icount) {
-#ifdef SLOW
-      fifo_put(&l2, trM(tr_icount, insn_count));
-#endif
-      continue;
-    }
-
-    
   }
   SAVE_STATS();
 }

@@ -119,8 +119,9 @@ nnnnnnnnnn......p.......p.......p.......p.......p.......pccccccc  P format
 #define tr_stall	0b0010000L		/* begin stall cycle time (M-fmt) */
 #define tr_issue	0b0010001L		/* issue after number cycles (P-fmt) */
 
-/* Periodical instruction execution counter to help synchronize cache simulator. */ 
-#define tr_icount	0b0010010L 		/* M-format */
+/* Periodical counters to help synchronize simulator components (M-format). */ 
+#define tr_icount	0b0010010L 		/* instructions executed */
+#define tr_cycles	0b0010011L 		/* pipeline cycles simulated */
 
 
 
@@ -161,13 +162,15 @@ static inline uint64_t tr_print(uint64_t tr, FILE* f)
 
 struct options_t {
   const char* name;
+  const char* h;
   union {
     const char** v;
     int* f;
   };
 };
 
-int parse_options( struct options_t opt[], const char** argv );
+void help_exit();
+int parse_options( struct options_t opt[], const char** argv, const char* usage );
 
 
 

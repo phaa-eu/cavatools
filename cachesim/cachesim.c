@@ -20,11 +20,10 @@
 #include "tagonlycache.h"
 
 
-#define REPORT_FREQUENCY  10000000
+#define REPORT_FREQUENCY  10
 
 #define RT_READ		0b0000000000000010L
 #define RT_WRITE	0b0000000000000100L
-#define RT_LDST		0b0000000000001000L
 #define RT_GETPUT	0b0000000000010000L
 #define RT_LEVEL_SHIFT	5
 #define RT_L0_CACHE	0b0000000000100000L
@@ -38,7 +37,8 @@
 
 struct fifo_t fifo;
 struct fifo_t outbuf;
-long report_frequency = REPORT_FREQUENCY;
+long report_frequency;
+int quiet =0;
 
 void allocError(uint64 n, char * thing, char * filename, int32 linenumber)
 {
@@ -46,56 +46,70 @@ void allocError(uint64 n, char * thing, char * filename, int32 linenumber)
 	 n, thing, linenumber, filename);
 }
 
+int strchrs(const char* str, const char* keys)
+{
+  for (char k=*keys++; k; k=*keys++)
+    if (strchr(str, k))
+      return 1;
+  return 0;
+}
+
 int main(int argc, const char** argv)
 {
   static const char* in_path =0;
   static const char* out_path =0;
-  static const char* ways = "2";
   static const char* lgline = "6";
-  static const char* lgsets = "6";
-  static const char* filter_flags =0;
+  static const char* ways = "8";
+  static const char* lgsets = "11";
+  static const char* flags =0;
   static const char* report =0;
-  static struct options_t flags[] =
-    {  { "--in=",	.v = &in_path		},
-       { "--out=",	.v = &out_path		},
-       { "--ways=",	.v = &ways		},
-       { "--line=",	.v = &lgline		},
-       { "--sets=",	.v = &lgsets		},
-       { "--filter=",	.v = &filter_flags	},
-       { "--report=",	.v = &report		},
+  static struct options_t opt[] =
+    {  { "--in=",	.v=&in_path,	.h="Trace file =name (from caveat, pipesim, or cachesim)" },
+       { "--line=",	.v=&lgline,	.h="Cache line size is 2^ =n bytes [6]" },
+       { "--ways=",	.v=&ways,	.h="Cache is =w ways set associativity [8]" },
+       { "--sets=",	.v=&lgsets,	.h="Cache has 2^ =n sets per way [11]" },
+       { "--sim=",	.v=&flags,	.h="Simulate all access =types [iIdD0123rRwW] default all" },
+       { "--out=",	.v=&out_path,	.h="Output next-level misses to trace =name [no next level]" },
+       { "--report=",	.v=&report,	.h="Progress report every =number million instructions [10]" },
+       { "--quiet",	.f=&quiet,	.h="Don't report progress to stderr" },
+       { "-q",		.f=&quiet,	.h="short for --quiet" },
        { 0					}
     };
-  int numopts = parse_options(flags, argv+1);
-  if (!in_path || !ways || !lgline || !lgsets) {
-    fprintf(stderr, "usage:  cachesim --in=shm --ways=numways, --line=log2LineLength, --sets=log2Lines\n");
-    fprintf(stderr, "--filter=[0123idrwIDRW] union of cache type/levels and load/store, default all\n");
-    exit(0);
-  }
+  int numopts = parse_options(opt, argv+1,
+			      "cachesim --in=trace [cachesim-options]"
+			      "\n\t--out=x can be another cachesim --in=x for multilevel simulation");
+  if (!in_path)
+    help_exit();
   cacheData* cache = (cacheData*)newCacheData();
   configureCache(cache, (char*)"Wilson's cache", atoi(ways), atoi(lgline), atoi(lgsets));
-
-  long insns=0, refs=0, misses=0;
-  if (report)
-    report_frequency = atoi(report);
+  long insns=0, now=0, refs=0, misses=0;
+  report_frequency = (report ? atoi(report) : REPORT_FREQUENCY) * 1000000;
   long next_report = report_frequency;
   long filter = 0L;
-  if (filter_flags) {
-    filter |= strchr(filter_flags, '0') ? RT_L0_CACHE : 0;
-    filter |= strchr(filter_flags, '1') ? RT_L1_CACHE : 0;
-    filter |= strchr(filter_flags, '2') ? RT_L3_CACHE : 0;
-    filter |= strchr(filter_flags, '3') ? RT_L3_CACHE : 0;
-    filter |= strchr(filter_flags, 'i') ? RT_INSN_CACHE : 0;
-    filter |= strchr(filter_flags, 'I') ? RT_INSN_CACHE : 0;
-    filter |= strchr(filter_flags, 'd') ? RT_DATA_CACHE : 0;
-    filter |= strchr(filter_flags, 'D') ? RT_DATA_CACHE : 0;
-    filter |= strchr(filter_flags, 'r') ? RT_LDST : 0;
-    filter |= strchr(filter_flags, 'R') ? RT_LDST : 0;
-    filter |= strchr(filter_flags, 'w') ? RT_LDST : 0;
-    filter |= strchr(filter_flags, 'W') ? RT_LDST : 0;
-    filter |= strchr(filter_flags, 'r') ? RT_READ : 0;
-    filter |= strchr(filter_flags, 'R') ? RT_READ : 0;
-    filter |= strchr(filter_flags, 'w') ? RT_WRITE : 0;
-    filter |= strchr(filter_flags, 'W') ? RT_WRITE : 0;
+  if (flags) {
+    if (strchrs(flags, "rR") && !strchrs(flags, "wW"))
+      filter |= RT_READ;
+    else if (strchrs(flags, "wW") && !strchrs(flags, "rR"))
+      filter |= RT_WRITE;
+    else
+      filter |= RT_READ | RT_WRITE;
+
+    if (strchrs(flags, "iI") && !strchrs(flags, "dD"))
+      filter |= RT_INSN_CACHE;
+    else if (strchrs(flags, "dD") && !strchrs(flags, "iI"))
+      filter |= RT_DATA_CACHE;
+    else
+      filter |= RT_INSN_CACHE | RT_DATA_CACHE;
+
+    filter |= RT_L0_CACHE;
+    if (!strchrs(flags, "0")) {
+      filter |= RT_L1_CACHE;
+      if (!strchrs(flags, "1")) {
+	filter |= RT_L2_CACHE;
+	if (!strchrs(flags, "2"))
+	  filter |= RT_L3_CACHE;
+      }
+    }
   }
   else
     filter = ~0L;		/* default simulate all references */
@@ -104,38 +118,51 @@ int main(int argc, const char** argv)
   if (out_path)
     fifo_init(&outbuf, out_path, 0);
   clock_t start_tick = clock();
+  
   for (uint64_t tr=fifo_get(&fifo); tr_code(tr)!=tr_eof; tr=fifo_get(&fifo)) {
+    
+    if (is_mem(tr)) {
+      long reftype;
+      if (is_ldst(tr))
+	reftype = is_write(tr) ? RT_WRITE : RT_READ;
+      else {
+	reftype = RT_GETPUT;
+	reftype |= (1L<<tr_clevel(tr)) << RT_LEVEL_SHIFT;
+      }
+      if (reftype & filter) {
+	cacheWay* way;
+	++refs;
+	if (!lookup(is_write(tr)?'w':'r', tr_value(tr), cache, &way)) {
+	  ++misses;
+	  if (out_path)
+	    fifo_put(&outbuf, tr);
+	}
+	if (refs >= next_report && !quiet) {
+	  double elapse = (clock() - start_tick) / CLOCKS_PER_SEC;
+	  fprintf(stderr, "\r%3.1fB insns %3.1fB cycles %3.1fB refs %3.1f misses/Kinsns in %3.1fs for %3.1f MIPS    ", insns/1e9, now/1e9, refs/1e9, misses/(insns/1e3), elapse, insns/1e6/elapse);
+	  next_report += REPORT_FREQUENCY;
+	}
+      }
+      else if (out_path)		/* pass to next stage */
+	fifo_put(&outbuf, tr);
+      continue;
+    }
+    if (tr_code(tr) == tr_cycles) {
+      now = tr_value(tr);
+      if (out_path)
+	fifo_put(&outbuf, tr);
+      continue;
+    }
     if (tr_code(tr) == tr_icount) {
       insns = tr_value(tr);
       if (out_path)
 	fifo_put(&outbuf, tr);
       continue;
     }
-    if (!is_mem(tr))
-      continue;
-    long reftype = is_store(tr) ? RT_WRITE : RT_READ;
-    if (is_ldst(tr))
-      reftype |= RT_LDST;
-    else {
-      reftype |= RT_GETPUT;
-      reftype |= (1L<<tr_clevel(tr)) << RT_LEVEL_SHIFT;
-    }
-    if (reftype & filter) {
-      cacheWay* way;
-      ++refs;
-      if (!lookup(is_write(tr)?'w':'r', tr_value(tr), cache, &way)) {
-	++misses;
-	if (out_path)
-	  fifo_put(&outbuf, tr);
-      }
-      if (refs >= next_report) {
-	double elapse = (clock() - start_tick) / CLOCKS_PER_SEC;
-	fprintf(stderr, "\r%3.1fB insns %3.1fB refs %3.1f misses/Kinsns in %3.1fs for %3.1f MIPS    ", insns/1e9, refs/1e9, misses/(insns/1e3), elapse, insns/1e6/elapse);
-	next_report += REPORT_FREQUENCY;
-      }
-    }
-    else if (out_path)		/* pass to next stage */
+    if (is_frame(tr) && out_path) {
       fifo_put(&outbuf, tr);
+      continue;
+    }
   }
   fprintf(stderr, "\n\n");
   reportCacheStats(cache);

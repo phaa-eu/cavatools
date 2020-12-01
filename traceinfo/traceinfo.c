@@ -21,6 +21,7 @@
 long report_frequency = REPORT_FREQUENCY;
 time_t start_tick;
 long insn_count =0;
+long mem_refs =0;
 long segments =0;
 long pvr_cycles =0;
 long pvr_cutoff =0;
@@ -33,17 +34,50 @@ uint64_t mem_queue[tr_memq_len];
 static inline void status_report()
 {
   double elapse = (clock() - start_tick) / CLOCKS_PER_SEC;
-  fprintf(stderr, "\r%3.1fB insns (%ld segments) in %3.1f seconds for %3.1f MIPS",
-	  insn_count/1e9, segments, elapse, insn_count/1e6/elapse);
+  fprintf(stderr, "\r%3.1fB insns %3.1fB mems (%ld segments) in %3.1f seconds for %3.1f MIPS",
+	  insn_count/1e9, mem_refs/1e9, segments, elapse, insn_count/1e6/elapse);
 }
 
 
-void do_nothing(long pc)
+void stat_mem_trace(long pc)
 {
   long next_report =report_frequency;
   int withregs =0;
   for (uint64_t tr=fifo_get(&trace_buffer); tr!=tr_eof; tr=fifo_get(&trace_buffer)) {
     if (is_mem(tr)) {
+      mem_refs++;
+      continue;
+    }
+    if (is_bbk(tr))
+      continue;
+    if (is_frame(tr)) {
+      hart = tr_delta(tr);
+      pc = tr_pc(tr);
+      fprintf(stderr, "Frame(pc=%d, mem=%d, reg=%d), hart#=%d, pc=0x%lx\n", (tr&tr_has_pc)!=0, (tr&tr_has_mem)!=0, (tr&tr_has_reg)!=0, hart, pc);
+      dieif(tr & tr_has_reg, "trace with register updates must be viewed with program binary");
+      ++segments;
+      continue;
+    }
+    if (tr_code(tr) == tr_icount) {
+      insn_count = tr_value(tr);
+      if (insn_count >= next_report) {
+	status_report();
+	next_report += report_frequency;
+      }
+      continue;
+    }
+    /* ignore other trace record types */
+  }
+}
+
+
+void stat_pc_trace(long pc)
+{
+  long next_report =report_frequency;
+  int withregs =0;
+  for (uint64_t tr=fifo_get(&trace_buffer); tr!=tr_eof; tr=fifo_get(&trace_buffer)) {
+    if (is_mem(tr)) {
+      mem_refs++;
       continue;
     }
     if (is_bbk(tr)) {
@@ -219,24 +253,24 @@ int main(int argc, const char** argv)
   static const char* paraver =0;
   static const char* cutoff =0;
   
-  static struct options_t flags[] =
-    {  { "--in=",	.v = &shm_path		},
-       { "--list",	.f = &list		},
-       { "--trace",	.f = &trace		},
-       { "--see=",	.v = &see_range		},
-       { "--report=",	.v = &report		},
-       { "--paraver=",	.v = &paraver		},
-       { "--cutoff=",	.v = &cutoff		},
-       { 0					}
+  static struct options_t opt[] =
+    {  { "--in=",	.v=&shm_path,	.h="Trace file from any cavatools =name" },
+       { "--list",	.f=&list,	.h="Print assembly listing (only traces from caveat)" },
+       { "--range=",	.v=&see_range,	.h="Only interested in =begin,end addresses (Hex no 0x) [all]" },
+       { "--paraver=",	.v=&paraver,	.h="Make Paraver trace of =cycles to stdout" },
+       { "--cutoff=",	.v=&cutoff,	.h="Ignore pipeline stalls less than =number cycles [1]" },
+       { "--report=",	.v=&report,	.h="Progress report every =number million instructions [1000]" },
+       { 0 }
     };
-  int numopts = parse_options(flags, argv+1);
-  if (!shm_path) {
-    fprintf(stderr, "usage: traceinfo --in=shm_path <other options> elf_binary\n");
-    exit(0);
-  }
-  if (report)
-    report_frequency = atoi(report);
-  long entry = load_elf_binary(argv[1+numopts], 0);
+  int numopts = parse_options(opt, argv+1,
+			      "traceinfo --in=trace [traceinfo-options] target-program"
+			      "\n\t- summarize trace, make listing or create derivative traces");
+  if (argc < 2)
+    help_exit();
+  report_frequency = (report ? atoi(report) : REPORT_FREQUENCY) * 1000000;
+  long entry =0;
+  if (argc > numopts+1)
+    entry = load_elf_binary(argv[1+numopts], 0);
   trace_init(&trace_buffer, shm_path, 1);
   start_tick = clock();
   if (list)
@@ -256,9 +290,11 @@ int main(int argc, const char** argv)
     }
     print_paraver_trace(begin, end);
   }
+  else if (argc > numopts+1)
+    stat_pc_trace(entry);
   else
-    do_nothing(entry);
+    stat_mem_trace(entry);
   trace_fini(&trace_buffer);
-  fprintf(stderr, "\n%ld Instructions in trace\n", insn_count);
+  fprintf(stderr, "\n%ld Instructions, %ld memory references in trace\n", insn_count, mem_refs);
   return 0;
 }

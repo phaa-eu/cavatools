@@ -4,7 +4,7 @@ nothing:
 	echo "clean, tarball, install?"
 
 clean:
-	rm -f *~ ./#*#
+	rm -f $(home)/lib/libcava.a *~ ./#*#
 	make -C caveat    clean
 	make -C cachesim  clean
 	make -C pipesim   clean

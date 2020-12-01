@@ -42,10 +42,10 @@ unsigned char fu_latency[Number_of_units] =
 #define DEFAULT_DWAYS      4		/* number of ways associativity */ 
 
 
-#define REPORT_FREQUENCY 100000000
-long report_frequency = REPORT_FREQUENCY;
+#define REPORT_FREQUENCY 100
+long report_frequency;
 int quiet =0;
-int visible =0;
+int timing =0;
 
 
 struct cache_t dcache;
@@ -81,62 +81,59 @@ int main(int argc, const char** argv)
   static const char* wflag =0;
   static const char* dlgline =0;
   static const char* dlgsets =0;
-  static const char* dways_option =0;
+  static const char* dnumways =0;
   static const char* dpenalty =0;
   static const char* report =0;
-  static struct options_t flags[] =
-    {  { "--in=",	.v = &in_path		},
-       { "--out=",	.v = &out_path		},
-       { "--write=",	.v = &wflag		},
-       { "--dline=",	.v = &dlgline		},
-       { "--dsets=",	.v = &dlgsets		},
-       { "--dways=",	.v = &dways_option	},
-       { "--dpenalty=",	.v = &dpenalty		},
-       { "--report=",	.v = &report		},
-       { "--quiet",	.f = &quiet		},
-       { "--visible",	.f = &visible		},
-       { 0					}
+  static struct options_t opt[] =
+    {
+     { "--in=",		.v=&in_path,	.h="Trace file from caveat =name" },
+     { "--dmiss=",	.v=&dpenalty,	.h="L1 data cache miss penalty is =number cycles [25]" },
+     { "--write=",	.v=&wflag,	.h="L1 data cache is write=[back|thru]" },
+     { "--dline=",	.v=&dlgline,	.h="L1 data cache line size is 2^ =n bytes [6]" },
+     { "--dways=",	.v=&dnumways,	.h="L1 data cache is =w ways set associativity [4]" },
+     { "--dsets=",	.v=&dlgsets,	.h="L1 data cache has 2^ =n sets per way [6]" },
+     { "--out=",	.v=&out_path,	.h="Create output trace file =name [no output trace]" },
+     { "--timing",	.f=&timing,	.h="Include pipeline timing information in trace" },
+     { "--report=",	.v=&report,	.h="Progress report every =number million instructions [100]" },
+     { "--quiet",	.f=&quiet,	.h="Don't report progress to stderr" },
+     { "-q",		.f=&quiet,	.h="short for --quiet" },
+     { 0 }
     };
-  int numopts = parse_options(flags, argv+1);
-  if (!in_path) {
-    fprintf(stderr, "usage: pipesim --in=in_shm [--w=back|thru] [--out=out_shm] elf_binary\n");
-    exit(0);
-  }
+  int numopts = parse_options(opt, argv+1,
+			      "pipesim --in=trace [pipesim-options] target-program");
+  if (argc == numopts+1 || !in_path)
+    help_exit();
   long entry = load_elf_binary(argv[1+numopts], 0);
-  //  fprintf(stderr, "Text segment [0x%lx, 0x%lx)\n", insnSpace.base, insnSpace.bound);
-  if (report)
-    report_frequency = atoi(report);
+  report_frequency = (report ? atoi(report) : REPORT_FREQUENCY) * 1000000;
   stats.start_tick = clock();
   trace_init(&trace_buffer, in_path, 1);
   if (out_path)
     fifo_init(&l2, out_path, 0);
   /* initialize cache */
+  long read_latency = dpenalty ? atoi(dpenalty) : DEFAULT_DPENALTY;
   int lg_line_size    = dlgline ? atoi(dlgline) : DEFAULT_DLGLINE;
   int lg_rows_per_way = dlgsets ? atoi(dlgsets) : DEFAULT_DLGSETS;
-  int dways = dways_option ? atoi(dways_option) : DEFAULT_DWAYS;
+  int dways = dnumways ? atoi(dnumways) : DEFAULT_DWAYS;
   struct lru_fsm_t* fsm;
   switch (dways) {
   case 1:  fsm = cache_fsm_1way;  break;
   case 2:  fsm = cache_fsm_2way;  break;
   case 3:  fsm = cache_fsm_3way;  break;
   case 4:  fsm = cache_fsm_4way;  break;
-  default:  fprintf(stderr, "--ways=1..4 only\n");  exit(-1);
+  default:  fprintf(stderr, "--dways=1..4 only\n");  exit(-1);
   }
   init_cache(&dcache, lg_line_size, lg_rows_per_way, fsm, !(wflag && wflag[0]=='t'));
   //  show_cache(&dcache);
-  long read_latency = dpenalty ? atoi(dpenalty) : DEFAULT_DPENALTY;
-  frame_header = tr_has_mem | (visible ? tr_has_timing : 0);
+  frame_header = tr_has_mem | (timing ? tr_has_timing : 0);
   if (wflag) {
     if (wflag[0] == 'b')
       slow_pipe(entry, read_latency, report_frequency, &dcache_writeback);
     else if (wflag[0] == 't')
       slow_pipe(entry, read_latency, report_frequency, &dcache_writethru);
-    else {
-      fprintf(stderr, "usage: pipesim --in=shm_path [--write=back|thru] ... elf_binary\n");
-      exit(0);
-    }
+    else
+      help_exit();
   }
-  else if (visible)
+  else if (timing)
     slow_pipe(entry, read_latency, report_frequency, 0);
   else
     fast_pipe(entry, read_latency, report_frequency, 0);
