@@ -26,7 +26,7 @@ long segments =0;
 long pvr_cycles =0;
 long pvr_cutoff =0;
 
-struct fifo_t trace_buffer;
+struct fifo_t* trace_buffer;
 int hart;
 uint64_t mem_queue[tr_memq_len];
 
@@ -43,7 +43,7 @@ void stat_mem_trace(long pc)
 {
   long next_report =report_frequency;
   int withregs =0;
-  for (uint64_t tr=fifo_get(&trace_buffer); tr!=tr_eof; tr=fifo_get(&trace_buffer)) {
+  for (uint64_t tr=fifo_get(trace_buffer); tr!=tr_eof; tr=fifo_get(trace_buffer)) {
     if (is_mem(tr)) {
       mem_refs++;
       continue;
@@ -75,7 +75,7 @@ void stat_pc_trace(long pc)
 {
   long next_report =report_frequency;
   int withregs =0;
-  for (uint64_t tr=fifo_get(&trace_buffer); tr!=tr_eof; tr=fifo_get(&trace_buffer)) {
+  for (uint64_t tr=fifo_get(trace_buffer); tr!=tr_eof; tr=fifo_get(trace_buffer)) {
     if (is_mem(tr)) {
       mem_refs++;
       continue;
@@ -86,7 +86,7 @@ void stat_pc_trace(long pc)
 	while (pc < epc) {
 	  const struct insn_t* p = insn(pc);
 	  if (p->op_rd != NOREG) {
-	    long val = fifo_get(&trace_buffer);
+	    long val = fifo_get(trace_buffer);
 	  }
 	  pc += shortOp(p->op_code) ? 2 : 4;
 	}
@@ -125,10 +125,10 @@ void print_paraver_trace(long begin, long end)
 	  tm.tm_mday, tm.tm_mon+1, tm.tm_year, tm.tm_hour, tm.tm_min, pvr_cycles);
   fprintf(stdout, "Paraver trace [%lx, %lx]\n", begin, end);
   long now =0;
-  for (uint64_t tr=fifo_get(&trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(&trace_buffer)) {
+  for (uint64_t tr=fifo_get(trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(trace_buffer)) {
     if (tr_code(tr) == tr_stall) {
       long stall_begin = tr_number(tr);
-      tr = fifo_get(&trace_buffer);
+      tr = fifo_get(trace_buffer);
       now = stall_begin + tr_delta(tr);
       if (now >= pvr_cycles)
 	break;
@@ -171,7 +171,7 @@ void print_listing(long pc)
   uint64_t* memq = mem_queue;	/* help compiler allocate in register */
   long tail =0;
   int withregs =0;
-  for (uint64_t tr=fifo_get(&trace_buffer); tr!=tr_eof; tr=fifo_get(&trace_buffer)) {
+  for (uint64_t tr=fifo_get(trace_buffer); tr!=tr_eof; tr=fifo_get(trace_buffer)) {
     if (is_mem(tr)) {
       memq[tail++] = tr_value(tr);
       continue;
@@ -193,7 +193,7 @@ void print_listing(long pc)
 	  if (p->op_rd == NOREG && p->op_rd != 0)
 	    printf("%22s", "");
 	  else {
-	    long val = fifo_get(&trace_buffer);
+	    long val = fifo_get(trace_buffer);
 	    printf("%4s=%016lx ", regName[p->op_rd], val);
 	  }
 	}
@@ -271,7 +271,7 @@ int main(int argc, const char** argv)
   long entry =0;
   if (argc > numopts+1)
     entry = load_elf_binary(argv[1+numopts], 0);
-  trace_init(&trace_buffer, shm_path, 1);
+  trace_buffer = fifo_open(shm_path);
   start_tick = clock();
   if (list)
     print_listing(entry);
@@ -294,7 +294,7 @@ int main(int argc, const char** argv)
     stat_pc_trace(entry);
   else
     stat_mem_trace(entry);
-  trace_fini(&trace_buffer);
+  fifo_close(trace_buffer);
   fprintf(stderr, "\n%ld Instructions, %ld memory references in trace\n", insn_count, mem_refs);
   return 0;
 }

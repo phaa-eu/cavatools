@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/time.h>
 
 #include "caveat.h"
 #include "opcodes.h"
@@ -25,6 +26,10 @@ struct core_t* cpu;
 
 int main(int argc, const char* argv[], const char* envp[])
 {
+  struct timeval start_timeval;
+  gettimeofday(&start_timeval, 0);
+  long start_tick = clock();
+  
   static const char* func = 0;
   static const char* after = 0;
   static const char* every = 0;
@@ -52,7 +57,7 @@ int main(int argc, const char* argv[], const char* envp[])
   Addr_t stack_top = initialize_stack(argc-1-numopts, argv+1+numopts, envp);
   cpu = malloc(sizeof(struct core_t));
   dieif(cpu==0, "unable to malloc cpu");
-  init_core(cpu);
+  init_core(cpu, start_tick, &start_timeval);
   cpu->pc = entry_pc;
   cpu->reg[SP].a = stack_top;
   if (tracing) {
@@ -75,12 +80,13 @@ int main(int argc, const char* argv[], const char* envp[])
     cpu->params.has_flags = tr_has_pc | tr_has_mem;
     if (withregs)
       cpu->params.has_flags |= tr_has_reg;
-    trace_init(&cpu->tb, tracing, 0);
+    cpu->tb = fifo_create(tracing, 0);
+    //cpu->tb = fifo_create(tracing, 20);
   }
   int rc = run_program(cpu);
   if (tracing) {
-    fifo_flush(&cpu->tb);
-    trace_fini(&cpu->tb);
+    fifo_put(cpu->tb, trM(tr_eof, 0));
+    fifo_finish(cpu->tb);
   }
   return rc;
 }

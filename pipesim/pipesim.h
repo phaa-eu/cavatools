@@ -15,15 +15,16 @@ struct statistics_t {
   long insns;
   long segments;
   long branches_taken;
-  clock_t start_tick;
+  //  clock_t start_tick;
+  struct timeval start_timeval;
 };
 
 extern struct statistics_t stats;
 extern long frame_header;
 
 extern struct cache_t dcache;
-extern struct fifo_t trace_buffer;
-extern struct fifo_t l2;
+extern struct fifo_t* trace_buffer;
+extern struct fifo_t* l2;
 extern int hart;
 extern uint64_t mem_queue[tr_memq_len];
 

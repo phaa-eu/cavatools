@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 
 #include "caveat.h"
 #include "opcodes.h"
@@ -49,8 +49,8 @@ int timing =0;
 
 
 struct cache_t dcache;
-struct fifo_t trace_buffer;
-struct fifo_t l2;
+struct fifo_t* trace_buffer;
+struct fifo_t* l2;
 int hart;
 uint64_t mem_queue[tr_memq_len];
 
@@ -63,10 +63,13 @@ void status_report(struct statistics_t* stats)
 {
   if (quiet)
     return;
-  double elapse_time = (clock()-stats->start_tick) / CLOCKS_PER_SEC;
-  fprintf(stderr, "\r%3.1fB insns (%ld segments) %3.1fB cycles %3.1fM Dmisses %3.1f Dmiss/Kinsns %5.3f IPC %3.1f MIPS",
+  struct timeval *t1=&stats->start_timeval, t2;
+  gettimeofday(&t2, 0);
+  double msec = (t2.tv_sec - t1->tv_sec)*1000;
+  msec += (t2.tv_usec - t1->tv_usec)/1000.0;
+  fprintf(stderr, "\r%3.1fBi (%ld) %3.1fBc %3.1fM Dm %3.1f Dm/Ki %5.3f IPC %3.1f MIPS %3.1f CPS %3.1fs",
 	  stats->insns/1e9, stats->segments, stats->cycles/1e9, dcache.misses/1e6, dcache.misses/(stats->insns/1e3),
-	  (double)stats->insns/stats->cycles, stats->insns/(1e6*elapse_time));
+	  (double)stats->insns/stats->cycles, stats->insns/(1e3*msec), stats->cycles/(1e3*msec), msec/1e3);
 }
 
 
@@ -105,10 +108,11 @@ int main(int argc, const char** argv)
     help_exit();
   long entry = load_elf_binary(argv[1+numopts], 0);
   report_frequency = (report ? atoi(report) : REPORT_FREQUENCY) * 1000000;
-  stats.start_tick = clock();
-  trace_init(&trace_buffer, in_path, 1);
+  //  stats.start_tick = clock();
+  gettimeofday(&stats.start_timeval, 0);
+  trace_buffer = fifo_open(in_path);
   if (out_path)
-    fifo_init(&l2, out_path, 0);
+    l2 = fifo_create(out_path, 0);
   /* initialize cache */
   long read_latency = dpenalty ? atoi(dpenalty) : DEFAULT_DPENALTY;
   int lg_line_size    = dlgline ? atoi(dlgline) : DEFAULT_DLGLINE;
@@ -138,10 +142,10 @@ int main(int argc, const char** argv)
   else
     fast_pipe(entry, read_latency, report_frequency, 0);
   if (out_path) {
-    fifo_put(&l2, trM(tr_eof, 0));
-    fifo_fini(&l2);
+    fifo_put(l2, trM(tr_eof, 0));
+    fifo_finish(l2);
   }
-  fifo_fini(&trace_buffer);
+  fifo_close(trace_buffer);
   status_report(&stats);
   fprintf(stderr, "\n\n");
   fprintf(stderr, "%12ld instructions in %ld segments\n", stats.insns, stats.segments);

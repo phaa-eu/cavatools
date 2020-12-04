@@ -16,7 +16,7 @@
   long jump_count =0;		/* taken branches */
   int cursor =0;		/* into mem_queue[] */
 
-  for (uint64_t tr=fifo_get(&trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(&trace_buffer)) { 
+  for (uint64_t tr=fifo_get(trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(trace_buffer)) { 
     if (is_mem(tr)) {
       mem_queue[cursor++] = tr;
       continue;
@@ -50,8 +50,8 @@
 	busy[NOREG] = 0;	/* in case p->op_rd not valid */
 #ifdef SLOW
 	if (timing && now-stall_begin > 0) {
-	  fifo_put(&l2, trM(tr_stall, stall_begin));
-	  fifo_put(&l2, trP(tr_issue, now-stall_begin, pc));
+	  fifo_put(l2, trM(tr_stall, stall_begin));
+	  fifo_put(l2, trP(tr_issue, now-stall_begin, pc));
 	}
 #endif
 	now += 1;		/* single issue machine */
@@ -70,9 +70,10 @@
       continue;
     }
     if (tr_code(tr) == tr_icount) {
+      //fprintf(stderr, "Got tr_icount=%ld, my icount=%ld, delta=%ld\n", tr_value(tr), insn_count, tr_value(tr)-insn_count);
 #ifdef SLOW
-      fifo_put(&l2, trM(tr_icount, insn_count));
-      fifo_put(&l2, trM(tr_cycles, now));
+      fifo_put(l2, trM(tr_icount, insn_count));
+      fifo_put(l2, trM(tr_cycles, now));
 #endif
       continue;
     }
@@ -84,7 +85,7 @@
       SAVE_STATS()
       status_report(&stats);
 #ifdef SLOW
-      fifo_put(&l2, frame_header);
+      fifo_put(l2, frame_header);
 #endif
       continue;
     }

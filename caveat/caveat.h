@@ -155,11 +155,6 @@ static inline uint64_t tr_print(uint64_t tr, FILE* f)
 }
 
 
-#define trace_init(tb, shm_path, consumer)  fifo_init(tb, shm_path, consumer)
-#define trace_fini(tb)  { fifo_put(tb, trM(tr_eof, 0)); fifo_fini(tb); }
-
-
-
 struct options_t {
   const char* name;
   const char* h;

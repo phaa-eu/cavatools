@@ -24,14 +24,14 @@
 static inline int dump_regs( struct core_t* cpu, int n)
 {
   for (int i=0; i<n; i++)
-    fifo_put(&cpu->tb, regval[i]);
+    fifo_put(cpu->tb, regval[i]);
   return 0;
 }
 
 #define update_regfile(rd, val)  (withregs && (rd) != NOREG ? regval[updates++]=(val) : 0)
-#define trace_mem(code, a)  fifo_put(&cpu->tb, trM(code, a))
-#define trace_bbk(code, v)  ( fifo_put(&cpu->tb, trP(code, since, v)), restart() )
-#define advance(sz)  { since+=sz; if (since >= tr_max_number-4L) { fifo_put(&cpu->tb, trP(tr_any, since, 0)); restart(); } }
+#define trace_mem(code, a)  fifo_put(cpu->tb, trM(code, a))
+#define trace_bbk(code, v)  ( fifo_put(cpu->tb, trP(code, since, v)), restart() )
+#define advance(sz)  { since+=sz; if (since >= tr_max_number-4L) { fifo_put(cpu->tb, trP(tr_any, since, 0)); restart(); } }
 #define restart()  (withregs ? dump_regs(cpu, updates) : 0, since=updates=0 )
 //#define on_every_insn(p)  if (cpu->params.verify) { fifo_put(&verify, cpu->holding_pc); cpu->holding_pc=PC; }
 #define on_every_insn(p)

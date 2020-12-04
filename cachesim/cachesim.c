@@ -35,8 +35,8 @@
 
 
 
-struct fifo_t fifo;
-struct fifo_t outbuf;
+struct fifo_t* fifo;
+struct fifo_t* outbuf;
 long report_frequency;
 int quiet =0;
 
@@ -114,12 +114,12 @@ int main(int argc, const char** argv)
   else
     filter = ~0L;		/* default simulate all references */
     
-  fifo_init(&fifo, in_path, 1);
+  fifo = fifo_open(in_path);
   if (out_path)
-    fifo_init(&outbuf, out_path, 0);
+    outbuf = fifo_create(out_path, 0);
   clock_t start_tick = clock();
   
-  for (uint64_t tr=fifo_get(&fifo); tr_code(tr)!=tr_eof; tr=fifo_get(&fifo)) {
+  for (uint64_t tr=fifo_get(fifo); tr_code(tr)!=tr_eof; tr=fifo_get(fifo)) {
     
     if (is_mem(tr)) {
       long reftype;
@@ -135,7 +135,7 @@ int main(int argc, const char** argv)
 	if (!lookup(is_write(tr)?'w':'r', tr_value(tr), cache, &way)) {
 	  ++misses;
 	  if (out_path)
-	    fifo_put(&outbuf, tr);
+	    fifo_put(outbuf, tr);
 	}
 	if (refs >= next_report && !quiet) {
 	  double elapse = (clock() - start_tick) / CLOCKS_PER_SEC;
@@ -144,23 +144,23 @@ int main(int argc, const char** argv)
 	}
       }
       else if (out_path)		/* pass to next stage */
-	fifo_put(&outbuf, tr);
+	fifo_put(outbuf, tr);
       continue;
     }
     if (tr_code(tr) == tr_cycles) {
       now = tr_value(tr);
       if (out_path)
-	fifo_put(&outbuf, tr);
+	fifo_put(outbuf, tr);
       continue;
     }
     if (tr_code(tr) == tr_icount) {
       insns = tr_value(tr);
       if (out_path)
-	fifo_put(&outbuf, tr);
+	fifo_put(outbuf, tr);
       continue;
     }
     if (is_frame(tr) && out_path) {
-      fifo_put(&outbuf, tr);
+      fifo_put(outbuf, tr);
       continue;
     }
   }
@@ -168,9 +168,9 @@ int main(int argc, const char** argv)
   reportCacheStats(cache);
   printf("\n");
   if (out_path) {
-    fifo_put(&outbuf, trM(tr_eof, 0));
-    fifo_fini(&outbuf);
+    fifo_put(outbuf, trM(tr_eof, 0));
+    fifo_finish(outbuf);
   }
-  fifo_fini(&fifo);
+  fifo_close(fifo);
   return 0;
 }

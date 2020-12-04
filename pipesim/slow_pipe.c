@@ -27,14 +27,14 @@ long dcache_writethru(long tr, const struct insn_t* p, long available)
     if (sz < 8) {	/* < 8B need L1 for ECC, 8B do not allocate */
       when = lookup_cache(&dcache, addr, 0, available);
       if (when == available)
-	fifo_put(&l2, trM(tr_d1get, addr));
+	fifo_put(l2, trM(tr_d1get, addr));
     }
-    fifo_put(&l2, tr);
+    fifo_put(l2, tr);
   }
   else
     when = lookup_cache(&dcache, addr, 0, available);
   if (when == available) { /* cache miss */
-    fifo_put(&l2, trM(tr_d1get, addr));
+    fifo_put(l2, trM(tr_d1get, addr));
   }
   return when;
 }
@@ -47,8 +47,8 @@ long dcache_writeback(long tr, const struct insn_t* p, long available)
   long when = lookup_cache(&dcache, addr, writeOp(p->op_code), available);
   if (when == available) { /* cache miss */
     if (*dcache.evicted)
-      fifo_put(&l2, trM(tr_d1put, *dcache.evicted<<dcache.lg_line));
-    fifo_put(&l2, trM(tr_d1get, addr));
+      fifo_put(l2, trM(tr_d1put, *dcache.evicted<<dcache.lg_line));
+    fifo_put(l2, trM(tr_d1get, addr));
   }
   return when;
 }

@@ -30,7 +30,7 @@ LDFLAGS	:= -Wl,-Ttext=70000000
 
 # Make targets
 
-all:  $R/libcava.a $B/caveat
+all:  $R/lib/libcava.a $B/caveat
 
 install:  all
 	-cp $B/caveat  $R/bin/caveat
@@ -44,10 +44,10 @@ clean:
 
 # Emulator and library
 
-$B/caveat : $(cobj) $R/libcava.a
+$B/caveat : $(cobj) $R/lib/libcava.a
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(libs)
 
-$R/libcava.a : $(aobj)
+$R/lib/libcava.a : $(aobj)
 	ar rcs $@ $^
 
 # Dependencies

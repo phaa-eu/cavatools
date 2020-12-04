@@ -11,7 +11,7 @@ extern unsigned long lrsc_set;  // globally shared location for atomic lock
 extern long regval[];
 
 struct core_t {
-  struct fifo_t tb;
+  struct fifo_t* tb;
   struct reg_t reg[64];		// Register files, IR[0-31], FR[32-63]
 #define IR(rn)  cpu->reg[rn]
 #define FR(rn)  cpu->reg[rn]
@@ -53,7 +53,7 @@ struct core_t {
 
 extern struct fifo_t verify;
 
-void init_core(struct core_t* cpu);
+void init_core(struct core_t* cpu, long start_tick, const struct timeval* start_timeval);
 int run_program(struct core_t* cpu);
 int outer_loop(struct core_t* cpu);
 void fast_sim(struct core_t*, long max_count);

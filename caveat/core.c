@@ -10,7 +10,7 @@
 #include <assert.h>
 #include <math.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 
 #include "caveat.h"
 #include "opcodes.h"
@@ -24,11 +24,13 @@
 unsigned long lrsc_set = 0;	/* global atomic lock */
 long regval[tr_memq_len];	/* space for maximum number of instructions */
 
-void init_core( struct core_t* cpu )
+void init_core( struct core_t* cpu, long start_tick, const struct timeval* start_timeval )
 {
   memset(cpu, 0, sizeof(struct core_t));
   for (int i=32; i<64; i++)	/* initialize FP registers to boxed float 0 */
     cpu->reg[i].ul = 0xffffffff00000000UL;
+  cpu->counter.start_tick = start_tick;
+  cpu->counter.start_timeval = *start_timeval;
 }
 
 
@@ -75,7 +77,7 @@ int outer_loop( struct core_t* cpu )
 	  if (cpu->reg[RA].a)	/* _start called with RA==0 */
 	    insert_breakpoint(cpu->reg[RA].a);
 	  fast_mode = 0;		/* start tracing */
-	  fifo_put(&cpu->tb, trP(cpu->params.has_flags, 0, cpu->pc));
+	  fifo_put(cpu->tb, trP(cpu->params.has_flags, 0, cpu->pc));
 	}
       }
       else {  /* reinserting breakpoint at subroutine entry */
@@ -119,20 +121,27 @@ void status_report( struct core_t* cpu, FILE* f )
 {
   if (cpu->params.quiet)
     return;
+#if 0
   clock_t end_tick = clock();
   double elapse_time = (end_tick - cpu->counter.start_tick)/CLOCKS_PER_SEC;
-  double mips = cpu->counter.insn_executed / (1e6*elapse_time);
+#endif
+  struct timeval *t1=&cpu->counter.start_timeval, t2;
+  gettimeofday(&t2, 0);
+  
+  double msec = (t2.tv_sec - t1->tv_sec)*1000;
+  msec += (t2.tv_usec - t1->tv_usec)/1000.0;
+  double mips = cpu->counter.insn_executed / (1e3*msec);
   if (cpu->counter.insn_executed < 1000000000)
     fprintf(f, "\rExecuted %ld instructions in %3.1f milliseconds for %3.1f MIPS",
-	    cpu->counter.insn_executed, 1000*elapse_time, mips);
+	    cpu->counter.insn_executed, msec, mips);
   else {
-    double minutes = floor(elapse_time / 60.0);
-    double seconds = elapse_time - 60.0*minutes;
+    double minutes = floor(msec/1e3 / 60.0);
+    double seconds = msec/1e3 - 60.0*minutes;
     if (minutes > 0.0)
       fprintf(f, "\rExecuted %3.1f billion instructions in %3.0f minutes %3.0f seconds for %3.1f MIPS",
 	      cpu->counter.insn_executed/1e9, minutes, seconds, mips);
     else
       fprintf(f, "\rExecuted %3.1f billion instructions in %3.1f seconds for %3.1f MIPS",
-	      cpu->counter.insn_executed/1e9, seconds, mips);
+	      cpu->counter.insn_executed/1e9, msec/1e3, mips);
   }
 }
