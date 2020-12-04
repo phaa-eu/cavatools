@@ -5,16 +5,18 @@
 #define SAVE_STATS()  \
   stats.cycles = now; \
   stats.insns = insn_count; \
-  stats.branches_taken = jump_count;
+  stats.imisses = imisses;
 
 #define max(a, b)  a > b ? a : b
 
 {
   static long busy[256];	/* cycle when register becomes available */
   long now =0;			/* current cycle */
-  long insn_count =0;		/* instructions executed */
-  long jump_count =0;		/* taken branches */
+  long tag0=0, tag1=0;		/* instruction buffer tags */
+  long ib_mask = ~((1<<lg_ib_line)-1);	/* ibuf line mask */
+  long imisses=0;		/* number of instruction buffer misses */
   int cursor =0;		/* into mem_queue[] */
+  long insn_count =0;		/* instructions executed */
 
   for (uint64_t tr=fifo_get(trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(trace_buffer)) { 
     if (is_mem(tr)) {
@@ -25,8 +27,27 @@
       long epc = pc + tr_delta(tr);
       cursor = 0;			/* read list of memory addresses */
       while (pc < epc) {
-	const struct insn_t* p = insn(pc);
+	/* model instruction fetch */
+
+	long fpc = pc & ib_mask;  /* zero out low-order bits equal to buffer line size */
+	if (fpc != tag0) {
+	  if (fpc == tag1) {  /* reverse MRU, LRU tags */
+	    long tmp = tag0;
+	    tag0 = tag1;
+	    tag1 = tmp;
+	  }
+	  else { /* miss, shift MRU to LRU, fill MRU */
+	    tag1 = tag0;
+	    tag0 = fpc;
+	    imisses++;
+#ifdef SLOW
+	    fifo_put(l2, trM(tr_i1get, pc));
+#endif
+	    now += fetch_latency;
+	  }
+	}
 	/* scoreboarding: advance time until source registers not busy */
+	const struct insn_t* p = insn(pc);
 #ifdef SLOW
 	long stall_begin = now;
 #endif
@@ -62,10 +83,8 @@
 	  next_report += report_frequency;
 	}
       }
-      if (is_goto(tr)) {
+      if (is_goto(tr))
 	pc = tr_pc(tr);
-	++jump_count;
-      }
       cursor = 0;	       /* get ready to enqueue another list */
       continue;
     }

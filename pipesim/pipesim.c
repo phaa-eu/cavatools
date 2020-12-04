@@ -36,6 +36,9 @@ unsigned char fu_latency[Number_of_units] =
     [Unit_x] = 5,	/* Special unit */
   };
 
+#define DEFAULT_IPENALTY   5		/* cycles I-buffer refill penalty */
+#define DEFAULT_ILGLINE    8		/* 2^ I-buffer line length in bytes */
+
 #define DEFAULT_DPENALTY  25		/* cycles miss penalty */
 #define DEFAULT_DLGLINE    6		/* 2^ cache line length in bytes */ 
 #define DEFAULT_DLGSETS    6		/* 2^ cache lines per way */ 
@@ -54,6 +57,9 @@ struct fifo_t* l2;
 int hart;
 uint64_t mem_queue[tr_memq_len];
 
+long fetch_latency;
+long lg_ib_line;
+
 
 struct statistics_t stats;
 long frame_header;
@@ -67,8 +73,8 @@ void status_report(struct statistics_t* stats)
   gettimeofday(&t2, 0);
   double msec = (t2.tv_sec - t1->tv_sec)*1000;
   msec += (t2.tv_usec - t1->tv_usec)/1000.0;
-  fprintf(stderr, "\r%3.1fBi (%ld) %3.1fBc %3.1fM Dm %3.1f Dm/Ki %5.3f IPC %3.1f MIPS %3.1f CPS %3.1fs",
-	  stats->insns/1e9, stats->segments, stats->cycles/1e9, dcache.misses/1e6, dcache.misses/(stats->insns/1e3),
+  fprintf(stderr, "\r%3.1fBi (%ld) %3.1fBc %3.1f Im/Ki %3.1f Dm/Ki %5.3f IPC %3.1f MIPS %3.1f CPS %3.1fs",
+	  stats->insns/1e9, stats->segments, stats->cycles/1e9, stats->imisses/(stats->insns/1e3), dcache.misses/(stats->insns/1e3),
 	  (double)stats->insns/stats->cycles, stats->insns/(1e3*msec), stats->cycles/(1e3*msec), msec/1e3);
 }
 
@@ -82,14 +88,18 @@ int main(int argc, const char** argv)
   static const char* in_path =0;
   static const char* out_path =0;
   static const char* wflag =0;
+  static const char* ilgline =0;
   static const char* dlgline =0;
   static const char* dlgsets =0;
   static const char* dnumways =0;
+  static const char* ipenalty =0;
   static const char* dpenalty =0;
   static const char* report =0;
   static struct options_t opt[] =
     {
      { "--in=",		.v=&in_path,	.h="Trace file from caveat =name" },
+     { "--imiss=",	.v=&ipenalty,	.h="L0 instruction buffer refill penalty is =number cycles [5]" },
+     { "--iline=",	.v=&ilgline,	.h="L0 instruction buffer line size is 2^ =n bytes [8]" },
      { "--dmiss=",	.v=&dpenalty,	.h="L1 data cache miss penalty is =number cycles [25]" },
      { "--write=",	.v=&wflag,	.h="L1 data cache is write=[back|thru]" },
      { "--dline=",	.v=&dlgline,	.h="L1 data cache line size is 2^ =n bytes [6]" },
@@ -114,6 +124,8 @@ int main(int argc, const char** argv)
   if (out_path)
     l2 = fifo_create(out_path, 0);
   /* initialize cache */
+  fetch_latency = ipenalty ? atoi(ipenalty) : DEFAULT_IPENALTY;
+  lg_ib_line    = ilgline ? atoi(ilgline) : DEFAULT_DLGLINE;
   long read_latency = dpenalty ? atoi(dpenalty) : DEFAULT_DPENALTY;
   int lg_line_size    = dlgline ? atoi(dlgline) : DEFAULT_DLGLINE;
   int lg_rows_per_way = dlgsets ? atoi(dlgsets) : DEFAULT_DLGSETS;
@@ -150,7 +162,7 @@ int main(int argc, const char** argv)
   fprintf(stderr, "\n\n");
   fprintf(stderr, "%12ld instructions in %ld segments\n", stats.insns, stats.segments);
   fprintf(stderr, "%12ld cycles, %5.3f CPI\n", stats.cycles, (double)stats.insns/stats.cycles);
-  fprintf(stderr, "%12ld taken branches (%3.1f%%)\n", stats.branches_taken, 100.0*stats.branches_taken/stats.insns);
+  fprintf(stderr, "%12ld instruction buffer misses (%3.1f%%)\n", stats.imisses, 100.0*stats.imisses/stats.insns);
   fprintf(stderr, "Dcache %dB linesize %dKB capacity %d way\n", dcache.line,
 	  (dcache.line*dcache.rows*dcache.ways)/1024, dcache.ways);
   long reads = dcache.refs-dcache.updates;

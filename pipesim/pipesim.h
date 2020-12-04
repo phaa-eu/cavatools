@@ -14,8 +14,7 @@ struct statistics_t {
   long cycles;
   long insns;
   long segments;
-  long branches_taken;
-  //  clock_t start_tick;
+  long imisses;
   struct timeval start_timeval;
 };
 
@@ -31,6 +30,8 @@ extern uint64_t mem_queue[tr_memq_len];
 extern int timing;
 extern int quiet;
 
+extern long fetch_latency;
+extern long lg_ib_line;
 
 
 extern long report_frequency;
