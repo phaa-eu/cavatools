@@ -17,7 +17,7 @@
 
 
 
-#define DEFAULT_BUFSIZE  16
+#define DEFAULT_BUFSIZE  12
 
 
 /* Producer side fifo initialization.

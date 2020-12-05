@@ -9,7 +9,7 @@
 #include <immintrin.h>
 
 
-#define BATCH_SIZE  1024
+#define BATCH_SIZE  256
 #define MAX_SPINS  100
 
 struct fifo_t {

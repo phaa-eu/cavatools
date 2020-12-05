@@ -36,10 +36,12 @@ int main(int argc, const char* argv[], const char* envp[])
   static const char* report = 0;
   static int withregs = 0;
   static int quiet = 0;
+  static const char* bufsize = 0;
   static struct options_t opt[] =
     {
      { "--out=",	.v=&tracing,	.h="Create trace file/fifo =name [no trace]" },
      { "--trace=",	.v=&tracing,	.h="synonym for --out" },
+     { "--buffer=",	.v=&bufsize,	.h="Shared memory buffer size is 2^ =n bytes [12]" },
      { "--func=",	.v=&func,	.h="Trace function =name [_start]" },       
      { "--withregs",	.f=&withregs,	.h="Include register values in trace" },
      { "--after=",	.v=&after,	.h="Start tracing function after =number calls [1]" },
@@ -80,8 +82,8 @@ int main(int argc, const char* argv[], const char* envp[])
     cpu->params.has_flags = tr_has_pc | tr_has_mem;
     if (withregs)
       cpu->params.has_flags |= tr_has_reg;
-    cpu->tb = fifo_create(tracing, 0);
-    //cpu->tb = fifo_create(tracing, 20);
+    int lgbufsz = bufsize ? atoi(bufsize) : 12;
+    cpu->tb = fifo_create(tracing, lgbufsz);
   }
   int rc = run_program(cpu);
   if (tracing) {
