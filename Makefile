@@ -20,6 +20,7 @@ install:
 	make -C cachesim  install
 	make -C pipesim   install
 	make -C traceinfo install
+	make -C utilities/softpipe install
 
 
 
