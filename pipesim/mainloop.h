@@ -4,19 +4,21 @@
 
 #define SAVE_STATS()  \
   stats.cycles = now; \
-  stats.insns = insn_count; \
-  stats.imisses = imisses;
+  stats.insns = insn_count;
 
 #define max(a, b)  a > b ? a : b
 
 {
   static long busy[256];	/* cycle when register becomes available */
   long now =0;			/* current cycle */
-  long tag0=0, tag1=0;		/* instruction buffer tags */
-  long ib_mask = ~((1<<lg_ib_line)-1);	/* ibuf line mask */
-  long imisses=0;		/* number of instruction buffer misses */
+  int mru =0;			/* which tag in ibuf is mru */
+  long curblk =0;		/* pc of current ibuffer subblock */
+  long subblockmask = ~0UL << ib->lg_blksize;
   int cursor =0;		/* into mem_queue[] */
   long insn_count =0;		/* instructions executed */
+#ifdef SLOW
+  long stall_begin =now;
+#endif
 
   for (uint64_t tr=fifo_get(trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(trace_buffer)) { 
     if (is_mem(tr)) {
@@ -28,33 +30,39 @@
       cursor = 0;			/* read list of memory addresses */
       while (pc < epc) {
 	/* model instruction fetch */
-
-	long fpc = pc & ib_mask;  /* zero out low-order bits equal to buffer line size */
-	if (fpc != tag0) {
-	  if (fpc == tag1) {  /* reverse MRU, LRU tags */
-	    long tmp = tag0;
-	    tag0 = tag1;
-	    tag1 = tmp;
-	  }
-	  else { /* miss, shift MRU to LRU, fill MRU */
-	    tag1 = tag0;
-	    tag0 = fpc;
-	    imisses++;
+	if ((pc & subblockmask) != curblk) { /* fast path: in current subblock */
+	  long pctag = pc & ib->tag_mask;
+	  long blkidx = (pc >> ib->lg_blksize) & ib->blk_mask;
+	  if (pctag != ib->tag[mru]) {
+	    if (pctag != ib->tag[1-mru]) { /* miss: shift MRU to LRU, fill MRU */
+	      ib->misses++;
+	      ib->tag[1-mru] = ib->tag[mru];
+	      ib->tag[mru] = pctag;
+	      curblk = pc & subblockmask;
 #ifdef SLOW
-	    fifo_put(l2, trM(tr_i1get, pc));
+	      fifo_put(l2, trM(tr_i1get, pc));
 #endif
-	    now += fetch_latency;
+	      long avail = now+ib->penalty; /* when instruction available */
+	      for (int i=0; i<ib->numblks; i++) {  /* refill all blocks */
+		int j = (blkidx+i) & ib->blk_mask; /* critical block first*/
+		ib->ready[mru][j] = avail+i; /* one cycle per block */
+	      }
+	    }
+	    else { /* hit LRU: reverse MRU, LRU */
+	      mru = 1-mru;
+	      curblk = pc & subblockmask;
+	    }
 	  }
+	  now = max(now, ib->ready[mru][blkidx]);
 	}
+	  
 	/* scoreboarding: advance time until source registers not busy */
 	const struct insn_t* p = insn(pc);
-#ifdef SLOW
-	long stall_begin = now;
-#endif
 	now = max(now, busy[p->op_rs1]);
 	now = max(now, busy[p->op.rs2]);
 	if (threeOp(p->op_code))
 	  now = max(now, busy[p->op.rs3]);
+	
 	/* model loads and stores */
 	long ready = now;
 	if (memOp(p->op_code)) {
@@ -82,9 +90,16 @@
 	  status_report(&stats);
 	  next_report += report_frequency;
 	}
-      }
-      if (is_goto(tr))
+#ifdef SLOW
+	stall_begin = now;
+#endif
+      } /* while (pc < epc)
+
+      /* model taken branch */
+      if (is_goto(tr)) {
 	pc = tr_pc(tr);
+	now += branch_penalty;
+      }
       cursor = 0;	       /* get ready to enqueue another list */
       continue;
     }

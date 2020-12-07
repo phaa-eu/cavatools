@@ -3,10 +3,16 @@
 */
 
 
-struct mru_cache_t {
-  long tag;
-  char dirty;
-  long avail : 56;
+struct ibuf_t {
+  long tag[2];
+  long* ready[2];	/* ready[2][numblks] */
+  long tag_mask;	/* pc mask = (1 << lg_line) - 1 */
+  long blk_mask;	/* block index mask = numblks - 1 */
+  long misses;
+  int lg_line;		/* log-base-2 of line size in bytes */
+  int lg_blksize;	/* log-base-2 of block size in bytes */
+  int numblks;		/* = (1<<lg_line)/(1<<lg_blksize) */
+  int penalty;		/* number of cycles to refill critical block */
 };
 
 
@@ -14,13 +20,13 @@ struct statistics_t {
   long cycles;
   long insns;
   long segments;
-  long imisses;
   struct timeval start_timeval;
 };
 
 extern struct statistics_t stats;
 extern long frame_header;
 
+extern struct ibuf_t* ib;
 extern struct cache_t dcache;
 extern struct fifo_t* trace_buffer;
 extern struct fifo_t* l2;
@@ -30,6 +36,7 @@ extern uint64_t mem_queue[tr_memq_len];
 extern int timing;
 extern int quiet;
 
+extern long branch_penalty;
 extern long fetch_latency;
 extern long lg_ib_line;
 
