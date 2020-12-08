@@ -14,10 +14,12 @@ The repository is on GitHub:
     $ git clone https://github.com/pete2222/cavatools
 
 
+
 ###  Prerequisites
 
-You need Berkeley Softfloat Release 3e (https://github.com/ucb-bar/berkeley-softfloat-3)
-library installed at ~/lib/softfloat.a with headers in ~/include/softfloat/.
+The Berkeley Softfloat-3e package has been included in this repository.
+Make install expects ~/bin, ~/lib, ~/include to exit.
+
 
 
 ###  Installation
@@ -30,8 +32,8 @@ To build Cavatools:
 
 will create the following files:
 ```
-    ~/bin/caveat            - instruction set interpreter
-    ~/bin/traceinfo   - prints and summarizes trace from caveat
+    ~/bin/caveat       - instruction set interpreter
+    ~/bin/traceinfo    - prints and summarizes trace from caveat
     ~/bin/pipesim      - very simple pipelined machine simulator
     ~/bin/cachesim     - general cache simulator, can be L1, L2, I, D, I+D...
 ```
@@ -60,7 +62,7 @@ To run without tracing:
 
 To see instruction trace run this in one window:
 ```
-    $ caveat --trace=bufname testpgm <any number of flags and arguments to testpgm>
+    $ caveat --out=bufname testpgm <any number of flags and arguments to testpgm>
 ```
 and this in another window:
 ```
