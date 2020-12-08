@@ -170,7 +170,7 @@ def GenerateSoftwarePipeline():
                 at = 0
             stages[(i+j)%depth] += Substitute(pipe[j], i, at)
     print('    /*   Body */')
-    print('    for ({:s}+={:d}; {:s}+{:d}<{:s}; {:s}+={:d}) {{'.format(lv, depth, lv, depth, limit, lv, depth))
+    print('    for ({:s}+={:d}; {:s}+{:d}<={:s}; {:s}+={:d}) {{'.format(lv, depth, lv, depth, limit, lv, depth))
     PrintPipe(stages)
     print('    }')
 

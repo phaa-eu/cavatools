@@ -3,7 +3,7 @@
  *  (c) 2020 Peter Hsu
  */
 
-#define CAREFULLY
+//#define CAREFULLY
 
 #ifndef SPMV_OP
 #error Define SPMV_OP as += or -= then follow with subroutine header:
@@ -28,20 +28,28 @@
 ?}
 ?[
 0	c$ = c[j+@];
-5	v$ = v[j+@];
-5	x$ = x[c$];
-10	ac SPMV_OP v$*x$;
+1	v$ = v[j+@];
+1	x$ = x[c$];
+2	ac SPMV_OP v$*x$;
 ?]
 
 #ifdef CAREFULLY
   {
+    static long count = 0;
+    count++;
     for (int k=0; k<nnz; k++)
       sum SPMV_OP v[k]*x[c[k]];
     if (sum != ac) {
+#define MISTAKES  1000000
+      static long mistakes = 0;
 #define Q(x)  #x
 #define QUOTE(x) Q(x)
-      fprintf(stderr, "nnz=%ld sum=%12e ac=%12e vnv_spmv(" QUOTE(SPMV_OP) ")\n", nnz, sum, ac);
-      exit(-1);
+//      fprintf(stderr, "count=%ld nnz=%ld sum=%12e(0x%016lx) ac=%12e(0x%016lx) vnv_spmv(" QUOTE(SPMV_OP) ")\n",
+//              count, nnz, sum, (long)sum, ac, (long)ac);
+      fprintf(stderr, "count=%ld nnz mod 3=%ld sum-ac=%g(0x%016lx)\n",
+              count, nnz%3L, sum-ac, (long)(sum-ac));
+      if (++mistakes > MISTAKES)
+        exit(-1);
     }
   }
 #endif
