@@ -180,8 +180,10 @@ Addr_t load_elf_binary( const char* file_name, int include_data )
 	high_bound = header.sh_addr+header.sh_size;
     }
   }
+  insnSpace.base = low_bound;
+  insnSpace.bound = high_bound;
   //  fprintf(stderr, "Text segment [0x%lx, 0x%lx)\n", low_bound, high_bound);
-  insnSpace_init(low_bound, high_bound);
+  //insnSpace_init(low_bound, high_bound);
   close(file);
   
   //  info->stack_top = MEM_END + 0x1000;

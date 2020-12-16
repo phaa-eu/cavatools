@@ -269,8 +269,10 @@ int main(int argc, const char** argv)
     help_exit();
   report_frequency = (report ? atoi(report) : REPORT_FREQUENCY) * 1000000;
   long entry =0;
-  if (argc > numopts+1)
+  if (argc > numopts+1) {
     entry = load_elf_binary(argv[1+numopts], 0);
+    insnSpace_init();
+  }
   trace_buffer = fifo_open(shm_path);
   start_tick = clock();
   if (list)

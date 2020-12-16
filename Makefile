@@ -10,6 +10,7 @@ clean:
 	make -C cachesim  clean
 	make -C pipesim   clean
 	make -C traceinfo clean
+	make -C erised    clean
 
 
 tarball:  clean
@@ -23,6 +24,7 @@ install:
 	make -C cachesim  install
 	make -C pipesim   install
 	make -C traceinfo install
+	make -C erised    install
 	make -C utilities/softpipe install
 
 

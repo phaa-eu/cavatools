@@ -93,7 +93,7 @@ extern const char* regName[];
 
   
   
-void insnSpace_init( Addr_t low, Addr_t high );
+void insnSpace_init();
 void decode_instruction( const struct insn_t* p, Addr_t PC );
 
 Addr_t load_elf_binary( const char* file_name, int include_data );
@@ -102,11 +102,7 @@ int find_symbol( const char* name, Addr_t* begin, Addr_t* end );
 int find_pc( long pc, const char** name, long* offset );
 
 
-
-static inline const struct insn_t* insn(Addr_t pc)
-{
-  return &insnSpace.insn_array[(pc-insnSpace.base)/2];
-}
+#define insn(pc)  ( &insnSpace.insn_array[(pc-insnSpace.base)/2] )
 
 static inline int valid_pc(Addr_t pc)
 {
@@ -147,6 +143,15 @@ int print_pc( long pc, FILE* output_file );
   returns whether address associated with known function
   pc		- program counter in text segment
   file_descr	- write to this file descriptor
+*/
+
+int format_insn( char* buf, const struct insn_t* p, long pc );
+/*
+  Disassemble instruction into buffer
+  returns length of string in buf
+  buf		- buffer to hold disassembled text
+  p		- must be insn(pc)
+  pc		- program counter in text segment
 */
 
 void print_insn( long address, FILE* output_file );

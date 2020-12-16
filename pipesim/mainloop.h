@@ -29,32 +29,38 @@
       long epc = pc + tr_delta(tr);
       cursor = 0;			/* read list of memory addresses */
       while (pc < epc) {
+#ifdef COUNT
+	long before_issue = now;
+#endif
 	/* model instruction fetch */
-	if ((pc & subblockmask) != curblk) { /* fast path: in current subblock */
+	//if ((pc & subblockmask) != curblk) { /* fast path: in current subblock */
 	  long pctag = pc & ib->tag_mask;
 	  long blkidx = (pc >> ib->lg_blksize) & ib->blk_mask;
 	  if (pctag != ib->tag[mru]) {
-	    if (pctag != ib->tag[1-mru]) { /* miss: shift MRU to LRU, fill MRU */
+	    if (pctag == ib->tag[1-mru]) { /* hit LRU: reverse MRU, LRU */
+	      mru = 1-mru;
+	      curblk = pc & subblockmask;
+	    }
+	    else { /* miss: shift MRU to LRU, fill MRU */
 	      ib->misses++;
-	      ib->tag[1-mru] = ib->tag[mru];
+	      mru = 1-mru;
 	      ib->tag[mru] = pctag;
 	      curblk = pc & subblockmask;
 #ifdef SLOW
 	      fifo_put(l2, trM(tr_i1get, pc));
 #endif
 	      long avail = now+ib->penalty; /* when instruction available */
+	      //ib->ready[mru][0] = avail;
+#if 1
 	      for (int i=0; i<ib->numblks; i++) {  /* refill all blocks */
 		int j = (blkidx+i) & ib->blk_mask; /* critical block first*/
 		ib->ready[mru][j] = avail+i; /* one cycle per block */
 	      }
-	    }
-	    else { /* hit LRU: reverse MRU, LRU */
-	      mru = 1-mru;
-	      curblk = pc & subblockmask;
+#endif
 	    }
 	  }
 	  now = max(now, ib->ready[mru][blkidx]);
-	}
+	  //}
 	  
 	/* scoreboarding: advance time until source registers not busy */
 	const struct insn_t* p = insn(pc);
@@ -84,6 +90,11 @@
 	}
 #endif
 	now += 1;		/* single issue machine */
+#ifdef COUNT
+	struct count_t* c = count(pc);
+	c->count++;
+	c->cycles += now - before_issue;
+#endif
 	pc += shortOp(p->op_code) ? 2 : 4;
 	if (++insn_count >= next_report) {
 	  SAVE_STATS();

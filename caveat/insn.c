@@ -35,17 +35,17 @@ const char* regName[] = {
 };
 
 
-void insnSpace_init(Addr_t low, Addr_t high)
+void insnSpace_init()
 {
-  assert(low < high);
-  insnSpace.base = low;
-  insnSpace.bound = high;
-  long nelts = (high-low)/2;
+  dieif(insnSpace.base==0, "insnSpace_init() base, bound not initialized");
+  assert(insnSpace.base < insnSpace.bound);
+  
+  long nelts = (insnSpace.bound - insnSpace.base) / 2;
   insnSpace.insn_array = (struct insn_t*)mmap(0, nelts*sizeof(struct insn_t), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   assert(insnSpace.insn_array);
   memset(insnSpace.insn_array, 0, nelts*sizeof(struct insn_t));
-  for (Addr_t pc=low; pc<high; pc+=2)
-    decode_instruction(&insnSpace.insn_array[(pc-low)/2], pc);
+  for (Addr_t pc=insnSpace.base; pc<insnSpace.bound; pc+=2)
+    decode_instruction(&insnSpace.insn_array[(pc-insnSpace.base)/2], pc);
 }
 
 
@@ -101,21 +101,26 @@ int print_pc( long pc, FILE* f)
 }
 
 
-void print_insn(Addr_t pc, FILE* f)
+int format_insn(char* buf, const struct insn_t* p, Addr_t pc)
 {
-  if (!valid_pc(pc))  {
-    fprintf(f, "%16lx  %8s\n", pc, "NOT TEXT");
-    return;
-  }
-  const struct insn_t* p = insn(pc);
-  if (shortOp(p->op_code))
-    fprintf(f, "%16lx      %04x  %-16s", pc, *((unsigned short*)pc), insnAttr[p->op_code].name);
-  else
-    fprintf(f, "%16lx  %08x  %-16s", pc, *((unsigned*)pc), insnAttr[p->op_code].name);
+  if (!valid_pc(pc))
+    return sprintf(buf, "%16lx  %8s\n", pc, "NOT TEXT");
+  int n = sprintf(buf, shortOp(p->op_code) ? "%16lx      %04x  %-16s" : "%16lx  %08x  %-16s",
+		  pc, *((unsigned short*)pc), insnAttr[p->op_code].name);
+  buf += n;
   switch (p->op_code) {
 #include "disasm_insn.h"
   }
+  return n;
 }
+
+void print_insn(Addr_t pc, FILE* f)
+{
+  char buf[1024];
+  format_insn(buf, insn(pc), pc);
+  fprintf(f, "%s", buf);
+}
+
 
 
 void print_registers(struct reg_t reg[], FILE* f)

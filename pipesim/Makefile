@@ -12,13 +12,13 @@ hdrs := opcodes.h insn.h shmfifo.h caveat.h
 hdrs := $(addprefix $R/include/cava/,$(hdrs))
 
 
-pipesim:  pipesim.o fast_pipe.o slow_pipe.o cache.o $(LIBS)
+pipesim:  pipesim.o fast_pipe.o slow_pipe.o count_pipe.o cache.o $(LIBS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-pipesim.o fast_pipe.o slow_pipe.o:  pipesim.h cache.h $(hdrs)
+pipesim.o fast_pipe.o slow_pipe.o count_pipe.o:  pipesim.h cache.h $(hdrs)
 
-fast_pipe.o slow_pipe.o:  mainloop.h
-fast_pipe.o slow_pipe.o pipesim.o:  lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
+fast_pipe.o slow_pipe.o count_pipe.o:  mainloop.h
+fast_pipe.o slow_pipe.o count_pipe.o pipesim.o:  lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
 
 lru_fsm_1way.h:  make_cache
 	./make_cache 1

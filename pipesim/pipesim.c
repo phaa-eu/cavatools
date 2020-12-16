@@ -8,6 +8,9 @@
 #include <assert.h>
 #include <string.h>
 #include <sys/time.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "caveat.h"
 #include "opcodes.h"
@@ -65,9 +68,39 @@ long branch_penalty;
 long fetch_latency;
 long lg_ib_line;
 
+struct countSpace_t countSpace;
+
 
 struct statistics_t stats;
 long frame_header;
+
+
+void countSpace_init(const char* shm_name, int reader)
+{
+  countSpace.base  = insnSpace.base;
+  countSpace.bound = insnSpace.bound;
+  size_t size = sizeof(struct count_t) * ((countSpace.bound - countSpace.base) / 2);
+  if (!shm_name)
+    countSpace.insn_array = (struct count_t*)mmap(0, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  else if (!reader) {
+    int fd = shm_open(shm_name, O_CREAT|O_TRUNC|O_RDWR, S_IRWXU);
+    dieif(fd<0, "shm_open() failed in countSpace_init");
+    dieif(ftruncate(fd, size)<0, "ftruncate() failed in countSpace_init");
+    countSpace.insn_array = (struct count_t*)mmap(0, size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+  }
+  else {
+    int fd = shm_open(shm_name, O_RDONLY, 0);
+    dieif(fd<0, "shm_open() failed in countSpace_init");
+    countSpace.insn_array = (struct count_t*)mmap(0, size, PROT_READ, MAP_SHARED, fd, 0);
+  }
+  dieif(countSpace.insn_array==0, "mmap() failed in countSpace_init");
+  if (!shm_name || !reader) {
+    memset((char*)countSpace.insn_array, 0, size);
+    for (Addr_t pc=countSpace.base; pc<countSpace.bound; pc+=2)
+      decode_instruction(&countSpace.insn_array[(pc-countSpace.base)/2].i, pc);
+  }
+}
+
 
 
 void status_report(struct statistics_t* stats)
@@ -92,6 +125,7 @@ int main(int argc, const char** argv)
   
   static const char* in_path =0;
   static const char* out_path =0;
+  static const char* count_path =0;
   static const char* wflag =0;
   static const char* ilgline =0;
   static const char* ilgblksz =0;
@@ -115,6 +149,7 @@ int main(int argc, const char** argv)
      { "--dways=",	.v=&dnumways,	.h="L1 data cache is =w ways set associativity [4]" },
      { "--dsets=",	.v=&dlgsets,	.h="L1 data cache has 2^ =n sets per way [6]" },
      { "--out=",	.v=&out_path,	.h="Create output trace file =name [no output trace]" },
+     { "--count=",	.v=&count_path,	.h="Performance counters in shared memory =name [none]" },
      { "--timing",	.f=&timing,	.h="Include pipeline timing information in trace" },
      { "--report=",	.v=&report,	.h="Progress report every =number million instructions [100]" },
      { "--quiet",	.f=&quiet,	.h="Don't report progress to stderr" },
@@ -126,6 +161,8 @@ int main(int argc, const char** argv)
   if (argc == numopts+1 || !in_path)
     help_exit();
   long entry = load_elf_binary(argv[1+numopts], 0);
+  countSpace_init(count_path, 0);
+  
   report_frequency = (report ? atoi(report) : REPORT_FREQUENCY) * 1000000;
   //  stats.start_tick = clock();
   gettimeofday(&stats.start_timeval, 0);
@@ -138,7 +175,7 @@ int main(int argc, const char** argv)
   ib = (struct ibuf_t*)malloc(sizeof(struct ibuf_t));
   memset((char*)ib, 0, sizeof(struct ibuf_t));
   ib->lg_line = ilgline ? atoi(ilgline) : DEFAULT_ILGLINE;
-  ib->tag_mask = (1L << ib->lg_line) - 1;
+  ib->tag_mask = ~((1L << ib->lg_line)-1);
   ib->penalty = ipenalty ? atoi(ipenalty) : DEFAULT_IPENALTY;
   ib->lg_blksize = ilgblksz ? atoi(ilgblksz) : DEFAULT_ILGBLKSZ;
   ib->numblks = (1<<ib->lg_line)/(1<<ib->lg_blksize);
@@ -173,6 +210,8 @@ int main(int argc, const char** argv)
   }
   else if (timing)
     slow_pipe(entry, read_latency, report_frequency, 0);
+  else if (count_path)
+    count_pipe(entry, read_latency, report_frequency, 0);
   else
     fast_pipe(entry, read_latency, report_frequency, 0);
   if (out_path) {

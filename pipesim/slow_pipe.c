@@ -58,4 +58,6 @@ void slow_pipe(long pc, long read_latency, long next_report,
 	       long (*model_dcache)(long tr, const struct insn_t* p, long available))
 
 #define SLOW
+#define COUNT
+  
 #include "mainloop.h"

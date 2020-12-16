@@ -56,6 +56,7 @@ int main(int argc, const char* argv[], const char* envp[])
   if (argc == numopts+1)
     help_exit();
   Addr_t entry_pc = load_elf_binary(argv[1+numopts], 1);
+  insnSpace_init();
   Addr_t stack_top = initialize_stack(argc-1-numopts, argv+1+numopts, envp);
   cpu = malloc(sizeof(struct core_t));
   dieif(cpu==0, "unable to malloc cpu");

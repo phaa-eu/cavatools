@@ -2,6 +2,17 @@
   Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
+struct count_t {		/* CPI = cycles/count */
+  struct insn_t i;		/* decoded instruction */
+  long count;			/* how many times executed */
+  long cycles;			/* total including stalls */
+};
+
+struct countSpace_t {
+  Addr_t base, bound;
+  struct count_t* insn_array;
+};
+
 
 struct ibuf_t {
   long tag[2];
@@ -23,6 +34,8 @@ struct statistics_t {
   struct timeval start_timeval;
 };
 
+
+extern struct countSpace_t countSpace;
 extern struct statistics_t stats;
 extern long frame_header;
 
@@ -41,6 +54,13 @@ extern long fetch_latency;
 extern long lg_ib_line;
 
 
+void countSpace_init(const char* shm_name, int reader);
+
+#undef insn
+#define insn(pc)   ( &countSpace.insn_array[(pc-countSpace.base)/2].i )
+#define count(pc)  ( &countSpace.insn_array[(pc-countSpace.base)/2]   )
+
+
 extern long report_frequency;
 void status_report(struct statistics_t* stats);
 
@@ -52,4 +72,6 @@ void fast_pipe(long pc, long read_latency, long next_report,
 	       long (*model_dcache)(long tr, const struct insn_t* p, long available));
 void slow_pipe(long pc, long read_latency, long next_report,
 	       long (*model_dcache)(long tr, const struct insn_t* p, long available));
+void count_pipe(long pc, long read_latency, long next_report,
+		long (*model_dcache)(long tr, const struct insn_t* p, long available));
 
