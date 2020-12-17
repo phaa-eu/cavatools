@@ -4,13 +4,15 @@ nothing:
 
 clean:
 	rm -f $(HOME)/lib/libcava.a $(HOME)/lib/softfloat.a *~ ./#*#
-	(cd $(HOME)/bin; rm -f caveat cachesim pipesim traceinfo )
 	( cd softfloat/build/Linux-x86_64-GCC; rm -f softfloat.a *.o )
 	make -C caveat    clean
 	make -C cachesim  clean
 	make -C pipesim   clean
 	make -C traceinfo clean
 	make -C erised    clean
+
+#	(cd $(HOME)/bin; rm -f caveat cachesim pipesim traceinfo )
+
 
 
 tarball:  clean
