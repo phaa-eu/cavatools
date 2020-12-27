@@ -156,16 +156,25 @@ static inline uint64_t tr_print(uint64_t tr, FILE* f)
 
 
 struct options_t {
-  const char* name;
-  const char* h;
-  union {
-    const char** v;
-    int* f;
+  const char* name;		/* name=type[si] or name, preceeded by - or -- */
+  union {			/* pointer to option value location */
+    const char** s;		/*   name=s */
+    long* i;			/*   name=i */
+    long* b;			/*   name (no =) */
   };
+  union {			/* default value */
+    const char* ds;		/*   name=s */
+    long di;			/*   name=i */
+    long bv;			/* value if flag given */
+  };
+  const char* h;		/* help string */
 };
 
+extern const struct options_t opt[];
+extern const char* usage;
+
 void help_exit();
-int parse_options( struct options_t opt[], const char** argv, const char* usage );
+int parse_options( const char** argv );
 
 
 

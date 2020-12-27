@@ -2,138 +2,104 @@
   Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
-#define SAVE_STATS()  \
-  stats.cycles = now; \
-  stats.insns = insn_count;
-
-#define max(a, b)  a > b ? a : b
+#define max(a, b)  ( a > b ? a : b )
 
 {
   static long busy[256];	/* cycle when register becomes available */
+  long pc =0;
+  long icount =0;		/* instructions executed */
   long now =0;			/* current cycle */
-  int mru =0;			/* which tag in ibuf is mru */
-  long curblk =0;		/* pc of current ibuffer subblock */
-  long subblockmask = ~0UL << ib->lg_blksize;
   int cursor =0;		/* into mem_queue[] */
-  long insn_count =0;		/* instructions executed */
-#ifdef SLOW
-  long stall_begin =now;
-#endif
 
-  for (uint64_t tr=fifo_get(trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(trace_buffer)) { 
-    if (is_mem(tr)) {
-      mem_queue[cursor++] = tr;
-      continue;
-    }
-    if (is_bbk(tr)) {
-      long epc = pc + tr_delta(tr);
-      cursor = 0;			/* read list of memory addresses */
-      while (pc < epc) {
-#ifdef COUNT
-	long before_issue = now;
-#endif
-	/* model instruction fetch */
-	//if ((pc & subblockmask) != curblk) { /* fast path: in current subblock */
-	  long pctag = pc & ib->tag_mask;
-	  long blkidx = (pc >> ib->lg_blksize) & ib->blk_mask;
-	  if (pctag != ib->tag[mru]) {
-	    if (pctag == ib->tag[1-mru]) { /* hit LRU: reverse MRU, LRU */
-	      mru = 1-mru;
-	      curblk = pc & subblockmask;
+  uint64_t tr = fifo_get(in);
+  while (tr_code(tr) != tr_eof) {
+    while (!is_frame(tr)) {
+      if (is_mem(tr))
+	mem_queue[cursor++] = tr;
+      else if (is_bbk(tr)) {
+	long epc = pc + tr_delta(tr);
+	cursor = 0;			/* read list of memory addresses */
+	while (pc < epc) {
+	  long before_issue = now;
+	  
+	  /* model instruction fetch */
+	  long pctag = pc & ib.tag_mask;
+	  long blkidx = (pc >> ib.blksize) & ib.blk_mask;
+	  if (pctag != ib.tag[ib.mru]) {
+	    if (pctag == ib.tag[1-ib.mru]) { /* hit LRU: reverse MRU, LRU */
+	      ib.mru = 1 - ib.mru;
+	      ib.curblk = pc & ib.subblockmask;
 	    }
 	    else { /* miss: shift MRU to LRU, fill MRU */
-	      ib->misses++;
-	      mru = 1-mru;
-	      ib->tag[mru] = pctag;
-	      curblk = pc & subblockmask;
+	      ib.misses++;
+	      perf.ib_miss[(pc-perf.p.base)/2] += 1;
+	      now += ib.penalty;
+	      ib.mru = 1 - ib.mru;
+	      ib.tag[ib.mru] = pctag;
+	      memset(ib.ready[ib.mru], 0, ib.numblks*sizeof(long));
+	      ib.curblk = pc & ib.subblockmask;
+	      long ready = lookup_cache(&ic, ib.curblk, 0, now+ic.penalty);
+	      ib.ready[ib.mru][blkidx] = ready;
+	      if (ready == now+ic.penalty) {
+		perf.ic_miss[(pc-perf.p.base)/2] += 1;
 #ifdef SLOW
-	      fifo_put(l2, trM(tr_i1get, pc));
+		fifo_put(out, trM(tr_i1get, ib.curblk));
 #endif
-	      long avail = now+ib->penalty; /* when instruction available */
-	      //ib->ready[mru][0] = avail;
-#if 1
-	      for (int i=0; i<ib->numblks; i++) {  /* refill all blocks */
-		int j = (blkidx+i) & ib->blk_mask; /* critical block first*/
-		ib->ready[mru][j] = avail+i; /* one cycle per block */
 	      }
-#endif
 	    }
 	  }
-	  now = max(now, ib->ready[mru][blkidx]);
-	  //}
+	  now = max(now, ib.ready[ib.mru][blkidx]);
 	  
-	/* scoreboarding: advance time until source registers not busy */
-	const struct insn_t* p = insn(pc);
-	now = max(now, busy[p->op_rs1]);
-	now = max(now, busy[p->op.rs2]);
-	if (threeOp(p->op_code))
-	  now = max(now, busy[p->op.rs3]);
+	  /* scoreboarding: advance time until source registers not busy */
+	  const struct insn_t* p = insn(pc);
+	  now = max(now, busy[p->op_rs1]);
+	  now = max(now, busy[p->op.rs2]);
+	  if (threeOp(p->op_code))
+	    now = max(now, busy[p->op.rs3]);
 	
-	/* model loads and stores */
-	long ready = now;
-	if (memOp(p->op_code)) {
+	  /* model loads and stores */
+	  long ready = now;
+	  if (memOp(p->op_code)) {
 #ifdef SLOW
-	  if (model_dcache)
-	    ready = model_dcache(mem_queue[cursor++], p, now+read_latency);
-	  else
+	    if (model_dcache)
+	      ready = model_dcache(mem_queue[cursor++], p, now+dc.penalty);
+	    else
 #endif
-	    ready = lookup_cache(&dcache, tr_value(mem_queue[cursor++]), writeOp(p->op_code), now+read_latency);
-	  /* note ready may be long in the past */
+	      ready = lookup_cache(&dc, tr_value(mem_queue[cursor++]), writeOp(p->op_code), now+dc.penalty);
+	    /* note ready may be long in the past */
+	    if (ready == now+dc.penalty)
+	      perf.dc_miss[(pc-perf.p.base)/2] += 1;
+	  }
+	  /* model function unit latency */
+	  busy[p->op_rd] = ready + insnAttr[p->op_code].latency;
+	  busy[NOREG] = 0;	/* in case p->op_rd not valid */
+	  now += 1;		/* single issue machine */
+	  struct count_t* c = (struct count_t*)count(pc);
+	  pc += shortOp(p->op_code) ? 2 : 4;
+	  c->count++;
+	  c->cycles      += now - before_issue;
+	  if (++icount >= next_report) {
+	    status_report(now, icount);
+	    next_report += report;
+	  }
+	} /* while (pc < epc) */
+	if (is_goto(tr)) {	/* model taken branch */
+	  pc = tr_pc(tr);
+	  now += ib.delay;
 	}
-	/* model function unit latency */
-	busy[p->op_rd] = ready + insnAttr[p->op_code].latency;
-	busy[NOREG] = 0;	/* in case p->op_rd not valid */
-#ifdef SLOW
-	if (timing && now-stall_begin > 0) {
-	  fifo_put(l2, trM(tr_stall, stall_begin));
-	  fifo_put(l2, trP(tr_issue, now-stall_begin, pc));
-	}
-#endif
-	now += 1;		/* single issue machine */
-#ifdef COUNT
-	struct count_t* c = count(pc);
-	c->count++;
-	c->cycles += now - before_issue;
-#endif
-	pc += shortOp(p->op_code) ? 2 : 4;
-	if (++insn_count >= next_report) {
-	  SAVE_STATS();
-	  status_report(&stats);
-	  next_report += report_frequency;
-	}
-#ifdef SLOW
-	stall_begin = now;
-#endif
-      } /* while (pc < epc)
-
-      /* model taken branch */
-      if (is_goto(tr)) {
-	pc = tr_pc(tr);
-	now += branch_penalty;
-      }
+      } /* else if (is_bbk(tr)) */
       cursor = 0;	       /* get ready to enqueue another list */
-      continue;
-    }
-    if (tr_code(tr) == tr_icount) {
-      //fprintf(stderr, "Got tr_icount=%ld, my icount=%ld, delta=%ld\n", tr_value(tr), insn_count, tr_value(tr)-insn_count);
-#ifdef SLOW
-      fifo_put(l2, trM(tr_icount, insn_count));
-      fifo_put(l2, trM(tr_cycles, now));
-#endif
-      continue;
-    }
-    if (is_frame(tr)) {
-      hart = tr_value(tr);
-      pc = tr_pc(tr);
-      flush_cache(&dcache);
-      stats.segments++;
-      SAVE_STATS()
-      status_report(&stats);
-#ifdef SLOW
-      fifo_put(l2, frame_header);
-#endif
-      continue;
-    }
-  }
-  SAVE_STATS();
+      tr=fifo_get(in);
+    } /* while (!is_frame(tr) */
+
+    /* model discontinous trace segment */
+    tr_print(tr, stderr);
+    hart = tr_value(tr);
+    pc = tr_pc(tr);
+    ib.tag[0] = ib.tag[1] = 0L;	/* flush instruction buffer */
+    flush_cache(&ic);		/* should we flush? */
+    flush_cache(&dc);		/* should we flush? */
+    status_report(now, icount);
+    tr=fifo_get(in);
+  } /* while (tr_code(tr) != tr_eof) */
 }

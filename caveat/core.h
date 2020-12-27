@@ -44,9 +44,9 @@ struct core_t {
     long after;			/* countdown, negative=start tracing */
     long every;			/* but only trace once per n-1 calls */
     long skip;			/* skip until negative, reset to every */
-    long report_interval;
-    long has_flags;
-    int quiet;
+    long report;
+    long flags;
+    long quiet;
   } params;
 };
 

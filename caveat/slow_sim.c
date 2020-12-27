@@ -46,7 +46,7 @@ void slow_sim( struct core_t* cpu, long total_max_count )
 {
   Addr_t PC = cpu->pc;
   int since =0, updates=0;
-  int withregs = (cpu->params.has_flags & tr_has_reg) != 0;
+  int withregs = (cpu->params.flags & tr_has_reg) != 0;
   
   while (cpu->state.mcause == 0 && total_max_count > 0) {
     long max_count = ICOUNT_INTERVAL;

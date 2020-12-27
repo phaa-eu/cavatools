@@ -41,8 +41,8 @@ int outer_loop( struct core_t* cpu )
   int fast_mode = 1;
   cpu->holding_pc = 0;
   while (1) { // terminated by program making exit() ecall
-    long next_report = (cpu->counter.insn_executed+cpu->params.report_interval) / cpu->params.report_interval;
-    next_report = next_report*cpu->params.report_interval - cpu->counter.insn_executed;
+    long next_report = (cpu->counter.insn_executed+cpu->params.report) / cpu->params.report;
+    next_report = next_report*cpu->params.report - cpu->counter.insn_executed;
     if (fast_mode)
       fast_sim(cpu, next_report);
     else
@@ -62,10 +62,10 @@ int outer_loop( struct core_t* cpu )
       
     case 3:  /* Breakpoint */
       if (fast_mode) {
-	if (--cpu->params.after >= 0 || /* not ready to trace yet */
-	    --cpu->params.skip >= 0) {  /* only trace every n call */
+	if (--cpu->params.after > 0 || /* not ready to trace yet */
+	    --cpu->params.skip > 0) {  /* only trace every n call */
 	  cpu->holding_pc = 0L;	/* do not include current pc */
-	  cpu->params.skip = cpu->params.every-1;
+	  cpu->params.skip = cpu->params.every;
 	  /* put instruction back and single step */
 	  decode_instruction(insn(cpu->pc), cpu->pc);
 	  cpu->state.mcause = 0;
@@ -77,7 +77,7 @@ int outer_loop( struct core_t* cpu )
 	  if (cpu->reg[RA].a)	/* _start called with RA==0 */
 	    insert_breakpoint(cpu->reg[RA].a);
 	  fast_mode = 0;		/* start tracing */
-	  fifo_put(cpu->tb, trP(cpu->params.has_flags, 0, cpu->pc));
+	  fifo_put(cpu->tb, trP(cpu->params.flags, 0, cpu->pc));
 	}
       }
       else {  /* reinserting breakpoint at subroutine entry */

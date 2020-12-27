@@ -145,7 +145,7 @@ int print_pc( long pc, FILE* output_file );
   file_descr	- write to this file descriptor
 */
 
-int format_insn( char* buf, const struct insn_t* p, long pc );
+int format_insn( char* buf, const struct insn_t* p, long pc, unsigned int image );
 /*
   Disassemble instruction into buffer
   returns length of string in buf

@@ -20,21 +20,22 @@ struct lru_fsm_t {
 
 struct cache_t {		/* cache descriptor */
   struct lru_fsm_t* fsm;	/* LRU state transitions [ways!][ways] */
-  int line;			/* line size in bytes */
-  int rows;			/* number of rows */
-  int ways;			/* number of ways */
-  int lg_line, lg_rows;		/* specified in log-base-2 units */
+  long line;			/* line size in bytes */
+  long rows;			/* number of rows */
+  long ways;			/* number of ways */
+  long lg_line, lg_rows;		/* specified in log-base-2 units */
   long row_mask;		/* row index mask = (1<<lg_rows)-1 */
   struct tag_t** tags;		/* cache tag array [ways]->[rows] */
   unsigned short* states;	/* LRU state vector [rows] */
   long* evicted;		/* tag of evicted line, 0 if clean, NULL if unwritable */
+  long penalty;			/* cycles to refill line */
   long refs, misses;		/* count number of */
   long updates, evictions;	/* if writeable */
 };
 
 void flush_cache( struct cache_t* c );
 
-void init_cache( struct cache_t* c, int lg_line_size, int lg_rows_per_way, struct lru_fsm_t* fsm, int writeable );
+void init_cache( struct cache_t* c, struct lru_fsm_t* fsm, int writeable );
 
 void show_cache( struct cache_t* c );
 

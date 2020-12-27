@@ -11,11 +11,9 @@ void flush_cache( struct cache_t* c )
   memset((char*)c->states, 0, c->rows*sizeof(unsigned short));
 }
 
-void init_cache( struct cache_t* c, int lg_line_size, int lg_rows_per_way, struct lru_fsm_t* fsm, int writeable )
+void init_cache( struct cache_t* c, struct lru_fsm_t* fsm, int writeable )
 {
   c->fsm = fsm;			/* note purposely point to [-1] */
-  c->lg_line = lg_line_size;
-  c->lg_rows = lg_rows_per_way;
   c->line = 1 << c->lg_line;
   c->rows = 1 << c->lg_rows;
   c->ways = fsm->way;
@@ -34,7 +32,7 @@ void init_cache( struct cache_t* c, int lg_line_size, int lg_rows_per_way, struc
 
 void show_cache( struct cache_t* c )
 {
-  fprintf(stderr, "lg_line=%d lg_rows=%d line=%d rows=%d ways=%d row_mask=0x%lx\n",
+  fprintf(stderr, "lg_line=%ld lg_rows=%ld line=%ld rows=%ld ways=%ld row_mask=0x%lx\n",
 	  c->lg_line, c->lg_rows, c->line, c->rows, c->ways, c->row_mask);
 }
 

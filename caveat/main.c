@@ -20,76 +20,61 @@
 #define DEFAULT_REPORT_INTERVAL  1000
 
 
-const char* tracing = 0;
-struct core_t* cpu;
+struct core_t core;
+  
+const char* tracing;
+static long bufsize;
+static const char* func;
 
+const struct options_t opt[] =
+  {
+   { "--out=s",		.s=&tracing,		.ds=0,		.h="Create trace file/fifo =name" },
+   { "--trace=s",	.s=&tracing,		.ds=0,		.h="synonym for --out" },
+   { "--buffer=i",	.i=&bufsize,		.di=12,		.h="Shared memory buffer size is 2^ =n bytes" },
+   { "--func=s",	.s=&func,		.ds="_start",	.h="Trace function =name" },       
+   { "--withregs",	.b=&core.params.flags,	.bv=tr_has_reg,	.h="Include register values in trace" },
+   { "--after=i",	.i=&core.params.after,	.di=1,		.h="Start tracing function after =number calls" },
+   { "--every=i",	.i=&core.params.every,	.di=1,		.h="Trace only every =number times function is called" },
+   { "--skip=i",	.i=&core.params.skip,	.di=1,		.h="Trace function once every =number times called" },
+   { "--report=i",	.i=&core.params.report,	.di=1000,	.h="Progress report every =number million instructions" },
+   { "--quiet",		.b=&core.params.quiet,	.bv=1,		.h="Don't report progress to stderr" },
+   { "-q",		.b=&core.params.quiet,	.bv=1,		.h="short for --quiet" },
+   { 0 }
+  };
+const char* usage = "caveat [caveat-options] target-program [target-options]";
 
 int main(int argc, const char* argv[], const char* envp[])
 {
   struct timeval start_timeval;
   gettimeofday(&start_timeval, 0);
-  long start_tick = clock();
-  
-  static const char* func = 0;
-  static const char* after = 0;
-  static const char* every = 0;
-  static const char* report = 0;
-  static int withregs = 0;
-  static int quiet = 0;
-  static const char* bufsize = 0;
-  static struct options_t opt[] =
-    {
-     { "--out=",	.v=&tracing,	.h="Create trace file/fifo =name [no trace]" },
-     { "--trace=",	.v=&tracing,	.h="synonym for --out" },
-     { "--buffer=",	.v=&bufsize,	.h="Shared memory buffer size is 2^ =n bytes [12]" },
-     { "--func=",	.v=&func,	.h="Trace function =name [_start]" },       
-     { "--withregs",	.f=&withregs,	.h="Include register values in trace" },
-     { "--after=",	.v=&after,	.h="Start tracing function after =number calls [1]" },
-     { "--every=",	.v=&every,	.h="Trace only every =number times function is called [1]" },
-     { "--report=",	.v=&report,	.h="Progress report every =number million instructions [1000]" },
-     { "--quiet",	.f=&quiet,	.h="Don't report progress to stderr" },
-     { "-q",		.f=&quiet,	.h="short for --quiet" },
-     { 0 }
-    };
-  int numopts = parse_options(opt, argv+1,
-			      "caveat [caveat-options] target-program [target-options]");
+  init_core(&core, clock(), &start_timeval);
+
+  int numopts = parse_options(argv+1);
   if (argc == numopts+1)
     help_exit();
+  core.params.report *= 1000000; /* unit is millions of instructions */
   Addr_t entry_pc = load_elf_binary(argv[1+numopts], 1);
   insnSpace_init();
   Addr_t stack_top = initialize_stack(argc-1-numopts, argv+1+numopts, envp);
-  cpu = malloc(sizeof(struct core_t));
-  dieif(cpu==0, "unable to malloc cpu");
-  init_core(cpu, start_tick, &start_timeval);
-  cpu->pc = entry_pc;
-  cpu->reg[SP].a = stack_top;
+  core.pc = entry_pc;
+  core.reg[SP].a = stack_top;
   if (tracing) {
     if (!func)
       func = "_start";
-    if (! find_symbol(func, &cpu->params.breakpoint, 0)) {
+    if (! find_symbol(func, &core.params.breakpoint, 0)) {
       fprintf(stderr, "function %s cannot be found in symbol table\n", func);
       exit(1);
     }
-    fprintf(stderr, "Tracing %s at 0x%lx\n", func, cpu->params.breakpoint);
+    fprintf(stderr, "Tracing %s at 0x%lx\n", func, core.params.breakpoint);
+    core.params.flags |= tr_has_pc | tr_has_mem;
+    core.tb = fifo_create(tracing, bufsize);
   }
   else
-    cpu->params.breakpoint = 0;
-  cpu->params.after = after ? atoi(after) : 0;
-  cpu->params.every = every ? atoi(after) : 1;
-  cpu->params.skip = cpu->params.every-1;
-  cpu->params.report_interval = (report ? atoi(report) : DEFAULT_REPORT_INTERVAL) * 1000000;
-  cpu->params.quiet = quiet;
+    core.params.breakpoint = 0;
+  int rc = run_program(&core);
   if (tracing) {
-    cpu->params.has_flags = tr_has_pc | tr_has_mem;
-    if (withregs)
-      cpu->params.has_flags |= tr_has_reg;
-    int lgbufsz = bufsize ? atoi(bufsize) : 12;
-    cpu->tb = fifo_create(tracing, lgbufsz);
-  }
-  int rc = run_program(cpu);
-  if (tracing) {
-    fifo_put(cpu->tb, trM(tr_eof, 0));
-    fifo_finish(cpu->tb);
+    fifo_put(core.tb, trM(tr_eof, 0));
+    fifo_finish(core.tb);
   }
   return rc;
 }
@@ -124,6 +109,6 @@ int run_program(struct core_t* cpu)
     print_registers(cpu->reg, stderr);
     return -1;
   }
-  return outer_loop(cpu);
+  return outer_loop(&core);
 }
 

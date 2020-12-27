@@ -101,12 +101,12 @@ int print_pc( long pc, FILE* f)
 }
 
 
-int format_insn(char* buf, const struct insn_t* p, Addr_t pc)
+int format_insn(char* buf, const struct insn_t* p, Addr_t pc, unsigned int image)
 {
-  if (!valid_pc(pc))
-    return sprintf(buf, "%16lx  %8s\n", pc, "NOT TEXT");
+  //  if (!valid_pc(pc))
+  //    return sprintf(buf, "%16lx  %8s\n", pc, "NOT TEXT");
   int n = sprintf(buf, shortOp(p->op_code) ? "%16lx      %04x  %-16s" : "%16lx  %08x  %-16s",
-		  pc, *((unsigned short*)pc), insnAttr[p->op_code].name);
+		  pc, image, insnAttr[p->op_code].name);
   buf += n;
   switch (p->op_code) {
 #include "disasm_insn.h"
@@ -117,7 +117,7 @@ int format_insn(char* buf, const struct insn_t* p, Addr_t pc)
 void print_insn(Addr_t pc, FILE* f)
 {
   char buf[1024];
-  format_insn(buf, insn(pc), pc);
+  format_insn(buf, insn(pc), pc, *((unsigned int*)pc));
   fprintf(f, "%s", buf);
 }
 
@@ -139,36 +139,66 @@ static const char* usage_ptr;
 
 void help_exit()
 {
-  fprintf(stderr, "Usage: %s\n", usage_ptr);
-  fprintf(stderr, "Options:  [choice, default (1st) value]\n");
-  for (int i=0; opt_ptr[i].name; ++i)
-    fprintf(stderr, "  %-14s  %s\n", opt_ptr[i].name, opt_ptr[i].h);
+  fprintf(stderr, "Usage : %s\n", usage);
+  for (int i=0; opt[i].name; ++i) {
+    int len = strlen(opt[i].name);
+    fprintf(stderr, "  %-14s  %s ", opt[i].name, opt[i].h);
+    if (opt[i].name[len-2] == '=')
+      switch (opt[i].name[len-1]) {
+      case 's':
+	if (opt[i].ds)
+	  fprintf(stderr, "[%s]\n",  opt[i].ds);
+	else
+	  fprintf(stderr, "[none]\n");
+	break;
+      case 'i':
+	fprintf(stderr, "[%ld]\n", opt[i].di);
+	break;
+      default:
+	fprintf(stderr, "Bad option %s\n", opt[i].name);
+	exit(0);
+      }
+    else
+      fprintf(stderr, "\n");
+  }
   exit(0);
 }
   
 
-int parse_options(struct options_t opt[], const char** argv, const char* usage)
+int parse_options(const char** argv)
 {
-  opt_ptr = opt;
-  usage_ptr = usage;
+  /* initialize default values */
+  for (int i=0; opt[i].name; ++i) {
+    int len = strlen(opt[i].name) - 1;
+    if (opt[i].name[len-1] == '=')
+      switch (opt[i].name[len]) {
+      case 's':  *opt[i].s = opt[i].ds;  break;
+      case 'i':  *opt[i].i = opt[i].di;  break;
+      default:	fprintf(stderr, "Bad option %s\n", opt[i].name); exit(0);
+      }
+    else
+      *opt[i].b = 0;		/* flag not given */
+  }
+  /* parse options */
   int numargs = 0;
   while (argv[numargs] && argv[numargs][0]=='-') {
     const char* arg = argv[numargs++];
     if (strcmp(arg, "--help") == 0)
       help_exit();
     for (int i=0; opt[i].name; ++i) {
-      int len = strlen(opt[i].name);
-      if (arg[len-1] == '=') {
-	if (strncmp(arg, opt[i].name, len) == 0) {
-	  *opt[i].v = (arg+len);
+      int len = strlen(opt[i].name) - 1;
+      if (opt[i].name[len-1] == '=') {
+	if (strncmp(opt[i].name, arg, len-1) == 0) {
+	  switch (opt[i].name[len]) {
+	  case 's':  *opt[i].s =     (arg+len);	break;
+	  case 'i':  *opt[i].i = atoi(arg+len);	break;
+	  }
 	  goto next_option;
 	}
       }
-      else {
-	if (strcmp(arg, opt[i].name) == 0) {
-	  *opt[i].f = 1;
-	  goto next_option;
-	}
+      else if (strcmp(arg, opt[i].name) == 0) {
+	*opt[i].b = opt[i].bv;
+	goto next_option;
       }
     }
     fprintf(stderr, "Illegal option %s\n", arg);

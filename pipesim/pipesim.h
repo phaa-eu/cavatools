@@ -2,76 +2,46 @@
   Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
-struct count_t {		/* CPI = cycles/count */
-  struct insn_t i;		/* decoded instruction */
-  long count;			/* how many times executed */
-  long cycles;			/* total including stalls */
-};
-
-struct countSpace_t {
-  Addr_t base, bound;
-  struct count_t* insn_array;
-};
 
 
+/*
+  Instruction buffer is two-line cache with subblocking.
+*/
 struct ibuf_t {
   long tag[2];
-  long* ready[2];	/* ready[2][numblks] */
-  long tag_mask;	/* pc mask = (1 << lg_line) - 1 */
-  long blk_mask;	/* block index mask = numblks - 1 */
-  long misses;
-  int lg_line;		/* log-base-2 of line size in bytes */
-  int lg_blksize;	/* log-base-2 of block size in bytes */
-  int numblks;		/* = (1<<lg_line)/(1<<lg_blksize) */
-  int penalty;		/* number of cycles to refill critical block */
+  long* ready[2];		/* ready[2][numblks] */
+  long tag_mask;		/* pc mask = (1 << lg_line) - 1 */
+  long blk_mask;		/* block index mask = numblks - 1 */
+  long subblockmask;		/* = ~0UL << ib->lg_blksize */
+  long curblk;			/* pc of current ibuffer subblock */
+  long misses;			/* number of misses */
+  long bufsz;			/* log-base-2 of capacity (bytes) */
+  long blksize;			/* log-base-2 of block size (bytes) */
+  long numblks;			/* = (1<<lg_line)/(1<<lg_blksize) */
+  long penalty;			/* cycles to refill critical block */
+  long delay;			/* taken branch delay (pipeline flush) */
+  int mru;			/* which tag is most recently used */
 };
 
+extern struct ibuf_t  ib;	/* instruction buffer model */
+extern struct cache_t ic;	/* instruction cache model */
+extern struct cache_t dc;	/* data cache model */
 
-struct statistics_t {
-  long cycles;
-  long insns;
-  long segments;
-  struct timeval start_timeval;
-};
+extern struct fifo_t* in;	/* input fifo */
+extern struct fifo_t* out;	/* output fifo (optional) */
 
-
-extern struct countSpace_t countSpace;
-extern struct statistics_t stats;
-extern long frame_header;
-
-extern struct ibuf_t* ib;
-extern struct cache_t dcache;
-extern struct fifo_t* trace_buffer;
-extern struct fifo_t* l2;
 extern int hart;
 extern uint64_t mem_queue[tr_memq_len];
 
-extern int timing;
-extern int quiet;
-
-extern long branch_penalty;
-extern long fetch_latency;
-extern long lg_ib_line;
+extern long quiet, report;
 
 
-void countSpace_init(const char* shm_name, int reader);
-
-#undef insn
-#define insn(pc)   ( &countSpace.insn_array[(pc-countSpace.base)/2].i )
-#define count(pc)  ( &countSpace.insn_array[(pc-countSpace.base)/2]   )
-
-
-extern long report_frequency;
-void status_report(struct statistics_t* stats);
-
+void perfCounters_init(const char* shm_name, int reader);
+void status_report(long now, long icount);
   
 long dcache_writethru(long tr, const struct insn_t* p, long available);
 long dcache_writeback(long tr, const struct insn_t* p, long available);
 
-void fast_pipe(long pc, long read_latency, long next_report,
-	       long (*model_dcache)(long tr, const struct insn_t* p, long available));
-void slow_pipe(long pc, long read_latency, long next_report,
-	       long (*model_dcache)(long tr, const struct insn_t* p, long available));
-void count_pipe(long pc, long read_latency, long next_report,
-		long (*model_dcache)(long tr, const struct insn_t* p, long available));
+void fast_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available));
+void slow_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available));
 
