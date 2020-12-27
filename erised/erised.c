@@ -20,7 +20,14 @@
 #include "perfctr.h"
 
 
+int menu_lines = 1;
+int global_width = 25;
+int local_width = 25;
+
 struct perfCounters_t perf;
+
+WINDOW *menu, *global, *local, *disasm;
+int show_line;
 
 long func_begin, func_end;		/* PC range of interest */
 int top =0;
@@ -36,16 +43,57 @@ MEVENT event;
 int button;
 MEVENT what;
 
+struct count_bin_t {
+  long count;
+  long cycles;
+};
 
-void paint_tv(WINDOW* win)
+void paint_histo(WINDOW* win, long base, long bound)
+{
+  werase(win);
+  long rows, cols;
+  getmaxyx(win, rows, cols);
+  cols -= 2;
+  struct count_bin_t* bin = (struct count_bin_t*)alloca(rows*sizeof(struct count_bin_t));
+  const struct count_t* c = count(base);
+  long n = ((bound-base)/2) / rows;
+  long max_cycles = 0;
+  for (int y=0; y<rows; y++) {
+    long count=0, cycles=0;
+    const struct count_t* limit = c + n;
+    while (c < limit) {
+      count += c->count;
+      cycles += c->cycles;
+      c += shortOp(c->i.op_code) ? 1 : 2;
+    }
+    bin[y].count = count;
+    bin[y].cycles = cycles;
+    if (cycles > max_cycles)
+      max_cycles = cycles;
+  }
+  long cycles_per_bar = max_cycles / cols;
+  for (int y=0; y<rows; y++) {
+    wmove(win, y, 0);
+    wprintw(win, "%12ld %12ld", bin[y].count, bin[y].cycles);
+#if 0
+    long x = cols - bin[y].cycles/cycles_per_bar;
+    wmove(win, y, x);
+    attron(A_REVERSE);
+    while (x++ < cols)
+      wprintw(win, "%c", '.');
+    attroff(A_REVERSE);
+    wprintw(win, "%2d", bin[y].cycles/cycles_per_bar);
+#endif
+  }
+  wrefresh(win);
+}
+
+void paint_disasm(WINDOW* win)
 {
   long pc = func_begin;
   for (int i=0; i<top; i++)
     pc += shortOp(insn(pc)->op_code) ? 2 : 4;
   wmove(win, 0, 0);
-  wprintw(win, "[%lx, %lx) ", func_begin, func_end);
-  wprintw(win, "Mouse at row=%d, col=%d, bstate=0x%08lx, button=%d, what.bevent=0x%08lx, what.x=%d, what.y=%d\n",
-	  event.y, event.x, event.bstate, button, what.bstate, what.x, what.y);
   const struct count_t* c = count(pc);
   const long* ibm = ibmiss(pc);
   const long* icm = icmiss(pc);
@@ -60,7 +108,7 @@ void paint_tv(WINDOW* win)
     if (*dcm)  wprintw(win, "%6.3f", (double)*dcm/c->count);  else wprintw(win, "%6s", "");
     if (dim)  attroff(A_DIM);
     char buf[1024];
-    int n = format_insn(buf, &c->i, pc);
+    int n = format_insn(buf, &c->i, pc, *image(pc));
     wprintw(win, "  %s", buf);
     int sz = shortOp(c->i.op_code) ? 1 : 2;
     pc += 2*sz;
@@ -72,14 +120,16 @@ void paint_tv(WINDOW* win)
 
 #define FRAMERATE  (1.0/30)*1000
 
-void interactive(WINDOW* win)
+void interactive()
 {
   struct timeval t1, t2;
   for (;;) {
     gettimeofday(&t1, 0);
-
-    paint_tv(win);
-    int ch = wgetch(win);
+    paint_histo(global, perf.h->base, perf.h->bound);
+    long scale = (perf.h->bound - perf.h->base)/2 / LINES;
+    paint_histo(local, perf.h->base+show_line*scale, perf.h->base+(show_line+1)*scale);
+    paint_disasm(disasm);
+    int ch = wgetch(stdscr);
     if (ch == ERR) {
       gettimeofday(&t2, 0);
       double msec = (t2.tv_sec - t1.tv_sec)*1000;
@@ -102,8 +152,8 @@ void interactive(WINDOW* win)
       break;
     case KEY_MOUSE:
       dieif(getmouse(&event) != OK, "Got bad mouse event.");
-      if (event.bstate & BUTTON1_CLICKED)
-	what = event;
+      if (wenclose(global, event.y, event.x))
+	show_line = event.y;
       break;
     }
   }
@@ -143,8 +193,8 @@ int main(int argc, const char** argv)
   if (!perf_path)
     help_exit();
   perf_open(perf_path);
-  func_begin = perf.p.base;
-  func_end = perf.p.bound;
+  func_begin = perf.h->base;
+  func_end = perf.h->bound;
 
   initscr();			/* Start curses mode */
   start_color();		/* Start the color functionality */
@@ -152,15 +202,18 @@ int main(int argc, const char** argv)
   noecho();
   nodelay(stdscr, TRUE);
   keypad(stdscr, TRUE);		/* Need all keys */
-  
   // Don't mask any mouse events
   mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
-
   printf("\033[?1003h\n"); // Makes the terminal report mouse movement events
 
   //  init_pair(1, COLOR_CYAN, COLOR_BLACK);
 
-  interactive(stdscr);
+  //  menu   = newwin(1, COLS, 0, 0);
+  global = newwin(LINES, global_width, 0, 0);
+  local  = newwin(LINES, local_width,  0, global_width);
+  disasm = newwin(LINES-1, COLS-global_width-local_width, menu_lines, global_width+local_width);
+
+  interactive();
   
   printf("\033[?1003l\n"); // Disable mouse movement events, as l = low
   endwin();

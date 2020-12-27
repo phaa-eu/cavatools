@@ -10,28 +10,27 @@ struct count_t {		/* together for cache locality */
   long cycles;			/* total including stalls */
 };				/* CPI = cycles/count */
 
-struct perf_params_t {
-  Addr_t base, bound;		/* text segment addresses  */
-  size_t size;			/* of shared memory segment */
-};
-
 /*
     The performance monitoring shared memory segment consists of:
-	1.  Header struct (below)
+	1.  Header struct (128B, below)
 	2.  Array of pre-decoded instructions and counts (above)
 	3.  Array of per-instruction ib_miss
 	4.  Array of per-instruction ic_miss
 	5.  Array of per-instruction dc_miss
+	6.  Copy of text segment (size bound-base bytes)
     All arrays of dimension (bound-base)/2
 */
 struct perf_header_t {
-  struct perf_params_t p;
+  long base, bound;		/* text segment addresses  */
+  long size;			/* of shared memory segment */
+  long pad1[8-3];		/* read-only stuff in own 64B cache line */
   long ib_misses;		/* number of instruction buffer misses */
   long ic_misses;		/* number of instruction cache misses */
   long dc_misses;		/* number of data cache misses */
   long insns;			/* number of instructions executed */
   long cycles;			/* number of cycles simulated */
   long segments;		/* number of disjoint trace segments */
+  long pad2[8-6];		/* rapidly updated stuff in own cache line */
 };
 
 
@@ -39,24 +38,25 @@ struct perf_header_t {
     Base pointers into shared memory segment.
 */
 struct perfCounters_t {
-  struct perf_params_t p;
   struct perf_header_t* h;	/* shared memory header */
   struct count_t* count_array;	/* predecoded instruction & counts */
   long* ib_miss;		/* counts instruction buffer miss */
   long* ic_miss;		/* counts instruction cache miss */
   long* dc_miss;		/* counts data cache miss */
+  char* text_segment;		/* copy of text segment in pipesim */
   struct timeval start;		/* time of day when program started */
 };
 
 extern struct perfCounters_t perf;
 
 #undef insn
-#define insn(pc)   ( &perf.count_array[(pc-perf.p.base)/2].i )
+#define insn(pc)   ( &perf.count_array[(pc-perf.h->base)/2].i )
 
-static inline const struct count_t* count(long pc)  { return &perf.count_array[(pc-perf.p.base)/2]; }
-static inline const long* ibmiss(long pc)  { return &perf.ib_miss[(pc-perf.p.base)/2]; }
-static inline const long* icmiss(long pc)  { return &perf.ic_miss[(pc-perf.p.base)/2]; }
-static inline const long* dcmiss(long pc)  { return &perf.dc_miss[(pc-perf.p.base)/2]; }
+static inline struct count_t* count(long pc)  { return &perf.count_array[(pc-perf.h->base)/2]; }
+static inline long* ibmiss(long pc)  { return &perf.ib_miss[(pc-perf.h->base)/2]; }
+static inline long* icmiss(long pc)  { return &perf.ic_miss[(pc-perf.h->base)/2]; }
+static inline long* dcmiss(long pc)  { return &perf.dc_miss[(pc-perf.h->base)/2]; }
+static inline const char* image(long pc)  { return &perf.text_segment[pc-perf.h->base]; }
 
 void perf_create(const char* shm_name);
 void perf_open(const char* shm_name);

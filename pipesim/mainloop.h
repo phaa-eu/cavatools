@@ -32,7 +32,7 @@
 	    }
 	    else { /* miss: shift MRU to LRU, fill MRU */
 	      ib.misses++;
-	      perf.ib_miss[(pc-perf.p.base)/2] += 1;
+	      *ibmiss(pc) += 1;
 	      now += ib.penalty;
 	      ib.mru = 1 - ib.mru;
 	      ib.tag[ib.mru] = pctag;
@@ -41,7 +41,7 @@
 	      long ready = lookup_cache(&ic, ib.curblk, 0, now+ic.penalty);
 	      ib.ready[ib.mru][blkidx] = ready;
 	      if (ready == now+ic.penalty) {
-		perf.ic_miss[(pc-perf.p.base)/2] += 1;
+		*icmiss(pc) += 1;
 #ifdef SLOW
 		fifo_put(out, trM(tr_i1get, ib.curblk));
 #endif
@@ -68,20 +68,20 @@
 	      ready = lookup_cache(&dc, tr_value(mem_queue[cursor++]), writeOp(p->op_code), now+dc.penalty);
 	    /* note ready may be long in the past */
 	    if (ready == now+dc.penalty)
-	      perf.dc_miss[(pc-perf.p.base)/2] += 1;
+	      *dcmiss(pc) += 1;
 	  }
 	  /* model function unit latency */
 	  busy[p->op_rd] = ready + insnAttr[p->op_code].latency;
 	  busy[NOREG] = 0;	/* in case p->op_rd not valid */
 	  now += 1;		/* single issue machine */
-	  struct count_t* c = (struct count_t*)count(pc);
-	  pc += shortOp(p->op_code) ? 2 : 4;
+	  struct count_t* c = count(pc);
 	  c->count++;
 	  c->cycles      += now - before_issue;
 	  if (++icount >= next_report) {
 	    status_report(now, icount);
 	    next_report += report;
 	  }
+	  pc += shortOp(p->op_code) ? 2 : 4;
 	} /* while (pc < epc) */
 	if (is_goto(tr)) {	/* model taken branch */
 	  pc = tr_pc(tr);
