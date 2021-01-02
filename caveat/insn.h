@@ -136,11 +136,12 @@ void print_symbol( long address, FILE* output_file );
   output_file	- writes to this file
 */
 
+int format_pc(char* buf, int width, Addr_t pc);
 
-int print_pc( long pc, FILE* output_file );
+
+void print_pc( long pc, FILE* output_file );
 /*
   Print symbolic program counter
-  returns whether address associated with known function
   pc		- program counter in text segment
   file_descr	- write to this file descriptor
 */

@@ -20,17 +20,19 @@
 #include "perfctr.h"
 
 
+#define FRAMERATE    60		/* frames per second */
+#define PERSISTENCE  30		/* frames per color decay */
+#define HOT_COLOR  (7-2)
+
 int menu_lines = 1;
-int global_width = 25;
-int local_width = 25;
+int global_width = 17;
+int local_width = 17;
 
 struct perfCounters_t perf;
 
-WINDOW *menu, *global, *local, *disasm;
-int show_line;
-
-long func_begin, func_end;		/* PC range of interest */
-int top =0;
+WINDOW *menu;
+struct histogram_t global, local;
+struct disasm_t disasm;
 
 time_t start_tick;
 long insn_count =0;
@@ -40,120 +42,266 @@ inline static int min(int x, int y) { return x < y ? x : y; }
 #define EPSILON  0.001
 
 MEVENT event;
-int button;
-MEVENT what;
 
-struct count_bin_t {
-  long count;
-  long cycles;
+
+/*  Histogram functions.  */
+
+struct histogram_t {
+  WINDOW* win;
+  long* bin;
+  int* decay;
+  long base, bound;
+  long range;
+  long max_value;
+  int bins;
 };
 
-void paint_histo(WINDOW* win, long base, long bound)
+struct disasm_t {
+  WINDOW* win;
+  long* old;
+  int* decay;
+  long base, bound;
+  long max_value;
+  int lines;
+};
+
+
+#define max(a, b)  ( (a) > (b) ? (a) : (b) )
+
+void histo_create(struct histogram_t* histo, int lines, int cols, int starty, int startx)
 {
-  werase(win);
-  long rows, cols;
-  getmaxyx(win, rows, cols);
-  cols -= 2;
-  struct count_bin_t* bin = (struct count_bin_t*)alloca(rows*sizeof(struct count_bin_t));
-  const struct count_t* c = count(base);
-  long n = ((bound-base)/2) / rows;
-  long max_cycles = 0;
-  for (int y=0; y<rows; y++) {
-    long count=0, cycles=0;
-    const struct count_t* limit = c + n;
-    while (c < limit) {
-      count += c->count;
-      cycles += c->cycles;
-      c += shortOp(c->i.op_code) ? 1 : 2;
-    }
-    bin[y].count = count;
-    bin[y].cycles = cycles;
-    if (cycles > max_cycles)
-      max_cycles = cycles;
-  }
-  long cycles_per_bar = max_cycles / cols;
-  for (int y=0; y<rows; y++) {
-    wmove(win, y, 0);
-    wprintw(win, "%12ld %12ld", bin[y].count, bin[y].cycles);
-#if 0
-    long x = cols - bin[y].cycles/cycles_per_bar;
-    wmove(win, y, x);
-    attron(A_REVERSE);
-    while (x++ < cols)
-      wprintw(win, "%c", '.');
-    attroff(A_REVERSE);
-    wprintw(win, "%2d", bin[y].cycles/cycles_per_bar);
-#endif
-  }
-  wrefresh(win);
+  histo->win = newwin(lines, cols, starty, startx);
+  histo->bins = lines;
+  histo->bin = (long*)malloc(lines*sizeof(long));
+  memset(histo->bin, 0, lines*sizeof(long));
+  histo->decay = (int*)malloc(lines*sizeof(int));
+  memset(histo->decay, 0, lines*sizeof(int));
+};
+
+void histo_delete(struct histogram_t* histo)
+{
+  free(histo->bin);
+  free(histo->decay);
+  memset(histo, 0, sizeof(struct histogram_t));
 }
 
-void paint_disasm(WINDOW* win)
+void histo_compute(struct histogram_t* histo, long base, long bound)
 {
-  long pc = func_begin;
-  for (int i=0; i<top; i++)
-    pc += shortOp(insn(pc)->op_code) ? 2 : 4;
+  long range = (bound-base) / histo->bins; /* pc range per bin */
+  histo->base = base;
+  histo->bound = bound;
+  histo->range = range;
+  long pc = base;
+  struct count_t* c = count(pc);
+  long max_count = 0;
+  for (int i=0; i<histo->bins; i++) {
+    long mcount = 0;
+    long limit = pc + range;
+    while (pc < limit) {
+      //      mcount = max(mcount, c->count);
+      mcount += c->count;
+      pc += shortOp(c->i.op_code) ? 2 : 4;
+      c += shortOp(c->i.op_code) ? 1 : 2;
+    }
+    if (mcount != histo->bin[i])
+      histo->decay[i] = HOT_COLOR*PERSISTENCE;
+    histo->bin[i] = mcount;
+    max_count = max(max_count, mcount);
+  }
+  histo->max_value = max_count;
+}
+
+void paint_count_color(WINDOW* win, long count, int decay)
+{
+  int heat = (decay + PERSISTENCE-1)/PERSISTENCE;
+  wattron(win, COLOR_PAIR(heat + 2));
+  wprintw(win, "%16ld", count);
+  wattroff(win, COLOR_PAIR(heat + 2));
+}
+
+void histo_paint(struct histogram_t* histo, long base, long bound)
+{
+  //  wnoutrefresh(histo->win);
+  werase(histo->win);
+  long rows, cols;
+  getmaxyx(histo->win, rows, cols);
+  wmove(histo->win, 0, 0);
+  long pc = histo->base;
+  for (int y=0; y<rows; y++) {
+    int highlight = (base <= pc && pc <= bound || pc <= base && bound <= pc+histo->range);
+    if (highlight)  wattron(histo->win, A_REVERSE);
+    paint_count_color(histo->win, histo->bin[y], histo->decay[y]);
+    wprintw(histo->win, "\n");
+    if (highlight)  wattroff(histo->win, A_REVERSE);
+    if (histo->decay[y] > 0)
+      histo->decay[y]--;
+    pc += histo->range;
+  }
+}
+
+
+
+void disasm_create(struct disasm_t* disasm, int lines, int cols, int starty, int startx)
+{
+  disasm->win = newwin(lines, cols, starty, startx);
+  disasm->lines = lines;
+  disasm->old = (long*)malloc(lines*sizeof(long));
+  memset(disasm->old, 0, lines*sizeof(long));
+  disasm->decay = (int*)malloc(lines*sizeof(int));
+  memset(disasm->decay, 0, lines*sizeof(int));
+}
+
+void disasm_delete(struct disasm_t* disasm)
+{
+  free(disasm->old);
+  free(disasm->decay);
+  memset(disasm, 0, sizeof(struct disasm_t));
+}   
+
+inline int fmtpercent(char* b, long num, long over)
+{
+  if (num == 0)         return sprintf(b, "%4s  ", "");
+  double percent = 100.0 * num / over;
+  if (percent > 99.9) return sprintf(b, "%4d%% ", (int)percent);
+  if (percent > 9.99) return sprintf(b, "%4.1f%% ", percent);
+  if (percent > 0.99) return sprintf(b, "%4.2f%% ", percent);
+  return sprintf(b, " .%03u%%", (unsigned)((percent+0.005)*100));
+}
+
+void disasm_paint(struct disasm_t* disasm)
+{
+  WINDOW* win = disasm->win;
+  long pc = disasm->base;
   wmove(win, 0, 0);
   const struct count_t* c = count(pc);
   const long* ibm = ibmiss(pc);
   const long* icm = icmiss(pc);
   const long* dcm = dcmiss(pc);
-  for (int y=0; y<LINES-1 && pc<func_end; y++) {
+  for (int y=0; y<getmaxy(win) && pc<perf.h->bound; y++) {    
+    if (c->count != disasm->old[y])
+      disasm->decay[y] = HOT_COLOR*PERSISTENCE;
+    disasm->old[y] = c->count;
+    paint_count_color(win, c->count, disasm->decay[y]);
+    if (disasm->decay[y] > 0)
+      disasm->decay[y]--;
+
     double cpi = (double)c->cycles/c->count;
     int dim = cpi < 1.0+EPSILON || c->count == 0;
-    if (dim)  attron(A_DIM);
-    wprintw(win, "%14ld  %6.3f", c->count, (double)c->cycles/c->count); 
-    if (*ibm)  wprintw(win, "%6.3f", (double)*ibm/c->count);  else wprintw(win, "%6s", "");
-    if (*icm)  wprintw(win, "%6.3f", (double)*icm/c->count);  else wprintw(win, "%6s", "");
-    if (*dcm)  wprintw(win, "%6.3f", (double)*dcm/c->count);  else wprintw(win, "%6s", "");
-    if (dim)  attroff(A_DIM);
+    if (dim)  wattron(win, A_DIM);
+    if (c->count == 0)              wprintw(win, " %6s", "");
+    else if (c->cycles == c->count) wprintw(win, " %-6s", " 1.");
+    else                            wprintw(win, " %6.3f", cpi);
     char buf[1024];
-    int n = format_insn(buf, &c->i, pc, *image(pc));
-    wprintw(win, "  %s", buf);
+    char* b = buf;
+    b+=fmtpercent(b, *ibm, c->count);
+    b+=fmtpercent(b, *icm, c->count);
+    b+=fmtpercent(b, *dcm, c->count);
+    b+=sprintf(b, " ");
+    b+=format_pc(b, 28, pc);
+    b+=format_insn(b, &c->i, pc, *((unsigned int*)pc));
+    wprintw(win, "%s\n", buf);
+    if (dim)  wattroff(win, A_DIM);
+    
     int sz = shortOp(c->i.op_code) ? 1 : 2;
     pc += 2*sz;
     c  += sz, ibm += sz, icm += sz, dcm += sz;
   }
+  disasm->bound = pc;
   wclrtobot(win);
-  wrefresh(win);
 }
 
-#define FRAMERATE  (1.0/30)*1000
+void resize_histos()
+{
+  histo_delete(&global);
+  histo_create(&global, LINES, global_width, 0, 0);
+  histo_delete(&local);
+  histo_create(&local, LINES, local_width, 0, global_width);
+  disasm_delete(&disasm);
+  disasm_create(&disasm, LINES-1, COLS-global_width-local_width, menu_lines, global_width+local_width);
+}
 
 void interactive()
 {
   struct timeval t1, t2;
   for (;;) {
     gettimeofday(&t1, 0);
-    paint_histo(global, perf.h->base, perf.h->bound);
-    long scale = (perf.h->bound - perf.h->base)/2 / LINES;
-    paint_histo(local, perf.h->base+show_line*scale, perf.h->base+(show_line+1)*scale);
-    paint_disasm(disasm);
+    //   histo_compute(&global, perf.h->base, perf.h->bound);
+    histo_compute(&global, insnSpace.base, insnSpace.bound);
+    histo_compute(&local, local.base, local.bound);
+    disasm_paint(&disasm);
+    histo_paint(&global, local.base, local.bound);
+    histo_paint(&local, disasm.base, disasm.bound);
+    wrefresh(global.win);
+    wrefresh(local.win);
+    wrefresh(disasm.win);
+    //    doupdate();
     int ch = wgetch(stdscr);
-    if (ch == ERR) {
+    switch (ch) {
+    case ERR:
       gettimeofday(&t2, 0);
       double msec = (t2.tv_sec - t1.tv_sec)*1000;
       msec += (t2.tv_usec - t1.tv_usec)/1000.0;
-      usleep((FRAMERATE - msec) * 1000);
-      continue;
-    }
-    
-    button = ch;
-    switch (ch) {
+      usleep((1000/FRAMERATE - msec) * 1000);
+      break;
       //case KEY_F(1):
+      //    case KEY_RESIZE:
+      //      resize_histos();
+      //      break;
     case 'q':
       return;
-    case KEY_DOWN:
-      top++;
-      break;
-    case KEY_UP:
-      if (top > 0)
-	top--;
-      break;
+      //case KEY_DOWN:
+      //case KEY_UP:
     case KEY_MOUSE:
       dieif(getmouse(&event) != OK, "Got bad mouse event.");
-      if (wenclose(global, event.y, event.x))
-	show_line = event.y;
+      if (wenclose(disasm.win, event.y, event.x)) {
+	if (event.bstate & BUTTON4_PRESSED) {
+	  if (disasm.base > perf.h->base) {
+	    disasm.base -= 2;
+	    if (insn(disasm.base)->op_code == Op_zero)
+	      disasm.base -= 2;
+	  }
+	}
+	else if (event.bstate & BUTTON5_PRESSED) {
+	  long npc = disasm.base + (shortOp(insn(disasm.base)->op_code) ? 2 : 4);
+	  if (npc < perf.h->bound)
+	    disasm.base = npc;
+	}
+      }
+      else if (wenclose(global.win, event.y, event.x)) {
+	if (event.bstate & BUTTON1_PRESSED) {
+	  local.base = global.base + event.y*global.range;
+	  local.bound = local.base + global.range;
+	}
+      }
+      else if (wenclose(local.win, event.y, event.x)) {
+	//int scroll = local.range * local.bins/2;
+	int scroll = local.range;
+	if (event.bstate & BUTTON1_PRESSED) {
+	  disasm.base = local.base + event.y*local.range;
+	}
+	else if ((event.bstate & BUTTON4_PRESSED) && (event.bstate & BUTTON_SHIFT)) {
+	  local.base  += scroll;
+	  local.bound -= scroll;
+	}
+	else if ((event.bstate & BUTTON5_PRESSED) && (event.bstate & BUTTON_SHIFT)) {
+	  local.base  -= scroll;
+	  local.bound += scroll;
+	}
+	else if (event.bstate & BUTTON4_PRESSED) { /* without shift */
+	  local.base  -= scroll;
+	  local.bound -= scroll;
+	}
+	else if (event.bstate & BUTTON5_PRESSED) { /* without shift */
+	  local.base  += scroll;
+	  local.bound += scroll;
+	}
+	
+	if (local.base < insnSpace.base)
+	  local.base = insnSpace.base;
+	if (local.bound > insnSpace.bound)
+	  local.bound = insnSpace.bound;
+	local.range = (local.bound-local.base)/local.bins;
+      }
       break;
     }
   }
@@ -190,11 +338,11 @@ const struct options_t opt[] =
 int main(int argc, const char** argv)
 {
   int numopts = parse_options(argv+1);
-  if (!perf_path)
+  if (argc == numopts+1 || !perf_path)
     help_exit();
+  long entry = load_elf_binary(argv[1+numopts], 0);
+  insnSpace_init();
   perf_open(perf_path);
-  func_begin = perf.h->base;
-  func_end = perf.h->bound;
 
   initscr();			/* Start curses mode */
   start_color();		/* Start the color functionality */
@@ -202,20 +350,38 @@ int main(int argc, const char** argv)
   noecho();
   nodelay(stdscr, TRUE);
   keypad(stdscr, TRUE);		/* Need all keys */
+  mouseinterval(0);	   /* no mouse clicks, just button up/down */
   // Don't mask any mouse events
-  mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
-  printf("\033[?1003h\n"); // Makes the terminal report mouse movement events
+  //mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+  mousemask(ALL_MOUSE_EVENTS, NULL);
+  //  printf("\033[?1003h\n"); // Makes the terminal report mouse movement events
 
-  //  init_pair(1, COLOR_CYAN, COLOR_BLACK);
+  if (has_colors() == FALSE) {
+    endwin();
+    puts("Your terminal does not support color");
+    exit(1);
+  }
+  start_color();
+  init_pair(2, COLOR_MAGENTA, COLOR_BLACK);
+  init_pair(3, COLOR_BLUE,    COLOR_BLACK);
+  init_pair(4, COLOR_CYAN,    COLOR_BLACK);
+  init_pair(5, COLOR_GREEN,   COLOR_BLACK);
+  init_pair(6, COLOR_YELLOW,  COLOR_BLACK);
+  init_pair(7, COLOR_RED,     COLOR_BLACK);
+
 
   //  menu   = newwin(1, COLS, 0, 0);
-  global = newwin(LINES, global_width, 0, 0);
-  local  = newwin(LINES, local_width,  0, global_width);
-  disasm = newwin(LINES-1, COLS-global_width-local_width, menu_lines, global_width+local_width);
+  histo_create(&global, LINES, global_width, 0, 0);
+  histo_compute(&global, perf.h->base, perf.h->bound);
+  histo_create(&local, LINES, local_width, 0, global_width+1);
+  histo_compute(&local, perf.h->base, perf.h->bound);
+  disasm_create(&disasm, LINES-1, COLS-global_width-local_width, menu_lines, global_width+local_width);
+  disasm.base = perf.h->base;
 
   interactive();
   
-  printf("\033[?1003l\n"); // Disable mouse movement events, as l = low
+  //  printf("\033[?1003l\n"); // Disable mouse movement events, as l = low
   endwin();
+  perf_close();
   return 0;
 }

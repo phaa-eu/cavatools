@@ -18,6 +18,7 @@
 #include "pipesim.h"
 
 
-void fast_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available))
+void trace_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available))
 
+#define TRACE
 #include "mainloop.h"

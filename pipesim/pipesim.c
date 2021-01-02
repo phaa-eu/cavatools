@@ -69,6 +69,8 @@ const struct options_t opt[] =
 const char* usage = "pipesim --in=trace --perf=counters [pipesim-options] target-program";
 
 long quiet, report;
+struct timeval start_time;
+long instructions_executed, cycles_simulated;
 
 struct ibuf_t ib;
 struct cache_t ic, dc;
@@ -83,20 +85,25 @@ uint64_t mem_queue[tr_memq_len];
 int main(int argc, const char** argv)
 {
   assert(sizeof(struct insn_t) == 8);
-  gettimeofday(&perf.start, 0);
+  gettimeofday(&start_time, 0);
   for (int i=0; i<Number_of_opcodes; i++)
     insnAttr[i].latency = fu_latency[insnAttr[i].unit];
 
   int numopts = parse_options(argv+1);
-  if (argc == numopts+1 || !in_path || !perf_path)
+  if (argc == numopts+1 || !in_path)
     help_exit();
 
   long entry = load_elf_binary(argv[1+numopts], 0);
+  insnSpace_init();
+  
   report *= 1000000;
-  perf_create(perf_path);
   in = fifo_open(in_path);
   if (out_path)
     out = fifo_create(out_path, 0);
+  if (perf_path) {
+    perf_create(perf_path);
+    perf.start = start_time;
+  }
   
   /* initialize instruction buffer */
   ib.tag_mask = ~( (1L << (ib.bufsz-1)) - 1 );
@@ -128,40 +135,52 @@ int main(int argc, const char** argv)
   }
   init_cache(&dc,fsm, !(wflag && wflag[0]=='t'));
 
-  if (out_path) {
-    if (wflag && wflag[0] == 't')
-      slow_pipe(report, &dcache_writethru);
-    else if (wflag && wflag[0] == 'b')
-      slow_pipe(report, &dcache_writeback);
-    else
+  long (*model_dcache)(long tr, const struct insn_t* p, long available) = &dcache_writeback;;
+  if (wflag) {
+    if (strcmp(wflag, "thru") == 0)
+      model_dcache = &dcache_writethru;
+    else if (strcmp(wflag, "back") == 0)
       help_exit();
   }
-  else
-    fast_pipe(report, 0);
-  
   if (out_path) {
+    if (perf_path)
+      trace_count_pipe(report, model_dcache);
+    else
+      trace_pipe(report, model_dcache);
     fifo_put(out, trM(tr_eof, 0));
     fifo_finish(out);
   }
+  else {
+    if (perf_path)
+      count_pipe(report, model_dcache);
+    else
+      fast_pipe(report, 0);
+  }
+  if (perf_path)
+    perf_close(&perf);
   fifo_close(in);
-
   
   fprintf(stderr, "\n\n");
-  fprintf(stderr, "%12ld instructions in %ld segments\n", perf.h->insns, perf.h->segments);
-  fprintf(stderr, "%12ld cycles, %5.3f CPI\n", perf.h->cycles, (double)perf.h->insns/perf.h->cycles);
-  
-  fprintf(stderr, "Ibuffer %ldKB capacity %ldB blocksize\n",
-	  (1L<<ib.bufsz)/1024, 1L<<ib.blksize);
+  fprintf(stderr, "%12ld instructions executed\n", instructions_executed);
+  fprintf(stderr, "%12ld cycles simulated\n", cycles_simulated);
+  fprintf(stderr, "%12.3f IPC\n", (double)instructions_executed/cycles_simulated);
+  fprintf(stderr, "Ibuffer %ldB capacity %ldB blocksize\n", 1L<<ib.bufsz, 1L<<ib.blksize);
   fprintf(stderr, "%12ld instruction buffer misses (%3.1f%%)\n",
-	  ib.misses, 100.0*ib.misses/perf.h->insns);
+	  ib.misses, 100.0*ib.misses/instructions_executed);
   
+  fprintf(stderr, "Icache %ldB linesize %ldKB capacity %ld way\n", ic.line,
+	  (ic.line*ic.rows*ic.ways)/1024, ic.ways);
+  long reads = ic.refs-ic.updates;
+  fprintf(stderr, "%12ld L1 Icache reads (%3.1f%%)\n", reads, 100.0*reads/instructions_executed);
+
   fprintf(stderr, "Dcache %ldB linesize %ldKB capacity %ld way\n", dc.line,
 	  (dc.line*dc.rows*dc.ways)/1024, dc.ways);
-  long reads = dc.refs-dc.updates;
-  fprintf(stderr, "%12ld L1 Dcache reads (%3.1f%%)\n", reads, 100.0*reads/perf.h->insns);
-  fprintf(stderr, "%12ld L1 Dcache writes (%3.1f%%)\n", dc.updates, 100.0*dc.updates/perf.h->insns);
-  fprintf(stderr, "%12ld L1 Dcache misses (%5.3f%%)\n", dc.misses, 100.0*dc.misses/perf.h->insns);
-  fprintf(stderr, "%12ld L1 Dcache evictions (%5.3f%%)\n", dc.evictions,  100.0*dc.evictions/perf.h->insns);
+  reads = dc.refs-dc.updates;
+  fprintf(stderr, "%12ld L1 Dcache reads (%3.1f%%)\n", reads, 100.0*reads/instructions_executed);
+  fprintf(stderr, "%12ld L1 Dcache writes (%3.1f%%)\n", dc.updates, 100.0*dc.updates/instructions_executed);
+  fprintf(stderr, "%12ld L1 Dcache misses (%5.3f%%)\n", dc.misses, 100.0*dc.misses/instructions_executed);
+  fprintf(stderr, "%12ld L1 Dcache evictions (%5.3f%%)\n", dc.evictions,  100.0*dc.evictions/instructions_executed);
+
   return 0;
 }
 
@@ -169,16 +188,60 @@ int main(int argc, const char** argv)
 
 void status_report(long now, long icount)
 {
-  perf.h->insns = icount;
-  perf.h->cycles = now;
   if (quiet)
     return;
-  struct timeval *t1=&perf.start, t2;
-  gettimeofday(&t2, 0);
-  double msec = (t2.tv_sec - t1->tv_sec)*1000;
-  msec += (t2.tv_usec - t1->tv_usec)/1000.0;
-  fprintf(stderr, "\r%3.1fBi(%ld) %3.1fBc %3.1fBmk %3.1fImk %3.1fDmk IPC=%5.3f CPS=%5.3f in %lds",
-	  perf.h->insns/1e9, perf.h->segments, perf.h->cycles/1e9,
-	  perf.h->ib_misses/(perf.h->insns/1e3), perf.h->ic_misses/(perf.h->insns/1e3), perf.h->dc_misses/(perf.h->insns/1e3),
-	  (double)perf.h->insns/perf.h->cycles, perf.h->cycles/(1e3*msec), (long)(msec/1e3));
+  struct timeval this_time;
+  gettimeofday(&this_time, 0);
+  double msec = (this_time.tv_sec - start_time.tv_sec)*1000;
+  msec += (this_time.tv_usec - start_time.tv_usec)/1000.0;
+  if (perf_path) {
+    perf.h->insns = icount;
+    perf.h->cycles = now;
+    fprintf(stderr, "\r%3.1fBi(%ld) %3.1fBc %3.1fBmk %3.1fImk %3.1fDmk IPC=%5.3f CPS=%5.3f in %lds",
+	    perf.h->insns/1e9, perf.h->segments, perf.h->cycles/1e9,
+	    perf.h->ib_misses/(perf.h->insns/1e3), perf.h->ic_misses/(perf.h->insns/1e3), perf.h->dc_misses/(perf.h->insns/1e3),
+	    (double)perf.h->insns/perf.h->cycles, perf.h->cycles/(1e3*msec), (long)(msec/1e3));
+  }
+  else
+    fprintf(stderr, "\r%3.1fBi %3.1fBc IPC=%5.3f CPS=%5.3f in %lds",
+	    icount/1e9, now/1e9, (double)icount/now, now/(1e3*msec), (long)(msec/1e3));
+  instructions_executed = icount;
+  cycles_simulated = now;
+}
+
+
+long dcache_writethru(long tr, const struct insn_t* p, long available)
+{
+  long addr = tr_value(tr);
+  long tag = addr >> dc.lg_line;
+  long when = 0;
+  if (writeOp(p->op_code)) {
+    long sz = tr_size(tr);
+    if (sz < 8) {	/* < 8B need L1 for ECC, 8B do not allocate */
+      when = lookup_cache(&dc, addr, 0, available);
+      if (when == available)
+	fifo_put(out, trM(tr_d1get, addr));
+    }
+    fifo_put(out, tr);
+  }
+  else
+    when = lookup_cache(&dc, addr, 0, available);
+  if (when == available) { /* cache miss */
+    fifo_put(out, trM(tr_d1get, addr));
+  }
+  return when;
+}
+
+
+long dcache_writeback(long tr, const struct insn_t* p, long available)
+{
+  long addr = tr_value(tr);
+  long tag = addr >> dc.lg_line;
+  long when = lookup_cache(&dc, addr, writeOp(p->op_code), available);
+  if (when == available) { /* cache miss */
+    if (*dc.evicted)
+      fifo_put(out, trM(tr_d1put, *dc.evicted<<dc.lg_line));
+    fifo_put(out, trM(tr_d1get, addr));
+  }
+  return when;
 }

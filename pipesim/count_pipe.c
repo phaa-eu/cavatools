@@ -14,10 +14,10 @@
 #include "insn.h"
 #include "shmfifo.h"
 #include "cache.h"
-//#include "perfctr.h"
+#include "perfctr.h"
 #include "pipesim.h"
 
+void count_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available))
 
-void fast_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available))
-
+#define COUNT
 #include "mainloop.h"

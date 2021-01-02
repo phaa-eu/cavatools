@@ -12,7 +12,7 @@
   int cursor =0;		/* into mem_queue[] */
 
   uint64_t tr = fifo_get(in);
-  while (tr_code(tr) != tr_eof) {
+  for ( ;; ) {
     while (!is_frame(tr)) {
       if (is_mem(tr))
 	mem_queue[cursor++] = tr;
@@ -32,18 +32,22 @@
 	    }
 	    else { /* miss: shift MRU to LRU, fill MRU */
 	      ib.misses++;
+#ifdef COUNT
 	      *ibmiss(pc) += 1;
+#endif
 	      now += ib.penalty;
 	      ib.mru = 1 - ib.mru;
 	      ib.tag[ib.mru] = pctag;
 	      memset(ib.ready[ib.mru], 0, ib.numblks*sizeof(long));
 	      ib.curblk = pc & ib.subblockmask;
-	      long ready = lookup_cache(&ic, ib.curblk, 0, now+ic.penalty);
-	      ib.ready[ib.mru][blkidx] = ready;
+	      long ready = lookup_cache(&ic, pc, 0, now+ic.penalty);
+	      ib.ready[ib.mru][ib.curblk] = ready;
 	      if (ready == now+ic.penalty) {
+#ifdef COUNT
 		*icmiss(pc) += 1;
-#ifdef SLOW
-		fifo_put(out, trM(tr_i1get, ib.curblk));
+#endif
+#ifdef TRACE
+		fifo_put(out, trM(tr_i1get, pc));
 #endif
 	      }
 	    }
@@ -60,23 +64,27 @@
 	  /* model loads and stores */
 	  long ready = now;
 	  if (memOp(p->op_code)) {
-#ifdef SLOW
+#ifdef TRACE
 	    if (model_dcache)
 	      ready = model_dcache(mem_queue[cursor++], p, now+dc.penalty);
 	    else
 #endif
 	      ready = lookup_cache(&dc, tr_value(mem_queue[cursor++]), writeOp(p->op_code), now+dc.penalty);
 	    /* note ready may be long in the past */
+#ifdef COUNT
 	    if (ready == now+dc.penalty)
 	      *dcmiss(pc) += 1;
+#endif
 	  }
 	  /* model function unit latency */
 	  busy[p->op_rd] = ready + insnAttr[p->op_code].latency;
 	  busy[NOREG] = 0;	/* in case p->op_rd not valid */
 	  now += 1;		/* single issue machine */
+#ifdef COUNT
 	  struct count_t* c = count(pc);
 	  c->count++;
 	  c->cycles      += now - before_issue;
+#endif
 	  if (++icount >= next_report) {
 	    status_report(now, icount);
 	    next_report += report;
@@ -92,14 +100,15 @@
       tr=fifo_get(in);
     } /* while (!is_frame(tr) */
 
+    status_report(now, icount);
+    if (tr_code(tr) == tr_eof)
+      return;
     /* model discontinous trace segment */
-    tr_print(tr, stderr);
     hart = tr_value(tr);
     pc = tr_pc(tr);
     ib.tag[0] = ib.tag[1] = 0L;	/* flush instruction buffer */
     flush_cache(&ic);		/* should we flush? */
     flush_cache(&dc);		/* should we flush? */
-    status_report(now, icount);
     tr=fifo_get(in);
-  } /* while (tr_code(tr) != tr_eof) */
+  }
 }

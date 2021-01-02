@@ -38,10 +38,11 @@ extern long quiet, report;
 
 void perfCounters_init(const char* shm_name, int reader);
 void status_report(long now, long icount);
-  
-long dcache_writethru(long tr, const struct insn_t* p, long available);
-long dcache_writeback(long tr, const struct insn_t* p, long available);
 
 void fast_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available));
-void slow_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available));
+void trace_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available));
+void count_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available));
+void trace_count_pipe(long next_report, long (*model_dcache)(long tr, const struct insn_t* p, long available));
 
+long dcache_writethru(long tr, const struct insn_t* p, long available);
+long dcache_writeback(long tr, const struct insn_t* p, long available);

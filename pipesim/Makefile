@@ -9,7 +9,7 @@ aobj := perfctr.o cache.o
 aobj := $(addprefix $B/,$(aobj))
 
 # Object files for caveat not in libcava.a
-cobj := pipesim.o fast_pipe.o slow_pipe.o
+cobj := pipesim.o fast_pipe.o trace_pipe.o count_pipe.o trace_count_pipe.o
 cobj := $(addprefix $B/,$(cobj))
 
 # Include files for libcava.a
@@ -20,6 +20,7 @@ libs := -lrt -lpthread -lm
 
 # Compiler flags
 CFLAGS := -I$R/include/cava -g -Ofast
+#CFLAGS := -I$R/include/cava -g -O0
 
 
 # Dependent headers
@@ -56,8 +57,8 @@ $B/pipesim:  $(cobj) $R/lib/libcava.a
 
 # Dependencies
 
-$B/pipesim.o $B/fast_pipe.o $B/slow_pipe.o:  pipesim.h  cache.h perfctr.h $(hdrs)
-$B/fast_pipe.o $B/slow_pipe.o:  mainloop.h
+$B/pipesim.o $B/fast_pipe.o $B/trace_pipe.o $B/count_pipe.o $B/trace_count_pipe.o:  pipesim.h  cache.h perfctr.h $(hdrs)
+$B/fast_pipe.o $B/trace_pipe.o $B/count_pipe.o $B/trace_count_pipe.o:  mainloop.h
 $B/perfctr.o:  perfctr.h
 
 lru_fsm_1way.h:  make_cache

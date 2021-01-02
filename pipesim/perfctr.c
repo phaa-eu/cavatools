@@ -30,7 +30,7 @@ void perf_create(const char* shm_name)
   long sz = sizeof(struct perf_header_t);
   sz += n * sizeof(struct count_t);
   sz += n * sizeof(long) * 3;
-  sz += insnSpace.bound - insnSpace.base;
+  //  sz += insnSpace.bound - insnSpace.base;
   int fd = shm_open(shm_name, O_CREAT|O_TRUNC|O_RDWR, S_IRWXU);
   dieif(fd<0, "shm_open() failed in perf_create");
   dieif(ftruncate(fd, sz)<0, "ftruncate() failed in perf_create");
@@ -44,8 +44,8 @@ void perf_create(const char* shm_name)
   perf.ib_miss = (long*)&perf.count_array[n];
   perf.ic_miss = (long*)&perf.ib_miss[n];
   perf.dc_miss = (long*)&perf.ic_miss[n];
-  perf.text_segment = (char*)&perf.dc_miss[n];
-memcpy(perf.text_segment, (char*)insnSpace.base, (insnSpace.bound-insnSpace.base));
+  //  perf.text_segment = (char*)&perf.dc_miss[n];
+  //  memcpy(perf.text_segment, (char*)insnSpace.base, (insnSpace.bound-insnSpace.base));
   for (Addr_t pc=perf.h->base; pc<perf.h->bound; pc+=2)
     decode_instruction(&perf.count_array[(pc-perf.h->base)/2].i, pc);
 }
@@ -65,7 +65,7 @@ void perf_open(const char* shm_name)
   perf.ib_miss = (long*)&perf.count_array[n];
   perf.ic_miss = (long*)&perf.ib_miss[n];
   perf.dc_miss = (long*)&perf.ic_miss[n];
-  perf.text_segment = (char*)&perf.ic_miss[n];
+  //  perf.text_segment = (char*)&perf.ic_miss[n];
 }
 
 void perf_close()

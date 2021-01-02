@@ -81,32 +81,37 @@ void decode_instruction( const struct insn_t* cp, Addr_t PC )
 }
 
 
-
-int print_pc( long pc, FILE* f)
+int format_pc(char* buf, int width, Addr_t pc)
 {
-  const char* func;
-  Addr_t offset;
-  int known = 0;
-  if (valid_pc(pc))  {
+  if (valid_pc(pc)) {
+    const char* func;
     long offset;
-    known = find_pc(pc, &func, &offset);
-    if (known)
-      fprintf(f, "%28s+0x%-8lx ", func, offset);
+    if (find_pc(pc, &func, &offset))
+      snprintf(buf, width, "%21s+%-5ld ", func, offset);
     else
-      fprintf(f, "%28s %-10s ", "UNKNOWN", "");
+      snprintf(buf, width, "%21s %5s ", "UNKNOWN", "");
   }
   else
-    fprintf(f, "%28s %-10s ", "INVALID", "");
-  return known;
+    snprintf(buf, width, "%21s %-5s ", "INVALID", "");
+  return strlen(buf);
 }
+  
+void print_pc( long pc, FILE* f)
+{
+  char buf[1024];
+  format_pc(buf, 29, pc);
+  fprintf(f, "%-28s", buf);
+}
+
 
 
 int format_insn(char* buf, const struct insn_t* p, Addr_t pc, unsigned int image)
 {
-  //  if (!valid_pc(pc))
-  //    return sprintf(buf, "%16lx  %8s\n", pc, "NOT TEXT");
-  int n = sprintf(buf, shortOp(p->op_code) ? "%16lx      %04x  %-16s" : "%16lx  %08x  %-16s",
-		  pc, image, insnAttr[p->op_code].name);
+  int n;
+  if (shortOp(p->op_code))
+    n = sprintf(buf, "%16lx      %04x  %-16s", pc, image&0xffff, insnAttr[p->op_code].name);
+  else
+    n = sprintf(buf, "%16lx  %08x  %-16s", pc, image, insnAttr[p->op_code].name);
   buf += n;
   switch (p->op_code) {
 #include "disasm_insn.h"
@@ -118,7 +123,7 @@ void print_insn(Addr_t pc, FILE* f)
 {
   char buf[1024];
   format_insn(buf, insn(pc), pc, *((unsigned int*)pc));
-  fprintf(f, "%s", buf);
+  fprintf(f, "%s\n", buf);
 }
 
 
