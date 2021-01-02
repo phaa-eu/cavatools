@@ -14,17 +14,11 @@
 #include "insn.h"
 #include "shmfifo.h"
 
-
-#define REPORT_FREQUENCY  1000000000
-
-
-long report_frequency = REPORT_FREQUENCY;
+long report_frequency;
 time_t start_tick;
 long insn_count =0;
 long mem_refs =0;
 long segments =0;
-long pvr_cycles =0;
-long pvr_cutoff =0;
 
 struct fifo_t* trace_buffer;
 int hart;
@@ -117,55 +111,6 @@ void stat_pc_trace(long pc)
   }
 }
 
-void print_paraver_trace(long begin, long end)
-{
-  time_t T = time(NULL);
-  struct tm tm = *localtime(&T);
-  fprintf(stdout, "#Paraver (%02d/%02d/%02d at %02d:%02d):%ld:1(1):1:1(1:1)\n",
-	  tm.tm_mday, tm.tm_mon+1, tm.tm_year, tm.tm_hour, tm.tm_min, pvr_cycles);
-  fprintf(stdout, "Paraver trace [%lx, %lx]\n", begin, end);
-  long now =0;
-  for (uint64_t tr=fifo_get(trace_buffer); tr_code(tr)!=tr_eof; tr=fifo_get(trace_buffer)) {
-    if (tr_code(tr) == tr_stall) {
-      long stall_begin = tr_number(tr);
-      tr = fifo_get(trace_buffer);
-      now = stall_begin + tr_delta(tr);
-      if (now >= pvr_cycles)
-	break;
-      if (tr_delta(tr) >= pvr_cutoff) {
-	long pc = tr_pc(tr);
-	fprintf(stdout, "2:0:1:1:1:%ld:0:%ld\n",  stall_begin, pc);
-	fprintf(stdout, "2:0:1:1:1:%ld:10:%ld\n", now,         pc);
-      }
-      continue;
-    }
-    if (is_mem(tr)) {
-      if (is_dcache(tr))
-	fprintf(stdout, "2:0:1:1:1:%ld:%ld:%ld\n", now, tr_clevel(tr),    tr_value(tr));
-      else if (is_icache(tr))
-	fprintf(stdout, "2:0:1:1:1:%ld:%ld:%ld\n", now, tr_clevel(tr)+10, tr_value(tr));
-      /* we ignore individual loads and stores */
-      continue;
-    }
-    if (is_frame(tr)) {
-      hart = tr_delta(tr);
-      int withtime = (tr & tr_has_timing) != 0;
-      fprintf(stderr, "Frame(pc=%d, mem=%d, reg=%d, timing=%d), hart#=%d, pc=0x%lx\n", (tr&tr_has_pc)!=0, (tr&tr_has_mem)!=0,  (tr&tr_has_reg)!=0, withtime, hart, tr_pc(tr));
-      if (!withtime) {
-	fprintf(stderr, "Cannot make paraver trace from trace without timing!\n");
-	exit(-1);
-      }
-      continue;
-    }
-    if (tr_code(tr) == tr_icount) {
-      insn_count = tr_value(tr);
-      continue;
-    }
-    tr_print(tr, stderr);
-  }
-}
-
-
 void print_listing(long pc)
 {
   uint64_t* memq = mem_queue;	/* help compiler allocate in register */
@@ -241,33 +186,25 @@ long atohex(const char* p)
   }
 }
 
+static const char* shm_path;
+static long list;
+static long report;
+
+const struct options_t opt[] =
+  {  { "--in=s",	.s=&shm_path,	.ds=0,		.h="Trace file from any cavatools =name" },
+     { "--list",	.b=&list,	.bv=1,		.h="Print assembly listing (only traces from caveat)" },
+     { "--report=i",	.i=&report,	.di=1000,	.h="Progress report every =number million instructions" },
+     { 0 }
+  };
+const char* usage = "traceinfo --in=trace [traceinfo-options] target-program";
 
 int main(int argc, const char** argv)
 {
-  static const char* shm_path =0;
-  static int list =0;
-  static int trace =0;
-  static const char* see_range =0;
   
-  static const char* report =0;
-  static const char* paraver =0;
-  static const char* cutoff =0;
-  
-  static struct options_t opt[] =
-    {  { "--in=",	.v=&shm_path,	.h="Trace file from any cavatools =name" },
-       { "--list",	.f=&list,	.h="Print assembly listing (only traces from caveat)" },
-       { "--range=",	.v=&see_range,	.h="Only interested in =begin,end addresses (Hex no 0x) [all]" },
-       { "--paraver=",	.v=&paraver,	.h="Make Paraver trace of =cycles to stdout" },
-       { "--cutoff=",	.v=&cutoff,	.h="Ignore pipeline stalls less than =number cycles [1]" },
-       { "--report=",	.v=&report,	.h="Progress report every =number million instructions [1000]" },
-       { 0 }
-    };
-  int numopts = parse_options(opt, argv+1,
-			      "traceinfo --in=trace [traceinfo-options] target-program"
-			      "\n\t- summarize trace, make listing or create derivative traces");
-  if (argc < 2)
+  int numopts = parse_options(argv+1);
+  if (!shm_path)
     help_exit();
-  report_frequency = (report ? atoi(report) : REPORT_FREQUENCY) * 1000000;
+  report_frequency = report * 1000000;
   long entry =0;
   if (argc > numopts+1) {
     entry = load_elf_binary(argv[1+numopts], 0);
@@ -277,21 +214,6 @@ int main(int argc, const char** argv)
   start_tick = clock();
   if (list)
     print_listing(entry);
-  else if (paraver || see_range) {
-    if (paraver) {
-      pvr_cycles = atoi(paraver);
-      if (cutoff)
-	pvr_cutoff = atoi(cutoff);
-    }
-    long begin = insnSpace.base;
-    long end = insnSpace.bound;
-    if (see_range) {
-      begin = atohex(see_range);
-      const char* comma = strchr(see_range, ',');
-      end = atohex(comma+1);
-    }
-    print_paraver_trace(begin, end);
-  }
   else if (argc > numopts+1)
     stat_pc_trace(entry);
   else

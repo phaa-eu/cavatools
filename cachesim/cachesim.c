@@ -38,7 +38,6 @@
 struct fifo_t* fifo;
 struct fifo_t* outbuf;
 long report_frequency;
-int quiet =0;
 
 void allocError(uint64 n, char * thing, char * filename, int32 linenumber)
 {
@@ -54,36 +53,35 @@ int strchrs(const char* str, const char* keys)
   return 0;
 }
 
+static const char* in_path;
+static const char* out_path;
+static const char* flags;
+static long lgline, ways, lgsets;
+static long report, quiet;
+
+const struct options_t opt[] =
+  {  { "--in=s",	.s=&in_path,	.ds=0,	.h="Trace file =name (from caveat, pipesim, or cachesim)" },
+     { "--line=i",	.i=&lgline,	.di=6,	.h="Cache line size is 2^ =n bytes" },
+     { "--ways=i",	.i=&ways,	.di=8,	.h="Cache is =w ways set associativity" },
+     { "--sets=i",	.i=&lgsets,	.di=11,	.h="Cache has 2^ =n sets per way" },
+     { "--sim=s",	.s=&flags,	.ds=0,	.h="Simulate all access =types [iIdD0123rRwW] default all" },
+     { "--out=s",	.s=&out_path,	.ds=0,	.h="Output next-level misses to trace =name" },
+     { "--report=i",	.i=&report,	.di=10,	.h="Progress report every =number million instructions" },
+     { "--quiet",	.b=&quiet,	.bv=1,	.h="Don't report progress to stderr" },
+     { "-q",		.b=&quiet,	.bv=1,	.h="short for --quiet" },
+     { 0 }
+  };
+const char* usage = "cachesim --in=trace [cachesim-options]";
+
 int main(int argc, const char** argv)
 {
-  static const char* in_path =0;
-  static const char* out_path =0;
-  static const char* lgline = "6";
-  static const char* ways = "8";
-  static const char* lgsets = "11";
-  static const char* flags =0;
-  static const char* report =0;
-  static struct options_t opt[] =
-    {  { "--in=",	.v=&in_path,	.h="Trace file =name (from caveat, pipesim, or cachesim)" },
-       { "--line=",	.v=&lgline,	.h="Cache line size is 2^ =n bytes [6]" },
-       { "--ways=",	.v=&ways,	.h="Cache is =w ways set associativity [8]" },
-       { "--sets=",	.v=&lgsets,	.h="Cache has 2^ =n sets per way [11]" },
-       { "--sim=",	.v=&flags,	.h="Simulate all access =types [iIdD0123rRwW] default all" },
-       { "--out=",	.v=&out_path,	.h="Output next-level misses to trace =name [no next level]" },
-       { "--report=",	.v=&report,	.h="Progress report every =number million instructions [10]" },
-       { "--quiet",	.f=&quiet,	.h="Don't report progress to stderr" },
-       { "-q",		.f=&quiet,	.h="short for --quiet" },
-       { 0					}
-    };
-  int numopts = parse_options(opt, argv+1,
-			      "cachesim --in=trace [cachesim-options]"
-			      "\n\t--out=x can be another cachesim --in=x for multilevel simulation");
-  if (!in_path)
+  int numopts = parse_options(argv+1);
+  if (argc == numopts+1 || !in_path)
     help_exit();
   cacheData* cache = (cacheData*)newCacheData();
-  configureCache(cache, (char*)"Wilson's cache", atoi(ways), atoi(lgline), atoi(lgsets));
+  configureCache(cache, (char*)"Wilson's cache", ways, lgline, lgsets);
   long insns=0, now=0, refs=0, misses=0;
-  report_frequency = (report ? atoi(report) : REPORT_FREQUENCY) * 1000000;
+  report_frequency = (report ? report : REPORT_FREQUENCY) * 1000000;
   long next_report = report_frequency;
   long filter = 0L;
   if (flags) {
