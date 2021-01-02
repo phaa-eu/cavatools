@@ -24,7 +24,6 @@
 #define PERSISTENCE  30		/* frames per color decay */
 #define HOT_COLOR  (7-2)
 
-int menu_lines = 1;
 int global_width = 17;
 int local_width = 17;
 
@@ -71,7 +70,7 @@ struct disasm_t {
 void histo_create(struct histogram_t* histo, int lines, int cols, int starty, int startx)
 {
   histo->win = newwin(lines, cols, starty, startx);
-  histo->bins = lines;
+  histo->bins = --lines;
   histo->bin = (long*)malloc(lines*sizeof(long));
   memset(histo->bin, 0, lines*sizeof(long));
   histo->decay = (int*)malloc(lines*sizeof(int));
@@ -111,26 +110,29 @@ void histo_compute(struct histogram_t* histo, long base, long bound)
   histo->max_value = max_count;
 }
 
-void paint_count_color(WINDOW* win, long count, int decay)
+void paint_count_color(WINDOW* win, int width, long count, int decay)
 {
   int heat = (decay + PERSISTENCE-1)/PERSISTENCE;
   wattron(win, COLOR_PAIR(heat + 2));
-  wprintw(win, "%16ld", count);
+  //wprintw(win, "%16ld", count);
+  wprintw(win, "%*ld", width, count);
   wattroff(win, COLOR_PAIR(heat + 2));
 }
 
-void histo_paint(struct histogram_t* histo, long base, long bound)
+void histo_paint(struct histogram_t* histo, const char* title, long base, long bound)
 {
   //  wnoutrefresh(histo->win);
   werase(histo->win);
   long rows, cols;
   getmaxyx(histo->win, rows, cols);
+  rows--;
   wmove(histo->win, 0, 0);
+  wprintw(histo->win, "%*s\n", cols-1, title);
   long pc = histo->base;
   for (int y=0; y<rows; y++) {
-    int highlight = (base <= pc && pc <= bound || pc <= base && bound <= pc+histo->range);
+    int highlight = (base <= pc && pc < bound || pc <= base && bound < pc+histo->range);
     if (highlight)  wattron(histo->win, A_REVERSE);
-    paint_count_color(histo->win, histo->bin[y], histo->decay[y]);
+    paint_count_color(histo->win, cols-1, histo->bin[y], histo->decay[y]);
     wprintw(histo->win, "\n");
     if (highlight)  wattroff(histo->win, A_REVERSE);
     if (histo->decay[y] > 0)
@@ -173,6 +175,8 @@ void disasm_paint(struct disasm_t* disasm)
   WINDOW* win = disasm->win;
   long pc = disasm->base;
   wmove(win, 0, 0);
+  wprintw(win, "%16s %-6s %-5s %-5s %-5s %-28s %s\n", "Count", " CPI", "Ibuf", "I$", "D$",
+	  "                   PC", "                          Assembly                q=quit");
   const struct count_t* c = count(pc);
   const long* ibm = ibmiss(pc);
   const long* icm = icmiss(pc);
@@ -181,7 +185,7 @@ void disasm_paint(struct disasm_t* disasm)
     if (c->count != disasm->old[y])
       disasm->decay[y] = HOT_COLOR*PERSISTENCE;
     disasm->old[y] = c->count;
-    paint_count_color(win, c->count, disasm->decay[y]);
+    paint_count_color(win, 16, c->count, disasm->decay[y]);
     if (disasm->decay[y] > 0)
       disasm->decay[y]--;
 
@@ -217,7 +221,7 @@ void resize_histos()
   histo_delete(&local);
   histo_create(&local, LINES, local_width, 0, global_width);
   disasm_delete(&disasm);
-  disasm_create(&disasm, LINES-1, COLS-global_width-local_width, menu_lines, global_width+local_width);
+  disasm_create(&disasm, LINES-1, COLS-global_width-local_width, 0, global_width+local_width);
 }
 
 void interactive()
@@ -229,8 +233,8 @@ void interactive()
     histo_compute(&global, insnSpace.base, insnSpace.bound);
     histo_compute(&local, local.base, local.bound);
     disasm_paint(&disasm);
-    histo_paint(&global, local.base, local.bound);
-    histo_paint(&local, disasm.base, disasm.bound);
+    histo_paint(&global, "Global", local.base, local.bound);
+    histo_paint(&local, "Local", disasm.base, disasm.bound);
     wrefresh(global.win);
     wrefresh(local.win);
     wrefresh(disasm.win);
@@ -269,7 +273,7 @@ void interactive()
       }
       else if (wenclose(global.win, event.y, event.x)) {
 	if (event.bstate & BUTTON1_PRESSED) {
-	  local.base = global.base + event.y*global.range;
+	  local.base = global.base + (event.y-1)*global.range;
 	  local.bound = local.base + global.range;
 	}
       }
@@ -277,7 +281,7 @@ void interactive()
 	//int scroll = local.range * local.bins/2;
 	int scroll = local.range;
 	if (event.bstate & BUTTON1_PRESSED) {
-	  disasm.base = local.base + event.y*local.range;
+	  disasm.base = local.base + (event.y-1)*local.range;
 	}
 	else if ((event.bstate & BUTTON4_PRESSED) && (event.bstate & BUTTON_SHIFT)) {
 	  local.base  += scroll;
@@ -375,7 +379,7 @@ int main(int argc, const char** argv)
   histo_compute(&global, perf.h->base, perf.h->bound);
   histo_create(&local, LINES, local_width, 0, global_width+1);
   histo_compute(&local, perf.h->base, perf.h->bound);
-  disasm_create(&disasm, LINES-1, COLS-global_width-local_width, menu_lines, global_width+local_width);
+  disasm_create(&disasm, LINES, COLS-global_width-local_width, 0, global_width+local_width);
   disasm.base = perf.h->base;
 
   interactive();
