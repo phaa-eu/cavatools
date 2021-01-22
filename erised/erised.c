@@ -79,8 +79,10 @@ void histo_create(struct histogram_t* histo, int lines, int cols, int starty, in
 
 void histo_delete(struct histogram_t* histo)
 {
-  free(histo->bin);
-  free(histo->decay);
+  if (histo->bin)
+    free(histo->bin);
+  if (histo->decay)
+    free(histo->decay);
   memset(histo, 0, sizeof(struct histogram_t));
 }
 
@@ -121,7 +123,6 @@ void paint_count_color(WINDOW* win, int width, long count, int decay)
 
 void histo_paint(struct histogram_t* histo, const char* title, long base, long bound)
 {
-  //  wnoutrefresh(histo->win);
   werase(histo->win);
   long rows, cols;
   getmaxyx(histo->win, rows, cols);
@@ -139,6 +140,7 @@ void histo_paint(struct histogram_t* histo, const char* title, long base, long b
       histo->decay[y]--;
     pc += histo->range;
   }
+  wnoutrefresh(histo->win);
 }
 
 
@@ -155,8 +157,10 @@ void disasm_create(struct disasm_t* disasm, int lines, int cols, int starty, int
 
 void disasm_delete(struct disasm_t* disasm)
 {
-  free(disasm->old);
-  free(disasm->decay);
+  if (disasm->old)
+    free(disasm->old);
+  if (disasm->decay)
+    free(disasm->decay);
   memset(disasm, 0, sizeof(struct disasm_t));
 }   
 
@@ -181,7 +185,7 @@ void disasm_paint(struct disasm_t* disasm)
   const long* ibm = ibmiss(pc);
   const long* icm = icmiss(pc);
   const long* dcm = dcmiss(pc);
-  for (int y=0; y<getmaxy(win) && pc<perf.h->bound; y++) {    
+  for (int y=1; y<getmaxy(win) && pc<perf.h->bound; y++) {    
     if (c->count != disasm->old[y])
       disasm->decay[y] = HOT_COLOR*PERSISTENCE;
     disasm->old[y] = c->count;
@@ -212,16 +216,21 @@ void disasm_paint(struct disasm_t* disasm)
   }
   disasm->bound = pc;
   wclrtobot(win);
+  wnoutrefresh(win);
 }
 
 void resize_histos()
 {
   histo_delete(&global);
-  histo_create(&global, LINES, global_width, 0, 0);
   histo_delete(&local);
-  histo_create(&local, LINES, local_width, 0, global_width);
   disasm_delete(&disasm);
-  disasm_create(&disasm, LINES-1, COLS-global_width-local_width, 0, global_width+local_width);
+  histo_create(&global, LINES, global_width, 0, 0);
+  histo_compute(&global, perf.h->base, perf.h->bound);
+  histo_create(&local, LINES, local_width, 0, global_width+1);
+  histo_compute(&local, perf.h->base, perf.h->bound);
+  disasm_create(&disasm, LINES, COLS-global_width-local_width, 0, global_width+local_width);
+  disasm.base = perf.h->base;
+  doupdate();
 }
 
 void interactive()
@@ -235,10 +244,7 @@ void interactive()
     disasm_paint(&disasm);
     histo_paint(&global, "Global", local.base, local.bound);
     histo_paint(&local, "Local", disasm.base, disasm.bound);
-    wrefresh(global.win);
-    wrefresh(local.win);
-    wrefresh(disasm.win);
-    //    doupdate();
+    doupdate();
     int ch = wgetch(stdscr);
     switch (ch) {
     case ERR:
@@ -248,9 +254,12 @@ void interactive()
       usleep((1000/FRAMERATE - msec) * 1000);
       break;
       //case KEY_F(1):
-      //    case KEY_RESIZE:
-      //      resize_histos();
-      //      break;
+#if 0
+    case KEY_RESIZE:
+      resizeterm(LINES, COLS);
+      resize_histos();
+      break;
+#endif
     case 'q':
       return;
       //case KEY_DOWN:
@@ -352,13 +361,14 @@ int main(int argc, const char** argv)
   start_color();		/* Start the color functionality */
   cbreak();			/* Line buffering disabled */
   noecho();
-  nodelay(stdscr, TRUE);
   keypad(stdscr, TRUE);		/* Need all keys */
   mouseinterval(0);	   /* no mouse clicks, just button up/down */
   // Don't mask any mouse events
-  //mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
-  mousemask(ALL_MOUSE_EVENTS, NULL);
-  //  printf("\033[?1003h\n"); // Makes the terminal report mouse movement events
+  mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+  //mousemask(ALL_MOUSE_EVENTS, NULL);
+  
+  nodelay(stdscr, TRUE);
+  //timeout(100);
 
   if (has_colors() == FALSE) {
     endwin();
@@ -373,15 +383,7 @@ int main(int argc, const char** argv)
   init_pair(6, COLOR_YELLOW,  COLOR_BLACK);
   init_pair(7, COLOR_RED,     COLOR_BLACK);
 
-
-  //  menu   = newwin(1, COLS, 0, 0);
-  histo_create(&global, LINES, global_width, 0, 0);
-  histo_compute(&global, perf.h->base, perf.h->bound);
-  histo_create(&local, LINES, local_width, 0, global_width+1);
-  histo_compute(&local, perf.h->base, perf.h->bound);
-  disasm_create(&disasm, LINES, COLS-global_width-local_width, 0, global_width+local_width);
-  disasm.base = perf.h->base;
-
+  resize_histos();
   interactive();
   
   //  printf("\033[?1003l\n"); // Disable mouse movement events, as l = low
