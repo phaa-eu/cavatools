@@ -57,7 +57,7 @@ $B/pipesim:  $(cobj) $R/lib/libcava.a
 
 # Dependencies
 
-$B/pipesim.o $B/fast_pipe.o $B/trace_pipe.o $B/count_pipe.o $B/trace_count_pipe.o:  pipesim.h  cache.h perfctr.h $(hdrs)
+$B/pipesim.o $B/fast_pipe.o $B/trace_pipe.o $B/count_pipe.o $B/trace_count_pipe.o:  pipesim.h  cache.h perfctr.h $(hdrs) $(incf)
 $B/fast_pipe.o $B/trace_pipe.o $B/count_pipe.o $B/trace_count_pipe.o:  mainloop.h
 $B/perfctr.o:  perfctr.h
 
