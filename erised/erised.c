@@ -112,12 +112,14 @@ void histo_compute(struct histogram_t* histo, long base, long bound)
   histo->max_value = max_count;
 }
 
-void paint_count_color(WINDOW* win, int width, long count, int decay)
+void paint_count_color(WINDOW* win, int width, long count, int decay, int always)
 {
   int heat = (decay + PERSISTENCE-1)/PERSISTENCE;
   wattron(win, COLOR_PAIR(heat + 2));
-  //wprintw(win, "%16ld", count);
-  wprintw(win, "%*ld", width, count);
+  if (count > 0 || always)
+    wprintw(win, "%*ld", width, count);
+  else
+    wprintw(win, "%*s", width, "");
   wattroff(win, COLOR_PAIR(heat + 2));
 }
 
@@ -133,7 +135,7 @@ void histo_paint(struct histogram_t* histo, const char* title, long base, long b
   for (int y=0; y<rows; y++) {
     int highlight = (base <= pc && pc < bound || pc <= base && bound < pc+histo->range);
     if (highlight)  wattron(histo->win, A_REVERSE);
-    paint_count_color(histo->win, cols-1, histo->bin[y], histo->decay[y]);
+    paint_count_color(histo->win, cols-1, histo->bin[y], histo->decay[y], 0);
     wprintw(histo->win, "\n");
     if (highlight)  wattroff(histo->win, A_REVERSE);
     if (histo->decay[y] > 0)
@@ -166,11 +168,11 @@ void disasm_delete(struct disasm_t* disasm)
 
 inline int fmtpercent(char* b, long num, long over)
 {
-  if (num == 0)         return sprintf(b, "%4s  ", "");
+  if (num == 0)         return sprintf(b, " %4s ", "");
   double percent = 100.0 * num / over;
-  if (percent > 99.9) return sprintf(b, "%4d%% ", (int)percent);
-  if (percent > 9.99) return sprintf(b, "%4.1f%% ", percent);
-  if (percent > 0.99) return sprintf(b, "%4.2f%% ", percent);
+  if (percent > 99.9) return sprintf(b, " %4d%%", (int)percent);
+  if (percent > 9.99) return sprintf(b, " %4.1f%%", percent);
+  if (percent > 0.99) return sprintf(b, " %4.2f%%", percent);
   return sprintf(b, " .%03u%%", (unsigned)((percent+0.005)*100));
 }
 
@@ -179,40 +181,44 @@ void disasm_paint(struct disasm_t* disasm)
   WINDOW* win = disasm->win;
   long pc = disasm->base;
   wmove(win, 0, 0);
-  wprintw(win, "%16s %-6s %-5s %-5s %-5s %-28s %s\n", "Count", " CPI", "Ibuf", "I$", "D$",
-	  "                   PC", "                          Assembly                q=quit");
-  const struct count_t* c = count(pc);
-  const long* ibm = ibmiss(pc);
-  const long* icm = icmiss(pc);
-  const long* dcm = dcmiss(pc);
-  for (int y=1; y<getmaxy(win) && pc<perf.h->bound; y++) {    
-    if (c->count != disasm->old[y])
-      disasm->decay[y] = HOT_COLOR*PERSISTENCE;
-    disasm->old[y] = c->count;
-    paint_count_color(win, 16, c->count, disasm->decay[y]);
-    if (disasm->decay[y] > 0)
-      disasm->decay[y]--;
+  wprintw(win, "%16s %-6s %-5s %-5s %-5s", "Count", " CPI", "Ibuf", "I$", "D$");
+  wprintw(win, "%7.1fB insns  CPI=%5.2f   ", perf.h->insns/1e9, (double)perf.h->cycles/perf.h->insns);
+  wprintw(win, "%8s %8s %s\n", "PC", "Hex", "Assembly                q=quit");
+  if (pc != 0) {
+    const struct count_t* c = count(pc);
+    const long* ibm = ibmiss(pc);
+    const long* icm = icmiss(pc);
+    const long* dcm = dcmiss(pc);
+    for (int y=1; y<getmaxy(win) && pc<perf.h->bound; y++) {    
+      wmove(win, y, 0);
+      if (c->count != disasm->old[y])
+	disasm->decay[y] = HOT_COLOR*PERSISTENCE;
+      disasm->old[y] = c->count;
+      paint_count_color(win, 16, c->count, disasm->decay[y], 1);
+      if (disasm->decay[y] > 0)
+	disasm->decay[y]--;
 
-    double cpi = (double)c->cycles/c->count;
-    int dim = cpi < 1.0+EPSILON || c->count == 0;
-    if (dim)  wattron(win, A_DIM);
-    if (c->count == 0)              wprintw(win, " %6s", "");
-    else if (c->cycles == c->count) wprintw(win, " %-6s", " 1.");
-    else                            wprintw(win, " %6.3f", cpi);
-    char buf[1024];
-    char* b = buf;
-    b+=fmtpercent(b, *ibm, c->count);
-    b+=fmtpercent(b, *icm, c->count);
-    b+=fmtpercent(b, *dcm, c->count);
-    b+=sprintf(b, " ");
-    b+=format_pc(b, 28, pc);
-    b+=format_insn(b, &c->i, pc, *((unsigned int*)pc));
-    wprintw(win, "%s\n", buf);
-    if (dim)  wattroff(win, A_DIM);
+      double cpi = (double)c->cycles/c->count;
+      int dim = cpi < 1.0+EPSILON || c->count == 0;
+      if (dim)  wattron(win, A_DIM);
+      if (c->count == 0)              wprintw(win, " %-5s", "");
+      else if (c->cycles == c->count) wprintw(win, " %-5s", " 1");
+      else                            wprintw(win, " %5.2f", cpi);
+      char buf[1024];
+      char* b = buf;
+      b+=fmtpercent(b, *ibm, c->count);
+      b+=fmtpercent(b, *icm, c->count);
+      b+=fmtpercent(b, *dcm, c->count);
+      b+=sprintf(b, " ");
+      b+=format_pc(b, 28, pc);
+      b+=format_insn(b, &c->i, pc, *((unsigned int*)pc));
+      wprintw(win, "%s\n", buf);
+      if (dim)  wattroff(win, A_DIM);
     
-    int sz = shortOp(c->i.op_code) ? 1 : 2;
-    pc += 2*sz;
-    c  += sz, ibm += sz, icm += sz, dcm += sz;
+      int sz = shortOp(c->i.op_code) ? 1 : 2;
+      pc += 2*sz;
+      c  += sz, ibm += sz, icm += sz, dcm += sz;
+    }
   }
   disasm->bound = pc;
   wclrtobot(win);
@@ -227,9 +233,9 @@ void resize_histos()
   histo_create(&global, LINES, global_width, 0, 0);
   histo_compute(&global, perf.h->base, perf.h->bound);
   histo_create(&local, LINES, local_width, 0, global_width+1);
-  histo_compute(&local, perf.h->base, perf.h->bound);
+  histo_compute(&local, 0, 0);
   disasm_create(&disasm, LINES, COLS-global_width-local_width, 0, global_width+local_width);
-  disasm.base = perf.h->base;
+  disasm.base = 0;
   doupdate();
 }
 

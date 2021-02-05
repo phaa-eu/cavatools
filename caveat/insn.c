@@ -86,8 +86,10 @@ int format_pc(char* buf, int width, Addr_t pc)
   if (valid_pc(pc)) {
     const char* func;
     long offset;
-    if (find_pc(pc, &func, &offset))
-      snprintf(buf, width, "%21s+%-5ld ", func, offset);
+    if (find_pc(pc, &func, &offset)) {
+      snprintf(buf,    width, "%21s", func);
+      snprintf(buf+21, width, "+%-5ld ", offset);
+    }
     else
       snprintf(buf, width, "%21s %5s ", "UNKNOWN", "");
   }
@@ -109,9 +111,9 @@ int format_insn(char* buf, const struct insn_t* p, Addr_t pc, unsigned int image
 {
   int n;
   if (shortOp(p->op_code))
-    n = sprintf(buf, "%16lx      %04x  %-16s", pc, image&0xffff, insnAttr[p->op_code].name);
+    n = sprintf(buf, "%8lx     %04x %-16s", pc, image&0xffff, insnAttr[p->op_code].name);
   else
-    n = sprintf(buf, "%16lx  %08x  %-16s", pc, image, insnAttr[p->op_code].name);
+    n = sprintf(buf, "%8lx %08x %-16s", pc, image, insnAttr[p->op_code].name);
   buf += n;
   switch (p->op_code) {
 #include "disasm_insn.h"

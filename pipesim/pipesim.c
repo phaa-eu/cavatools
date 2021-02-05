@@ -161,25 +161,25 @@ int main(int argc, const char** argv)
   fifo_close(in);
   
   fprintf(stderr, "\n\n");
-  fprintf(stderr, "%12ld instructions executed\n", instructions_executed);
-  fprintf(stderr, "%12ld cycles simulated\n", cycles_simulated);
-  fprintf(stderr, "%12.3f IPC\n", (double)instructions_executed/cycles_simulated);
-  fprintf(stderr, "Ibuffer %ldB capacity %ldB blocksize\n", 1L<<ib.bufsz, 1L<<ib.blksize);
-  fprintf(stderr, "%12ld instruction buffer misses (%3.1f%%)\n",
+  fprintf(stdout, "%12ld instructions executed\n", instructions_executed);
+  fprintf(stdout, "%12ld cycles simulated\n", cycles_simulated);
+  fprintf(stdout, "%12.3f IPC\n", (double)instructions_executed/cycles_simulated);
+  fprintf(stdout, "Ibuffer %ldB capacity %ldB blocksize\n", 1L<<ib.bufsz, 1L<<ib.blksize);
+  fprintf(stdout, "%12ld instruction buffer misses (%3.1f%%)\n",
 	  ib.misses, 100.0*ib.misses/instructions_executed);
   
-  fprintf(stderr, "Icache %ldB linesize %ldKB capacity %ld way\n", ic.line,
+  fprintf(stdout, "Icache %ldB linesize %ldKB capacity %ld way\n", ic.line,
 	  (ic.line*ic.rows*ic.ways)/1024, ic.ways);
   long reads = ic.refs-ic.updates;
-  fprintf(stderr, "%12ld L1 Icache reads (%3.1f%%)\n", reads, 100.0*reads/instructions_executed);
+  fprintf(stdout, "%12ld L1 Icache reads (%3.1f%%)\n", reads, 100.0*reads/instructions_executed);
 
-  fprintf(stderr, "Dcache %ldB linesize %ldKB capacity %ld way\n", dc.line,
+  fprintf(stdout, "Dcache %ldB linesize %ldKB capacity %ld way\n", dc.line,
 	  (dc.line*dc.rows*dc.ways)/1024, dc.ways);
   reads = dc.refs-dc.updates;
-  fprintf(stderr, "%12ld L1 Dcache reads (%3.1f%%)\n", reads, 100.0*reads/instructions_executed);
-  fprintf(stderr, "%12ld L1 Dcache writes (%3.1f%%)\n", dc.updates, 100.0*dc.updates/instructions_executed);
-  fprintf(stderr, "%12ld L1 Dcache misses (%5.3f%%)\n", dc.misses, 100.0*dc.misses/instructions_executed);
-  fprintf(stderr, "%12ld L1 Dcache evictions (%5.3f%%)\n", dc.evictions,  100.0*dc.evictions/instructions_executed);
+  fprintf(stdout, "%12ld L1 Dcache reads (%3.1f%%)\n", reads, 100.0*reads/instructions_executed);
+  fprintf(stdout, "%12ld L1 Dcache writes (%3.1f%%)\n", dc.updates, 100.0*dc.updates/instructions_executed);
+  fprintf(stdout, "%12ld L1 Dcache misses (%5.3f%%)\n", dc.misses, 100.0*dc.misses/instructions_executed);
+  fprintf(stdout, "%12ld L1 Dcache evictions (%5.3f%%)\n", dc.evictions,  100.0*dc.evictions/instructions_executed);
 
   return 0;
 }
@@ -188,25 +188,26 @@ int main(int argc, const char** argv)
 
 void status_report(long now, long icount)
 {
+  instructions_executed = icount;
+  cycles_simulated = now;
   if (quiet)
     return;
   struct timeval this_time;
   gettimeofday(&this_time, 0);
   double msec = (this_time.tv_sec - start_time.tv_sec)*1000;
   msec += (this_time.tv_usec - start_time.tv_usec)/1000.0;
+  fprintf(stderr, "\r%3.1fBi %3.1fBc IPC=%5.3f CPS=%5.3f in %lds",
+	  icount/1e9, now/1e9, (double)icount/now, now/(1e3*msec), (long)(msec/1e3));
   if (perf_path) {
     perf.h->insns = icount;
     perf.h->cycles = now;
-    fprintf(stderr, "\r%3.1fBi(%ld) %3.1fBc %3.1fBmk %3.1fImk %3.1fDmk IPC=%5.3f CPS=%5.3f in %lds",
-	    perf.h->insns/1e9, perf.h->segments, perf.h->cycles/1e9,
-	    perf.h->ib_misses/(perf.h->insns/1e3), perf.h->ic_misses/(perf.h->insns/1e3), perf.h->dc_misses/(perf.h->insns/1e3),
-	    (double)perf.h->insns/perf.h->cycles, perf.h->cycles/(1e3*msec), (long)(msec/1e3));
+    perf.h->ib_misses = ib.misses;
+    perf.h->ic_misses = ic.misses;
+    perf.h->dc_misses = dc.misses;
+    double kinsns = icount/1e3;
+    fprintf(stderr, " IB=%3.0f I$=%5.3f D$=%4.2f m/Ki",
+	    ib.misses/kinsns, ic.misses/kinsns, dc.misses/kinsns);
   }
-  else
-    fprintf(stderr, "\r%3.1fBi %3.1fBc IPC=%5.3f CPS=%5.3f in %lds",
-	    icount/1e9, now/1e9, (double)icount/now, now/(1e3*msec), (long)(msec/1e3));
-  instructions_executed = icount;
-  cycles_simulated = now;
 }
 
 
