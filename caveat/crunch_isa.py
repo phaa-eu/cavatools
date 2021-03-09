@@ -115,8 +115,8 @@ InsnFile.close()
 OriginalOrder.append('Op_illegal')
 
 
-Opcode['Op_zero'   ] = (0, 0, False, 0, '-,-,-', 0, '', 'UNKNOWN')
-Opcode['Op_illegal'] = (0, 0, False, 0, '-,-,-', 0, '', 'ILLEGAL')
+Opcode['Op_zero'   ] = (0, 0, False, 0, 'i,-,-', 0, '', 'UNKNOWN')
+Opcode['Op_illegal'] = (0, 0, False, 0, 'i,-,-', 0, '', 'ILLEGAL')
 Mnemonic['Op_zero'   ] = 'ZERO'
 Mnemonic['Op_illegal'] = 'ILLEGAL'
 
@@ -182,11 +182,16 @@ for op in OriginalOrder:
 
     reglist = regspecs.split(',');
     flagspecs = reglist[0].split(',')[0]
-    for f in flagspecs:
+    for f in list(flagspecs):
         Flags[f] = 1
-        if f=='r':
+#        if f=='r':
+#            ReadOp[op] = 1
+#        if f=='w':
+#            WriteOp[op] = 1
+    if 'm' in flagspecs:
+        if 'l' in flagspecs:
             ReadOp[op] = 1
-        if f=='w':
+        if 's' in flagspecs:
             WriteOp[op] = 1
     reg = [ '64', '64', '64', '64' ]
     imm = '0'
@@ -310,22 +315,9 @@ df.write('#define writeOp(op)  ({:s} <= op && op <= {:s})\n'.format(firstWriteOp
 df.write('#define threeOp(op)  (op >= {:s})\n'.format(firstThreeOp))
 df.write('\n\n')
 
-FunctionalUnits = []
-df.write('enum units_t {')
-for u in sorted(Flags):
-    if f == '-' or not u.islower():
-        continue
-    unit = 'Unit_'+u
-    FunctionalUnits.append(unit)
-    df.write('    {:s},\n'.format(unit))
-df.write('    {:s},\n'.format('Number_of_units'))
-df.write('\n};\n\n')
-
 
 val = 1
 for f in sorted(Flags):
-    if f == '-' or f.islower():
-        continue
     df.write('#define attr_{:s}  0x{:08x}\n'.format(f, val))
     val = val << 1
     
@@ -336,15 +328,8 @@ for i, op in enumerate(InOrder):
     flags = flags.split(',')
     flags = flags[0]
     for letter in flags:
-        if letter == '-' or letter.islower():
-            continue
         init += ' | attr_' + letter
-    unit = ''
-    for letter in flags:
-        if letter == '-' or not letter.islower():
-            continue
-        unit += 'Unit_' + letter
-    kf.write('    {{ {:s}, {:s} }},\n'.format(init, unit))
+    kf.write('    {{ {:s} }},\n'.format(init))
     
 
 for op in InOrder:

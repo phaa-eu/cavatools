@@ -204,10 +204,16 @@ void disasm_paint(struct disasm_t* disasm)
       if (c->count == 0)              wprintw(win, " %-5s", "");
       else if (c->cycles == c->count) wprintw(win, " %-5s", " 1");
       else                            wprintw(win, " %5.2f", cpi);
+
+      if (c->count > 0)
+	wprintw(win, " %4.2f", (double)*icm/c->count);
+      else
+	wprintw(win, "     ");
+      
       char buf[1024];
       char* b = buf;
       b+=fmtpercent(b, *ibm, c->count);
-      b+=fmtpercent(b, *icm, c->count);
+      //b+=fmtpercent(b, *icm, c->count);
       b+=fmtpercent(b, *dcm, c->count);
       b+=sprintf(b, " ");
       b+=format_pc(b, 28, pc);
