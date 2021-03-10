@@ -14,266 +14,127 @@
 import sys
 import re
 
+body = 0
+if len(sys.argv) > 1 and sys.argv[1] == '-b':
+    body = 1
+
 SpecPattern = re.compile(r'^\s*([0-9]+)\s+(.*)')
 IterPattern = re.compile(r'^\?iter=(\w+)')
 LimitPattern = re.compile(r'^\?limit=(\w+)')
-VarPattern = re.compile(r'^(.+)([a-zA-Z_][a-zA-Z_0-9]*)\$')
 CmdPattern = re.compile(r'^\?([a-z]+)=([a-zA-Z_][a-zA-Z_0-9]*)')
 
 lines = []
 for l in sys.stdin:
     lines.insert(0, l.rstrip('\r\n'))
 
-lv = 'NONE'
-limit = 'NONE'
-pipe = {}
-depth = 0
-
-vectors = []
-perm = []
-
-def error(line):
-    sys.stderr.write('Unrecognized line:\n')
-    sys.stderr.write(line+'\n')
+def error(msg):
+    sys.stderr.write('Error: ' + msg + '\n')
     exit(1)
 
+BeginPipe = re.compile(r'^\$\{\s+([a-z_A-Z][a-z_A-Z0-9]*)')
+DeclPattern = re.compile(r'^\$(.+)([a-zA-Z_][a-zA-Z_0-9]*)\$')
 
-def PrintPipe(body):
-    for stage in range(depth):
-        stmt = '      Stage("{:2d}:")  '.format(stage)
-        stmts = body[stage]
-        for a in stmts:
-            stmt += '  '+a
-        print(stmt)
-        
-def Substitute(src, dollar, at):
-    if at == 0:
-        at = str(dollar)
-    else:
-        at = str(dollar) + str(at)
-    dst = []
-    for e in src:
-        f = e.replace('$', str(dollar))
-        f = f.replace('@', at)
-        dst.append(f)
-    return dst
-
-
-def GenEpilog(n):
-    epi = [ None ]*2*depth
-    for j in range(2*depth):
-        epi[j] = {}
-    for j in range(depth):
-        for i in perm[j]:
-            at = -depth
-            if (i+j)%depth >= j:
-                at = 0
-            for stmt in Substitute(pipe[j], i, at):
-                stage = (i+j) % depth
-                if stmt not in epi[stage] and not (i>=n and i+j<depth):
-                    epi[stage][stmt] = 1
-                if stmt not in epi[stage+depth] and not (i>=n or i+j<depth):
-                    epi[stage+depth][stmt] = 1
-    return epi
-
-
-def GenProlog(n, depth):
-    pro = [ None ]*2*depth
-    for j in range(2*depth):
-        pro[j] = {}
-    for j in range(depth):
-        for i in perm[j]:
-            at = -depth
-            if (i+j)%depth >= j:
-                at = 0
-            for stmt in Substitute(pipe[j], i, 0):
-                stage = (i+j) % depth
-                if stmt not in pro[stage] and not (i>n or i+j>=depth):
-                    pro[stage][stmt] = 1
-                if stmt not in pro[stage+depth] and not (i>n or i+j<depth):
-                    pro[stage+depth][stmt] = 1
-    return pro
-
-
-def GenerateSoftwarePipeline():
-    # Generate vector variable declarations
-    for (var, decl) in vectors:
-        vec = []
-        for i in range(depth):
-            vec.append(var+str(i))
-        comma = ', '
-        decl += comma.join(vec)
-        print(decl+';')
-        
-    print('  if ({:s} < {:d}) {{  /* Single Pass */'.format(limit, depth))
-    # Generate special short tripcount cases
-    #   stmt[stage] = {} (key=statement, value=lowest remaining case to execute)
-    #     stage  = software pipeline stage, 0..2*depth-1
-    stmt = [ None ]*2*depth
-    for trips in range(depth-1):
-        pro = GenProlog(trips, depth)
-        for stage in range(2*depth):
-            for s in pro[stage].keys():
-                if stmt[stage] == None:
-                    stmt[stage] = {}
-                if s not in stmt[stage]:
-                    stmt[stage][s] = trips
-                elif stmt[stage][s] > trips:
-                    stmt[stage][s] = trips
-    for stage in range(2*depth):
-        if stmt[stage] != None:
-            buckets = {}
-            always = []
-            for a in stmt[stage].keys():
-                r = stmt[stage][a]
-#                if r == 0:
-#                    always.append(a)
-#                    continue
-                if r not in buckets:
-                    buckets[r] = []
-                buckets[r].append(a)
-            ifstmt = ''
-            for a in always:
-                ifstmt += a+'  '
-            for r in reversed(sorted(buckets.keys())):
-                ifstmt += 'if ({:s}>{:d}) {{'.format(limit, r)
-                for a in buckets[r]:
-                    ifstmt += '  '+a
-                ifstmt += ' }  '
-            if ifstmt != '':
-                ifstmt = '      Stage("{:2d}:")  '.format(stage) + ifstmt
-                print(ifstmt)
-    print('  }')
-    print('  else {')
-    
-    # Generate pipeline prologue
-    stages = [ None ]*depth
-    for j in range(depth):
-        stages[j] = []
-    for j in range(depth):
-        for i in perm[j]:
-            if (i+j)%depth < i:
-                continue
-            stages[(i+j)%depth] += Substitute(pipe[j], i, 0)
-    print('    { /* Prologue */')
-    PrintPipe(stages)
-    print('    }')
-
-    # Generate pipeline body
-    stages = [ None ]*depth
-    for j in range(depth):
-        stages[j] = []
-    for j in range(depth):
-        for i in perm[j]:
-            at = -depth
-            if (i+j)%depth >= j:
-                at = 0
-            stages[(i+j)%depth] += Substitute(pipe[j], i, at)
-    print('    /*   Body */')
-    print('    for ({:s}+={:d}; {:s}+{:d}<={:s}; {:s}+={:d}) {{'.format(lv, depth, lv, depth, limit, lv, depth))
-    PrintPipe(stages)
-    print('    }')
-
-    # Generate pipeline epilogue
-    #   stmt[stage] = {} (key=statement, value=highest remaining case to execute)
-    #     stage  = software pipeline stage, 0..2*depth-1
-    print('    { /* Epilogue */')
-    stmt = [ None ]*2*depth
-    for remaining in range(depth-1, -1, -1):
-        epi = GenEpilog(remaining)
-        for stage in range(2*depth):
-            for s in epi[stage].keys():
-                if stmt[stage] == None:
-                    stmt[stage] = {}
-                if s not in stmt[stage]:
-                    stmt[stage][s] = remaining
-                elif stmt[stage][s] > remaining:
-                    stmt[stage][s] = remaining
-    for stage in range(2*depth):
-        if stmt[stage] != None:
-            buckets = {}
-            always = []
-            for a in stmt[stage].keys():
-                r = stmt[stage][a]
-                if r == 0:
-                    always.append(a)
-                    continue
-                if r not in buckets:
-                    buckets[r] = []
-                buckets[r].append(a)
-            ifstmt = ''
-            for a in always:
-                ifstmt += a+'  '
-            for r in reversed(sorted(buckets.keys())):
-                ifstmt += 'if ({:s}-{:s}>{:d}) {{'.format(limit, lv, r-1)
-                for a in buckets[r]:
-                    ifstmt += '  '+a
-                ifstmt += ' }  '
-            if ifstmt != '':
-                ifstmt = '      Stage("{:2d}:")  '.format(stage) + ifstmt
-                print(ifstmt)
-    print('    }')
-    print('  }')
-
-
-
-    
 while lines:
     line = lines.pop()
-    if line != '' and line[0] != '?':
+    m = BeginPipe.match(line)
+    if not m:
         print(line)
-    elif line == '?{':
-        line = lines.pop()
-        while line != '?}':
-            m = VarPattern.match(line)
-            if not m:
-                error(line)
-            (declaration, variable) = m.groups()
-            vectors.append( (variable, declaration) )
-            line = lines.pop()
-    elif line == '?[':
-        line = lines.pop()
-        while line != '?]':
-            m = SpecPattern.match(line)
-            if not m:
-                error(line)
-            (stage, statement) = m.groups()
-            stage = int(stage)
-            statement = statement.lstrip()
-            statement = statement.rstrip()
-            if stage not in pipe:
-                pipe[stage] = []
-            pipe[stage].append(statement)
-            line = lines.pop()
-        if stage > depth:
-            depth = stage
-        depth += 1
-        
-        # Generate permutation table
-        perm = [None]*depth
-        for i in range(depth):
-            perm[i] = list(range(i, depth)) + list(range(0, i))
-            
-        for i in range(depth):
-            if not i in pipe:
-                pipe[i] = []
-        GenerateSoftwarePipeline()
-        
-    else:
-        m = CmdPattern.match(line)
+        continue
+    template = []
+    N = 0
+    temps = []
+    vl, = m.groups()
+    line = lines.pop()
+    while line != '$}':
+        m = DeclPattern.match(line)
         if m:
-            cmd, value = m.groups()
-            if cmd == 'limit':
-                limit = value
-            elif cmd == 'iter':
-                lv = value
-            else:
-                error(line)
-        else:
-            print(line)
+            declaration,variable = m.groups()
+            temps.append( (variable, declaration) )
+            line = lines.pop()
+            continue
+        m = SpecPattern.match(line)
+        if m:
+            stage,statement = m.groups()
+            stage = int(stage)
+            while N < stage+1:
+                template.append([])
+                N += 1
+            template[stage].append(statement.lstrip().rstrip())
+            line = lines.pop()
+            continue
+        if line != None and line[0] != '#':
+            error(line)
+        
+# Create pipeline with vector temporaries (rotated registers)
+    if N == 0:
+        error('Zero depth software pipeline')
+    pipe = []
+    for k in range(N):
+        pipe.append( {} )
+    for k in range(N):
+        for i in list(range(k, N)) + list(range(0, k)):
+            j = (i + k) % N
+            for action in template[i]:
+                action = action.replace('$', str(k))
+                at = str(k)
+                if j < i:
+                    at += str(-N)
+                action = action.replace('@', at)
+                if k not in pipe[j]:
+                    pipe[j][k] = []
+                pipe[j][k].append(action)
 
+# Generate declarations for vector tempoararies
+    for var, decl in temps:
+        comma = ', '
+        vector = []
+        for k in range(N):
+            vector.append(var+str(k))
+        print('  register {:s}{:s};'.format(decl, comma.join(vector)))
+        
+# Generate Prolog
+    blank = ' '
+    print('  { /* Prolog */')
+    for k in range(N-1):
+        print('    asm volatile("{:d}: # Prolog stage {:d}"); {{'.format(k, k))
+        for i in range(k+1):
+            if i in pipe[k]:
+                print('      if ({:s} > {:d}) {{ {:s} }}'.format(vl, i, blank.join(pipe[k][i])))
+        print('    }')
+    print('  }')
+        
+# Generate Body with no branches, followed by epilog
+    def GenPipe(branch):
+        j = 0
+        for k in [N-1] + list(range(N-1)):
+            print('    asm volatile("{:d}: # Body/epilog stage {:d}"); {{'.format(k, k))
+            for i in range(N):
+                g = i;
+                if i < j:
+                    g += N
+                if i in pipe[k]:
+                    if branch == 0:
+                        print('      {{ {:s} }}'.format(blank.join(pipe[k][i])))
+                    elif g < branch:
+                        print('      if ({:s} > {:d}) {{ {:s} }}'.format(vl, g, blank.join(pipe[k][i])))
+            print('    }')
+            j += 1
 
-
+    if body:
+        print('  /* Body */')
+        print('  for (; {:s}>{:d}; {:s}-={:d}) {{'.format(vl, N, vl, N))
+        GenPipe(0)
+        print('  }')
+        print('  { /* Epilog */')
+        GenPipe(N)
+        print('  }')
+    else:
+        print('  /* Body/Epilog */')
+        print('  for (; {:s}>0; {:s}-={:d}) {{'.format(vl, vl, N))
+        GenPipe(1000)
+        print('  }')
+    
+            
 
     
 
