@@ -59,8 +59,7 @@ struct insn_t {
 
 struct insnAttr_t {
   const char* name;		/* asserbler opcode */
-  unsigned int  flags;		/* upper case, from Instructions.def */
-  unsigned char unit;		/* lower case, functional units */
+  unsigned int  flags;		/* from Instructions.def */
   unsigned char latency;	/* filled in by simulator */
 };  
 

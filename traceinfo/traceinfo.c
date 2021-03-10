@@ -130,7 +130,7 @@ void print_listing(long pc)
 	const struct insn_t* p = insn(pc);
 	if (memOp(p->op_code))
 	  printf("%c[%016lx]", bing, memq[head++]);
-	else if (insnAttr[p->op_code].unit == Unit_b && (pc+(shortOp(p->op_code)?2:4)) == epc)
+	else if ((insnAttr[p->op_code].flags & attr_b) && (pc+(shortOp(p->op_code)?2:4)) == epc)
 	  printf("%c<%16lx>", bing, tr_pc(tr));
 	else
 	  printf("%c %16s ", bing, "");

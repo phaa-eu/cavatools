@@ -23,6 +23,8 @@ struct count_t {		/* together for cache locality */
 struct perf_header_t {
   long base, bound;		/* text segment addresses  */
   long size;			/* of shared memory segment */
+#define NUMHISTO  (8-3)		/* must pad up to 64B cache line */
+  long histogram[NUMHISTO];	/* superscalar issue count */
   long pad1[8-3];		/* read-only stuff in own 64B cache line */
   long ib_misses;		/* number of instruction buffer misses */
   long ic_misses;		/* number of instruction cache misses */

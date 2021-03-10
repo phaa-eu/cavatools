@@ -24,8 +24,9 @@
 #define PERSISTENCE  30		/* frames per color decay */
 #define HOT_COLOR  (7-2)
 
-int global_width = 17;
-int local_width = 17;
+#define COUNT_WIDTH  12
+int global_width = COUNT_WIDTH;
+int local_width = COUNT_WIDTH;
 
 struct perfCounters_t perf;
 
@@ -178,11 +179,16 @@ inline int fmtpercent(char* b, long num, long over)
 
 void disasm_paint(struct disasm_t* disasm)
 {
+  long numcycles = 0;
+  double assd = 0.0;
+  for (int i=0; i<NUMHISTO; i++)
+    assd += perf.h->histogram[i];
   WINDOW* win = disasm->win;
   long pc = disasm->base;
   wmove(win, 0, 0);
-  wprintw(win, "%16s %-6s %-5s %-5s %-5s", "Count", " CPI", "Ibuf", "I$", "D$");
-  wprintw(win, "%7.1fB insns  CPI=%5.2f   ", perf.h->insns/1e9, (double)perf.h->cycles/perf.h->insns);
+  wprintw(win, "%16s %-6s %-4s %-5s %-5s", "Count", " CPI", "#D", "I$", "D$");
+  wprintw(win, "%7.1fB insns  CPI=%5.2f #D=%4.2f ", perf.h->insns/1e9,
+	  (double)perf.h->cycles/perf.h->insns, assd/perf.h->insns);
   wprintw(win, "%8s %8s %s\n", "PC", "Hex", "Assembly                q=quit");
   if (pc != 0) {
     const struct count_t* c = count(pc);
@@ -201,14 +207,13 @@ void disasm_paint(struct disasm_t* disasm)
       double cpi = (double)c->cycles/c->count;
       int dim = cpi < 1.0+EPSILON || c->count == 0;
       if (dim)  wattron(win, A_DIM);
-      if (c->count == 0)              wprintw(win, " %-5s", "");
-      else if (c->cycles == c->count) wprintw(win, " %-5s", " 1");
-      else                            wprintw(win, " %5.2f", cpi);
-
-      if (c->count > 0)
-	wprintw(win, " %4.2f", (double)*icm/c->count);
-      else
+      if (c->count == 0 || cpi < 0.01) wprintw(win, " %-5s", "");
+      else if (c->cycles == c->count)  wprintw(win, " %-5s", " 1");
+      else                             wprintw(win, " %5.2f", cpi);
+      if (c->count == 0 || (double)*icm/c->count < 0.01)
 	wprintw(win, "     ");
+      else
+	wprintw(win, " %4.2f", (double)*icm/c->count);
       
       char buf[1024];
       char* b = buf;

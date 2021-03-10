@@ -5,6 +5,8 @@
 #ifndef CAVEAT_H
 #define CAVEAT_H
 
+//#define DEBUG
+
 /*
   Caveat trace records are a kind of instruction set with a 7-bit 'opcode'.
   There are two main instruction formats:

@@ -17,25 +17,6 @@
 #include "perfctr.h"
 #include "pipesim.h"
 
-long histogram[4];
-
-/*
-Resources:
-rs2	register port
-alu	data path
-mem	load/store port
-br	branch unit
-*/
-#define r_rs2	(1L << __COUNTER__)
-#define r_fs3	(1L << __COUNTER__)
-#define r_alu	(1L << __COUNTER__)
-#define r_mem	(1L << __COUNTER__)
-#define r_fpu	(1L << __COUNTER__)
-#define r_bru	(1L << __COUNTER__)
-#define r_xwp	(1L << __COUNTER__)
-#define r_fwp	(1L << __COUNTER__)
-
-
 #define min(a, b)  ( a < b ? a : b )
 #define max(a, b)  ( a > b ? a : b )
 
@@ -73,6 +54,7 @@ void simulate(long next_report)
   int cidx =0;		 /* current ibuf line */
   long ctag =0;		 /* current tag = itag[cidx] */
   long report =0;
+  long *histogram = perf.h->histogram;
 
   uint64_t tr = fifo_get(in);
   for ( ;; ) {
@@ -143,9 +125,13 @@ void simulate(long next_report)
 	  long cutoff = min(pc+8, (pctag+1)<<IBlinesz2); /* bundle same cache line */
 	  /* bookeeping */
 #ifdef COUNT
-	  struct count_t* c = count(pc);
-	  c->count++;
-	  c->cycles += now+1 - before_issue;
+	  {
+	    struct count_t* c = count(pc);
+	    c->count++;
+	    stalls = now - before_issue;
+	    c->cycles += stalls + 1;
+	    histogram[0] += stalls;
+	  }
 #endif
 	  icount++;
 	  pc += shortOp(p->op_code) ? 2 : 4;

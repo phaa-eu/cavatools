@@ -19,8 +19,8 @@ incf := perfctr.h cache.h lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4
 libs := -lrt -lpthread -lm
 
 # Compiler flags
-#CFLAGS := -I$R/include/cava -g -Ofast
-CFLAGS := -I$R/include/cava -g -O1
+CFLAGS := -I$R/include/cava -g -Ofast
+#CFLAGS := -I$R/include/cava -g -O1
 
 
 # Dependent headers

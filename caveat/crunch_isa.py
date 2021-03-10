@@ -29,11 +29,11 @@ for line in InsnFile:
         continue
     line = line[1:]
     tuples = re.split('\t+', line)
-    if len(tuples) < 5:
+    if len(tuples) < 6:
         print(line)
         print('Bad Line')
         exit(-1)
-    (bitpattern, mnemonic, assembly, regspecs, action) = tuples
+    (bitpattern, mnemonic, assembly, flags, regspecs, action) = tuples
     # Create opcode bitmask
     tuples = bitpattern.split()
     InsnLen = 0
@@ -108,20 +108,21 @@ for line in InsnFile:
     mnemonic = mnemonic.lower()
     op = 'Op_' + mnemonic.replace('.', '_')
     OriginalOrder.append(op)
-    Opcode[op] = [ code, mask, signed, int(InsnLen/8), regspecs.strip(), Immed, action.strip(), assembly.strip() ]
+    Opcode[op] = [ code, mask, signed, int(InsnLen/8), flags.strip(), regspecs.strip(), Immed, action.strip(), assembly.strip() ]
+#    print(op, Opcode[op])
     Mnemonic[op] = mnemonic
 InsnFile.close()
 
 OriginalOrder.append('Op_illegal')
 
 
-Opcode['Op_zero'   ] = (0, 0, False, 0, 'i,-,-', 0, '', 'UNKNOWN')
-Opcode['Op_illegal'] = (0, 0, False, 0, 'i,-,-', 0, '', 'ILLEGAL')
+Opcode['Op_zero'   ] = (0, 0, False, 0, 'i', '-,-', 0, '', 'UNKNOWN')
+Opcode['Op_illegal'] = (0, 0, False, 0, 'i', '-,-', 0, '', 'ILLEGAL')
 Mnemonic['Op_zero'   ] = 'ZERO'
 Mnemonic['Op_illegal'] = 'ILLEGAL'
 
 for op in OriginalOrder:
-    code, mask, signed, len, regspecs, Immed, action, assembly = Opcode[op]
+    code, mask, signed, len, flags, regspecs, Immed, action, assembly = Opcode[op]
     tokens = re.split('[,()]', assembly)
     format = assembly
     params = ''
@@ -163,7 +164,6 @@ def ExpandField(x):
     if not param in Field:
         return x
     pos, width = Field[param]
-#    extract = '((ir>>{:d})&0x{:x})'.format(32-pos-width, 32-width)
     extract = '((ir>>{:d})&0x{:x})'.format(pos, (1<<width)-1)
     return extract + expr
 
@@ -177,17 +177,11 @@ ThreeOp = {}
 for op in OriginalOrder:
     if op == 'Op_zero' or op == 'Op_illegal':
         continue
-    code, mask, signed, len, regspecs, Immed, action, assembly = Opcode[op]
+    code, mask, signed, length, flagspecs, regspecs, Immed, action, assembly = Opcode[op]
     rf.write('    if ((ir&0x{:08x})==0x{:08x}) {{ '.format(mask, code))
 
-    reglist = regspecs.split(',');
-    flagspecs = reglist[0].split(',')[0]
     for f in list(flagspecs):
         Flags[f] = 1
-#        if f=='r':
-#            ReadOp[op] = 1
-#        if f=='w':
-#            WriteOp[op] = 1
     if 'm' in flagspecs:
         if 'l' in flagspecs:
             ReadOp[op] = 1
@@ -195,7 +189,7 @@ for op in OriginalOrder:
             WriteOp[op] = 1
     reg = [ '64', '64', '64', '64' ]
     imm = '0'
-    for i, spec in enumerate(reglist[1:]):
+    for i, spec in enumerate(regspecs.split(',')):
         if spec == '-':
             continue
         spec = spec.replace('cfd+8', 'crd+8+32')
@@ -205,6 +199,7 @@ for op in OriginalOrder:
         spec = spec.replace('fs1', 'rs1+32')
         spec = spec.replace('fs2', 'rs2+32')
         spec = spec.replace('fs3', 'fs3+32')
+        #print(i, spec, ExpandField(spec))
         reg[i] = ExpandField(spec)
         if spec.find('s3') != -1:
             ThreeOp[op] = 1
@@ -222,11 +217,11 @@ for op in OriginalOrder:
         rf.write("*p=fmtC({:s}, {:s}, {:s}, {:s})".format(op, reg[0], reg[1], imm))
     else:
         rf.write("*p=fmtR({:s}, {:s}, {:s}, {:s}, {:s}, {:s})".format(op, reg[0], reg[1], reg[2], reg[3], imm))
-    if (Opcode[op][3] == 2):
+    if (Opcode[op][3] < 4):
         ShortOp.append(op)
     else:
         LongOp.append(op)
-    Opcode[op][4] = regspecs;
+#    Opcode[op][5] = regspecs;
     rf.write("; return; }\n")
 
     
@@ -325,24 +320,22 @@ for f in sorted(Flags):
 for i, op in enumerate(InOrder):
     init = '{:16s}  0'.format('"'+Mnemonic[op]+'",')
     flags = Opcode[op][4]
-    flags = flags.split(',')
-    flags = flags[0]
     for letter in flags:
         init += ' | attr_' + letter
-    kf.write('    {{ {:s} }},\n'.format(init))
+    kf.write('    {{ {:s}, 0 }},\n'.format(init))
     
 
 for op in InOrder:
     if op == 'Op_zero' or op == 'Op_illegal':
         continue
-    code, mask, signed, len, regspecs, Immed, action, assembly = Opcode[op]
+    action = Opcode[op][7]
     action = action.replace('rd', 'p->op_rd')
     action = action.replace('rs1', 'p->op_rs1')
     action = action.replace('rs2', 'p->op.rs2')
     action = action.replace('rs3', 'p->op.rs3')
     action = action.replace('immed', 'p->op.immed')
     action = action.replace('constant', 'p->op_constant')
-    ef.write('case {:>20s}: {:s};  INCPC({:d});  break;\n'.format(op, action, len))
+    ef.write('case {:>20s}: {:s};  INCPC({:d});  break;\n'.format(op, action, Opcode[op][3]))
 
 af.close()
 df.close()
