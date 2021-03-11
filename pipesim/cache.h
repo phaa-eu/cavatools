@@ -23,7 +23,7 @@ struct cache_t {		/* cache descriptor */
   long line;			/* line size in bytes */
   long rows;			/* number of rows */
   long ways;			/* number of ways */
-  long lg_line, lg_rows;		/* specified in log-base-2 units */
+  long lg_line, lg_rows;	/* specified in log-base-2 units */
   long row_mask;		/* row index mask = (1<<lg_rows)-1 */
   struct tag_t** tags;		/* cache tag array [ways]->[rows] */
   unsigned short* states;	/* LRU state vector [rows] */
@@ -37,7 +37,7 @@ void flush_cache( struct cache_t* c );
 
 void init_cache( struct cache_t* c, struct lru_fsm_t* fsm, int writeable );
 
-void show_cache( struct cache_t* c );
+void show_cache( struct cache_t* c, const char* name, long n, FILE* f );
 
 
 /* returns cycle when line available (may be in past)

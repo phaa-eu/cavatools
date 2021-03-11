@@ -44,10 +44,6 @@ void perf_create(const char* shm_name)
   perf.ib_miss = (long*)&perf.count_array[n];
   perf.ic_miss = (long*)&perf.ib_miss[n];
   perf.dc_miss = (long*)&perf.ic_miss[n];
-  //  perf.text_segment = (char*)&perf.dc_miss[n];
-  //  memcpy(perf.text_segment, (char*)insnSpace.base, (insnSpace.bound-insnSpace.base));
-  for (Addr_t pc=perf.h->base; pc<perf.h->bound; pc+=2)
-    decode_instruction(&perf.count_array[(pc-perf.h->base)/2].i, pc);
 }
 
 void perf_open(const char* shm_name)
@@ -65,7 +61,6 @@ void perf_open(const char* shm_name)
   perf.ib_miss = (long*)&perf.count_array[n];
   perf.ic_miss = (long*)&perf.ib_miss[n];
   perf.dc_miss = (long*)&perf.ic_miss[n];
-  //  perf.text_segment = (char*)&perf.ic_miss[n];
 }
 
 void perf_close()

@@ -101,12 +101,19 @@ int find_symbol( const char* name, Addr_t* begin, Addr_t* end );
 int find_pc( long pc, const char** name, long* offset );
 
 
-#define insn(pc)  ( &insnSpace.insn_array[(pc-insnSpace.base)/2] )
-
 static inline int valid_pc(Addr_t pc)
 {
   return insnSpace.base <= pc && pc < insnSpace.bound;
 }
+
+#ifdef DEBUG
+static inline struct insn_t* insn(long pc) {
+  if (valid_pc(pc)) return &insnSpace.insn_array[(pc-insnSpace.base)/2];
+  else abort();
+}
+#else
+#define insn(pc)  ( &insnSpace.insn_array[(pc-insnSpace.base)/2] )
+#endif
 
 static inline void insert_breakpoint(Addr_t pc)
 {

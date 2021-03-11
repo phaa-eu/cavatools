@@ -17,7 +17,6 @@
 #	E = floating-point division
 #
 # Attributes:
-#	C = compressed Instruction Set
 #	A = atomic Memory Operation
 #	S = special register (CSR)
 #
@@ -29,51 +28,51 @@
 #------------------------|----------------------------------|		------------	--------------------	--------------------	--------------------------------------
 
 # 16-Bit Instructions
-@                         000         {5:4|9:6|2|3} crd[3] 00		C.ADDI4SPN	rd,rs1,immed		iC	crd+8,SP		IR(rd).l = IR(rs1).l + immed
-@                         001   {5:3}  cs1[3] {7:6} cfd[3] 00		C.FLD		fd,immed(rs1)		mlwC	cfd+8,cs1+8	FR(rd).d = LOAD_D(IR(rs1).l+immed, 2)
-@                         010   {5:3}  cs1[3] {2|6} crd[3] 00		C.LW		rd,immed(rs1)		mlxC	crd+8,cs1+8	IR(rd).l = LOAD_W(IR(rs1).l+immed, 2)
-@                         011   {5:3}  cs1[3] {7:6} crd[3] 00		C.LD		rd,immed(rs1)		mlxC	crd+8,cs1+8	IR(rd).l = LOAD_L(IR(rs1).l+immed, 2)
-@                         101   {5:3}  cs1[3] {7:6} ds2[3] 00		C.FSD		fs2,immed(rs1)		ms3C	-,cs1+8,ds2+8	STORE_D(IR(rs1).l+immed, 2, FR(rs2).d)
-@                         110   {5:3}  cs1[3] {2|6} cs2[3] 00		C.SW		rs2,immed(rs1)		ms2C	-,cs1+8,cs2+8	STORE_W(IR(rs1).l+immed, 2, IR(rs2).i)
-@                         111   {5:3}  cs1[3] {7:6} cs2[3] 00		C.SD		rs2,immed(rs1)		ms2C	-,cs1+8,cs2+8	STORE_L(IR(rs1).l+immed, 2, IR(rs2).l)
+@                         000         {5:4|9:6|2|3} crd[3] 00		C.ADDI4SPN	rd,rs1,immed		i	crd+8,SP	IR(rd).l = IR(rs1).l + immed
+@                         001   {5:3}  cs1[3] {7:6} cfd[3] 00		C.FLD		fd,immed(rs1)		mlw	cfd+8,cs1+8	FR(rd).d = LOAD_D(IR(rs1).l+immed, 2)
+@                         010   {5:3}  cs1[3] {2|6} crd[3] 00		C.LW		rd,immed(rs1)		mlx	crd+8,cs1+8	IR(rd).l = LOAD_W(IR(rs1).l+immed, 2)
+@                         011   {5:3}  cs1[3] {7:6} crd[3] 00		C.LD		rd,immed(rs1)		mlx	crd+8,cs1+8	IR(rd).l = LOAD_L(IR(rs1).l+immed, 2)
+@                         101   {5:3}  cs1[3] {7:6} ds2[3] 00		C.FSD		fs2,immed(rs1)		ms3	-,cs1+8,ds2+8	STORE_D(IR(rs1).l+immed, 2, FR(rs2).d)
+@                         110   {5:3}  cs1[3] {2|6} cs2[3] 00		C.SW		rs2,immed(rs1)		ms2	-,cs1+8,cs2+8	STORE_W(IR(rs1).l+immed, 2, IR(rs2).i)
+@                         111   {5:3}  cs1[3] {7:6} cs2[3] 00		C.SD		rs2,immed(rs1)		ms2	-,cs1+8,cs2+8	STORE_L(IR(rs1).l+immed, 2, IR(rs2).l)
 
-@                         000  {-5}     00000        {4:0} 01		C.NOP		-			iC	-		{ }
-@                         000  {-5}     rd[5]        {4:0} 01		C.ADDI		rd,immed		iC	rd		IR(rd).l = IR(rd).l + immed
-@                         001  {-5}     rd[5]        {4:0} 01		C.ADDIW		rd,immed		iC	rd		IR(rd).l = (long)(IR(rd).i + immed)
-@                         010  {-5}     rd[5]        {4:0} 01		C.LI		rd,immed		iC	rd		IR(rd).l =            immed
-@                         011  {-9}     00010  {4|6|8:7|5} 01		C.ADDI16SP	rd,immed		iC	rd,SP		IR(rd).l = IR(rd).l + immed
-@                         011 {-17}     rd[5]      {16:12} 01		C.LUI		rd,constant		iC	rd		IR(rd).l = constant
+@                         000  {-5}     00000        {4:0} 01		C.NOP		-			i	-		{ }
+@                         000  {-5}     rd[5]        {4:0} 01		C.ADDI		rd,immed		i	rd		IR(rd).l = IR(rd).l + immed
+@                         001  {-5}     rd[5]        {4:0} 01		C.ADDIW		rd,immed		i	rd		IR(rd).l = (long)(IR(rd).i + immed)
+@                         010  {-5}     rd[5]        {4:0} 01		C.LI		rd,immed		i	rd		IR(rd).l =            immed
+@                         011  {-9}     00010  {4|6|8:7|5} 01		C.ADDI16SP	rd,immed		i	rd,SP		IR(rd).l = IR(rd).l + immed
+@                         011 {-17}     rd[5]      {16:12} 01		C.LUI		rd,constant		i	rd		IR(rd).l = constant
 
-@                         100   {5} 00 cs1[3]        {4:0} 01		C.SRLI		rd,immed		iC	cs1+8		IR(rd).ul = IR(rd).ul >> immed 
-@                         100   {5} 01 cs1[3]        {4:0} 01		C.SRAI		rd,immed		iC	cs1+8		IR(rd).l  = IR(rd).l  >> immed
-@                         100  {-5} 10 cs1[3]        {4:0} 01		C.ANDI		rd,immed		iC	cs1+8		IR(rd).l  = IR(rd).l  &  immed
+@                         100   {5} 00 cs1[3]        {4:0} 01		C.SRLI		rd,immed		i	cs1+8		IR(rd).ul = IR(rd).ul >> immed 
+@                         100   {5} 01 cs1[3]        {4:0} 01		C.SRAI		rd,immed		i	cs1+8		IR(rd).l  = IR(rd).l  >> immed
+@                         100  {-5} 10 cs1[3]        {4:0} 01		C.ANDI		rd,immed		i	cs1+8		IR(rd).l  = IR(rd).l  &  immed
 
-@                         100     0 11 cs1[3]    00 cs2[3] 01		C.SUB		rd,rs2			i2C	cs1+8,-,cs2+8	IR(rd).l  = IR(rd).l  - IR(rs2).l
-@                         100     0 11 cs1[3]    01 cs2[3] 01		C.XOR		rd,rs2			i2C	cs1+8,-,cs2+8	IR(rd).ul = IR(rd).ul ^ IR(rs2).ul
-@                         100     0 11 cs1[3]    10 cs2[3] 01		C.OR		rd,rs2			i2C	cs1+8,-,cs2+8	IR(rd).ul = IR(rd).ul | IR(rs2).ul
-@                         100     0 11 cs1[3]    11 cs2[3] 01		C.AND		rd,rs2			i2C	cs1+8,-,cs2+8	IR(rd).ul = IR(rd).ul & IR(rs2).ul
-@                         100     1 11 cs1[3]    00 cs2[3] 01		C.SUBW		rd,rs2			i2C	cs1+8,-,cs2+8	IR(rd).l  = (long)(IR(rd).i  - IR(rs2).i)
-@                         100     1 11 cs1[3]    01 cs2[3] 01		C.ADDW		rd,rs2			i2C	cs1+8,-,cs2+8	IR(rd).l  = (long)(IR(rd).i  + IR(rs2).i)
+@                         100     0 11 cs1[3]    00 cs2[3] 01		C.SUB		rd,rs2			i2	cs1+8,-,cs2+8	IR(rd).l  = IR(rd).l  - IR(rs2).l
+@                         100     0 11 cs1[3]    01 cs2[3] 01		C.XOR		rd,rs2			i2	cs1+8,-,cs2+8	IR(rd).ul = IR(rd).ul ^ IR(rs2).ul
+@                         100     0 11 cs1[3]    10 cs2[3] 01		C.OR		rd,rs2			i2	cs1+8,-,cs2+8	IR(rd).ul = IR(rd).ul | IR(rs2).ul
+@                         100     0 11 cs1[3]    11 cs2[3] 01		C.AND		rd,rs2			i2	cs1+8,-,cs2+8	IR(rd).ul = IR(rd).ul & IR(rs2).ul
+@                         100     1 11 cs1[3]    00 cs2[3] 01		C.SUBW		rd,rs2			i2	cs1+8,-,cs2+8	IR(rd).l  = (long)(IR(rd).i  - IR(rs2).i)
+@                         100     1 11 cs1[3]    01 cs2[3] 01		C.ADDW		rd,rs2			i2	cs1+8,-,cs2+8	IR(rd).l  = (long)(IR(rd).i  + IR(rs2).i)
 
-@                         101     {-11|4|9:8|10|6|7|3:1|5} 01		C.J		immed			bC	-			                    GOTO(PC+immed, 2)
-@                         110 {-8|4:3} cs1[3]  {7:6|2:1|5} 01		C.BEQZ		rs1,immed		biC	-,cs1+8		if (IR(rs1).l == 0) GOTO(PC+immed, 2)
-@                         111 {-8|4:3} cs1[3]  {7:6|2:1|5} 01		C.BNEZ		rs1,immed		biC	-,cs1+8		if (IR(rs1).l != 0) GOTO(PC+immed, 2)
+@                         101     {-11|4|9:8|10|6|7|3:1|5} 01		C.J		immed			bi	-		                    GOTO(PC+immed, 2)
+@                         110 {-8|4:3} cs1[3]  {7:6|2:1|5} 01		C.BEQZ		rs1,immed		bi	-,cs1+8		if (IR(rs1).l == 0) GOTO(PC+immed, 2)
+@                         111 {-8|4:3} cs1[3]  {7:6|2:1|5} 01		C.BNEZ		rs1,immed		bi	-,cs1+8		if (IR(rs1).l != 0) GOTO(PC+immed, 2)
 
-@                         000   {5}     rd[5]        {4:0} 10		C.SLLI		rd,immed		iC	rd		IR(rd).ul = IR(rd).ul << immed 
-@                         001   {5}     fd[5]    {4:3|8:6} 10		C.FLDSP		fd,immed(sp)		mlwC	fd,SP		FR(rd).d  = LOAD_D(IR(rs1).l+immed, 2)
-@                         010   {5}     rd[5]    {4:2|7:6} 10		C.LWSP		rd,immed(sp)		mlxC	rd,SP		IR(rd).l  = LOAD_W(IR(rs1).l+immed, 2)
-@                         011   {5}     rd[5]    {4:3|8:6} 10		C.LDSP		rd,immed(sp)		mlxC	rd,SP		IR(rd).l  = LOAD_L(IR(rs1).l+immed, 2)
+@                         000   {5}     rd[5]        {4:0} 10		C.SLLI		rd,immed		i	rd		IR(rd).ul = IR(rd).ul << immed 
+@                         001   {5}     fd[5]    {4:3|8:6} 10		C.FLDSP		fd,immed(sp)		mlw	fd,SP		FR(rd).d  = LOAD_D(IR(rs1).l+immed, 2)
+@                         010   {5}     rd[5]    {4:2|7:6} 10		C.LWSP		rd,immed(sp)		mlx	rd,SP		IR(rd).l  = LOAD_W(IR(rs1).l+immed, 2)
+@                         011   {5}     rd[5]    {4:3|8:6} 10		C.LDSP		rd,immed(sp)		mlx	rd,SP		IR(rd).l  = LOAD_L(IR(rs1).l+immed, 2)
  
-@                         100     0     00001        00000 10		C.RET		rd			biC	RA		RETURN(IR( rd).l, 2)
-@                         100     0     rd[5]        00000 10		C.JR		rd			biC	rd		GOTO(  IR( rd).l, 2)
-@                         100     1     00000        00000 10		C.EBREAK	-			bC	RA		EBRK(0L, 2)
-@                         100     1     rd[5]        00000 10		C.JALR		rd,rs1			biC	RA,rd		CALL(  IR(rs1).l, 2)
+@                         100     0     00001        00000 10		C.RET		rd			bi	RA		RETURN(IR( rd).l, 2)
+@                         100     0     rd[5]        00000 10		C.JR		rd			bi	rd		GOTO(  IR( rd).l, 2)
+@                         100     1     00000        00000 10		C.EBREAK	-			b	RA		EBRK(0L, 2)
+@                         100     1     rd[5]        00000 10		C.JALR		rd,rs1			bi	RA,rd		CALL(  IR(rs1).l, 2)
 
-@                         100     0     rd[5]      crs2[5] 10		C.MV		rd,rs2			i2C	rd,-,crs2	IR(rd).l =            IR(rs2).l
-@                         100     1     rd[5]      crs2[5] 10		C.ADD		rd,rs2			i2C	rd,-,crs2	IR(rd).l = IR(rd).l + IR(rs2).l
-@                         101       {5:3|8:6}      cfs2[5] 10		C.FSDSP		fs2,immed(sp)		ms3C	-,SP,cfs2	STORE_D(IR(rs1).l+immed, 2, FR(rs2).d)
-@                         110       {5:2|7:6}      crs2[5] 10		C.SWSP		rs2,immed(sp)		ms2C	-,SP,crs2	STORE_W(IR(rs1).l+immed, 2, IR(rs2).i)
-@                         111       {5:3|8:6}      crs2[5] 10		C.SDSP		rs2,immed(sp)		ms2C	-,SP,crs2	STORE_L(IR(rs1).l+immed, 2, IR(rs2).l)
+@                         100     0     rd[5]      crs2[5] 10		C.MV		rd,rs2			i2	rd,-,crs2	IR(rd).l =            IR(rs2).l
+@                         100     1     rd[5]      crs2[5] 10		C.ADD		rd,rs2			i2	rd,-,crs2	IR(rd).l = IR(rd).l + IR(rs2).l
+@                         101       {5:3|8:6}      cfs2[5] 10		C.FSDSP		fs2,immed(sp)		ms3	-,SP,cfs2	STORE_D(IR(rs1).l+immed, 2, FR(rs2).d)
+@                         110       {5:2|7:6}      crs2[5] 10		C.SWSP		rs2,immed(sp)		ms2	-,SP,crs2	STORE_W(IR(rs1).l+immed, 2, IR(rs2).i)
+@                         111       {5:3|8:6}      crs2[5] 10		C.SDSP		rs2,immed(sp)		ms2	-,SP,crs2	STORE_L(IR(rs1).l+immed, 2, IR(rs2).l)
 
 
 # 32-Bit Instructions
@@ -105,7 +104,7 @@
 @ 000000000000        00001 000         00000        11001 11		RET		rs1			bi	-,RA		RETURN(IR(rs1).l + immed  & ~0x1L, 4)
 @ {-11:0}            rs1[5] 000         00000        11001 11		JR		rs1,immed		bi	-,rs1		GOTO(( IR(rs1).l + immed) & ~0x1L, 4)
 @ {-11:0}            rs1[5] 000         rd[5]        11001 11		JALR		rd,rs1,immed		bi	rd,rs1		CALL(( IR(rs1).l + immed) & ~0x1L, 4)
-@ {-20|10:1|11|19:12}                   00000        11011 11		J		constant		b	-		GOTO(  PC        + constant,       4)
+@ {-20|10:1|11|19:12}                   00000        11011 11		J		constant		bi	-		GOTO(  PC        + constant,       4)
 @ {-20|10:1|11|19:12}                   rd[5]        11011 11		JAL		rd,constant		bi	rd		CALL(  PC        + constant,       4)
 
 @ {-11:0}             00000 000         rd[5]        00100 11		LI		rd,immed		i	rd		IR(rd).l = immed

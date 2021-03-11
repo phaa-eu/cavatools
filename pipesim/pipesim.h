@@ -2,24 +2,11 @@
   Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
-
 #define COUNT  1
 
-#define IBsize2		10	/* log-2 instruction buffer size (bytes) */
-#define IBsize		(1<<IBsize2)
-
-#define IBlinesz2	8	/* log-2 line size (bytes) */
-#define IBnumlines	(1<<IBlinesz2)
-#define IBlinemask	((IBsize/IBnumlines)-1)
-
-#define IBblksz2	4	/* log-2 transfer block size (bytes) */
-#define IBnumblks	(1<<(IBlinesz2-IBblksz2))
-#define IBblkmask	(IBnumblks-1)
-
-extern long fu_latency[];
 extern long branch_delay;
 
-extern struct cache_t sc;	/* shared cache */
+extern struct cache_t ic, dc;	/*  I and D caches */
 
 extern struct fifo_t* in;	/* input fifo */
 extern struct fifo_t* out;	/* output fifo (optional) */

@@ -20,26 +20,83 @@
 #define min(a, b)  ( a < b ? a : b )
 #define max(a, b)  ( a > b ? a : b )
 
-long iready[IBnumlines][IBnumblks]; /* time when subblock becomes available */
-long itag[IBnumlines];		    /* pc tag of line */
 long busy[256];		       /* cycle when register becomes valid */
 
-static inline long dcache(long now, long addr, long pc, int store)
+static inline long icache(long now, long addr, long pc)
 {
-  /* note cache line time may be long in the past */
-  long ready = max(now, lookup_cache(&sc, addr, store, now+sc.penalty));
-#ifdef COUNT
-  if (ready == now+sc.penalty)
-    *dcmiss(pc) += 1;
-#endif
+  struct cache_t* c = &ic;
+  c->refs++;
+  addr >>= c->lg_line;		/* make proper tag (ok to include index) */
+  int index = addr & c->row_mask;
+  unsigned short* state = c->states + index;
+  
+  struct lru_fsm_t* p = c->fsm + *state; /* recall c->fsm points to [-1] */
+  struct lru_fsm_t* end = p + c->ways;	 /* hence +ways = last entry */
+  struct tag_t* tag;
+  do {
+    p++;
+    tag = c->tags[p->way] + index;
+    if (addr == tag->addr)
+      goto cache_hit;
+  } while (p < end);
+  
+  c->misses++;
+  *icmiss(pc) += 1;
+  tag->addr = addr;
+  tag->ready = now+c->penalty;
 #ifdef TRACE
-  if (ready == now+sc.penalty) {
-    if (*sc.evicted)
-      fifo_put(out, trM(tr_d1put, *sc.evicted<<dc.lg_line));
-    fifo_put(out, trM(tr_d1get, pc));
-  }
+  fifo_put(out, trM(tr_i1get, addr));
 #endif
-  return ready;
+  
+ cache_hit:
+  *state = p->next_state;	/* already multiplied by c->ways */
+  return tag->ready;
+}
+
+
+static inline long dcache(long now, long addr, int store, long pc)
+{
+  struct cache_t* c = &dc;
+  c->refs++;
+  addr >>= c->lg_line;		/* make proper tag (ok to include index) */
+  int index = addr & c->row_mask;
+  unsigned short* state = c->states + index;
+  
+  struct lru_fsm_t* p = c->fsm + *state; /* recall c->fsm points to [-1] */
+  struct lru_fsm_t* end = p + c->ways;	 /* hence +ways = last entry */
+  struct tag_t* tag;
+  do {
+    p++;
+    tag = c->tags[p->way] + index;
+    if (addr == tag->addr)
+      goto cache_hit;
+  } while (p < end);
+  
+  c->misses++;
+  *dcmiss(pc) += 1;
+  if (tag->dirty) {
+#ifdef TRACE
+    fifo_put(out, trM(tr_d1put, tag->addr<<c->lg_line));
+#endif
+    //    *c->evicted = tag->addr;	/* will SEGV if not cache not writable */
+    c->evictions++;		/* can conveniently point to your location */
+    tag->dirty = 0;
+  }
+  //  else if (c->evicted)
+  //    *c->evicted = 0;
+  tag->addr = addr;
+  tag->ready = now+c->penalty;
+#ifdef TRACE
+  fifo_put(out, trM(tr_d1get, addr));
+#endif
+  
+ cache_hit:
+  *state = p->next_state;	/* already multiplied by c->ways */
+  if (store) {
+    tag->dirty = 1;
+    c->updates++;
+  }
+  return tag->ready;
 }
 
 
@@ -54,7 +111,6 @@ void simulate(long next_report)
   int cidx =0;		 /* current ibuf line */
   long ctag =0;		 /* current tag = itag[cidx] */
   long report =0;
-  long *histogram = perf.h->histogram;
 
   uint64_t tr = fifo_get(in);
   for ( ;; ) {
@@ -65,115 +121,48 @@ void simulate(long next_report)
 	long epc = pc + tr_delta(tr);
 	cursor = 0;		/* read list of memory addresses */
 	long before_issue = now; /* for counting stall cycles */
+	const struct insn_t* p = insn(pc);
 	while (pc < epc) {
-	  long beginning = pc;
-	  const struct insn_t* p = insn(pc);
-
-	  /* fetch first instruction of bundle */
-	  long pctag = pc >> IBlinesz2;
-	  long blkidx = (pc>>IBblksz2) & IBblkmask;
-	  /* hot path staying in same buffer line */
-	  if (pctag != ctag) {
-	    /* check all tags */
-	    for (cidx=0; cidx<IBnumlines; cidx++) {
-	      ctag = itag[cidx];
-	      if (pctag == ctag)
-		goto hit_exit;
-	    }
-	    /* no tags matched */
-	    ibmisses++;
-#ifdef COUNT
-	    *ibmiss(pc) += 1;
-#endif
-	    /* replace next in fifo */
-	    ififo = cidx = (ififo+1) & IBlinemask;
-	    itag[cidx] = ctag = pctag;
-	    /* fetch from shared cache */
-	    /* note cache line time may be long in the past */
-	    long when = max(now, lookup_cache(&sc, pc, 0, now+sc.penalty));
-#ifdef COUNT
-	    if (when == now+sc.penalty)
-	      *dcmiss(pc) += 1;
-#endif
-#ifdef TRACE
-	    if (when == now+sc.penalty) {
-	      if (*sc.evicted)
-		fifo_put(out, trM(tr_d1put, *sc.evicted<<dc.lg_line));
-	      fifo_put(out, trM(tr_d1get, pc));
-	    }
-#endif
-	    /* subblocks filled critical block first */
-	    for (int k=0; k<IBnumblks; k++) {
-	      iready[cidx][blkidx] = when++;
-	      blkidx = (blkidx+1) & IBblkmask;
-	    }
-	  hit_exit: ;
-	  } /* if (pctag != ctag) */
-	  now = max(now, iready[cidx][blkidx]); /* iready may be in past */
-
+	  /* calculate stall cycles */
+	  now = max(now, icache(now, pc, pc));
 	  /* scoreboarding: advance time until source registers not busy */
 	  now = max(now, busy[p->op_rs1]);
 	  now = max(now, busy[p->op.rs2]);
 	  if (threeOp(p->op_code))
 	    now = max(now, busy[p->op.rs3]);
-	  /* model function unit latency */
-	  busy[p->op_rd] = memOp(p->op_code)
-	    ? dcache(now, tr_value(mem_queue[cursor++]), pc, writeOp(p->op_code))
-	    : now+insnAttr[p->op_code].latency;
-	  busy[NOREG] = 0;	/* in case p->op_rd not valid */
-	  int consumed = insnAttr[p->op_code].flags;
-	  long cutoff = min(pc+8, (pctag+1)<<IBlinesz2); /* bundle same cache line */
-	  /* bookeeping */
 #ifdef COUNT
-	  {
-	    struct count_t* c = count(pc);
-	    c->count++;
-	    stalls = now - before_issue;
-	    c->cycles += stalls + 1;
-	    histogram[0] += stalls;
-	  }
+	  struct count_t* c = count(pc);
+	  c->cycles += now - before_issue + 1;
 #endif
-	  icount++;
-	  pc += shortOp(p->op_code) ? 2 : 4;
-	  int dispatched = 1;
-	  /* dispatch up to 4 parcels in one cycle */
-	  cutoff = min(cutoff, epc); /* stop after taken branch */
-	  while (pc < cutoff) {
-	    blkidx = (pc>>IBblksz2) & IBblkmask;
-	    if (iready[cidx][blkidx] > now)
-	      break;		/* subblock not ready */
-	    /* resources available? */
-	    p = insn(pc);
-	    if (consumed & insnAttr[p->op_code].flags)
-	      break;
-	    /* scoreboarding:  end bundle if not ready */
-	    if (busy[p->op_rs1] > now)
-	      break;
-	    if (busy[p->op.rs2] > now)
-	      break;
-	    if (threeOp(p->op_code) && busy[p->op.rs3] > now)
-	      break;
+	  int dispatched = 0;
+	  long cutoff = min(pc+8, epc); /* stop after taken branch */
+	  if ((pc^cutoff) & (1<<ic.lg_line))
+	    cutoff &= ~((1<<ic.lg_line)-1); /* stop at end of cache line */
+	  int consumed = 0;		    /* resources already consumed */
+	  /* resource scorebording */
+	  while ((consumed & insnAttr[p->op_code].flags) == 0 && pc < cutoff) {
+	    /* register scoreboarding:  end bundle if not ready */
+	    if (                        busy[p->op_rs1] > now) break;
+	    if (!konstOp(p->op_code) && busy[p->op.rs2] > now) break;
+	    if ( threeOp(p->op_code) && busy[p->op.rs3] > now) break;
 	    /* model function unit latency */
-	    busy[p->op_rd] = memOp(p->op_code)
-	      ? dcache(now, tr_value(mem_queue[cursor++]), pc, writeOp(p->op_code))
-	      : now+insnAttr[p->op_code].latency;
+	    long ready = now + insnAttr[p->op_code].latency;
+	    if (memOp(p->op_code))
+	      ready = max(ready, dcache(now, tr_value(mem_queue[cursor++]), writeOp(p->op_code), pc));
+	    busy[p->op_rd] = ready;
 	    busy[NOREG] = 0;	/* in case p->op_rd not valid */
 	    consumed |= insnAttr[p->op_code].flags;
-	    /* bookeeping: note takes zero cycle */
-#ifdef COUNT
-	    count(pc)->count++;
-#endif
 	    icount++;
 	    pc += shortOp(p->op_code) ? 2 : 4;
-	    dispatched++;
-	  } /* while (pc < cutoff) */
-	  
-	  /* sumarize issue */
-	  histogram[dispatched]++;
-	  *icmiss(beginning) += dispatched;
-	  //fprintf(stderr, "now=%ld dispatched=%d npc=%lx\n", now, dispatched, pc);
-	  now++;
-	  before_issue = now;
+	    p += shortOp(p->op_code) ? 1 : 2;
+	    //p = insn(pc);
+	    if (++dispatched >= 1) break;
+	  }
+	  /* sumarize dispatched bundle */
+#ifdef COUNT
+	  c->count[dispatched-1]++; /* associated with starting pc */
+#endif
+	  before_issue = ++now;
 	} /* while (pc < epc) */
 
 	/* model taken branch */
@@ -197,11 +186,9 @@ void simulate(long next_report)
     /* model discontinous trace segment */
     hart = tr_value(tr);
     pc = tr_pc(tr);
-    memset(itag, 0, sizeof itag);
-    memset(iready, 0, sizeof iready);
-
-    /* should we flush shared cache? */
-    flush_cache(&sc);
+    /* should we flush caches? */
+    flush_cache(&ic);
+    flush_cache(&dc);
     tr=fifo_get(in);
   } /* for (;;) */
 }

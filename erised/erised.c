@@ -14,6 +14,8 @@
 #include <fcntl.h>
 #include <curses.h>
 
+#define DEBUG
+
 #include "caveat.h"
 #include "opcodes.h"
 #include "insn.h"
@@ -89,11 +91,14 @@ void histo_delete(struct histogram_t* histo)
 
 void histo_compute(struct histogram_t* histo, long base, long bound)
 {
+  if (base == 0 || bound == 0)
+    return;
   long range = (bound-base) / histo->bins; /* pc range per bin */
   histo->base = base;
   histo->bound = bound;
   histo->range = range;
   long pc = base;
+  struct insn_t* p = insn(pc);
   struct count_t* c = count(pc);
   long max_count = 0;
   for (int i=0; i<histo->bins; i++) {
@@ -101,9 +106,11 @@ void histo_compute(struct histogram_t* histo, long base, long bound)
     long limit = pc + range;
     while (pc < limit) {
       //      mcount = max(mcount, c->count);
-      mcount += c->count;
-      pc += shortOp(c->i.op_code) ? 2 : 4;
-      c += shortOp(c->i.op_code) ? 1 : 2;
+      mcount += c->count[0] + c->count[1] + c->count[2];
+      if (shortOp(p->op_code))
+	pc += 2, p += 1, c += 1;
+      else
+	pc += 4, p += 2, c += 2;
     }
     if (mcount != histo->bin[i])
       histo->decay[i] = HOT_COLOR*PERSISTENCE;
@@ -167,7 +174,8 @@ void disasm_delete(struct disasm_t* disasm)
   memset(disasm, 0, sizeof(struct disasm_t));
 }   
 
-inline int fmtpercent(char* b, long num, long over)
+//inline int fmtpercent(char* b, long num, long over)
+int fmtpercent(char* b, long num, long over)
 {
   if (num == 0)         return sprintf(b, " %4s ", "");
   double percent = 100.0 * num / over;
@@ -180,55 +188,54 @@ inline int fmtpercent(char* b, long num, long over)
 void disasm_paint(struct disasm_t* disasm)
 {
   long numcycles = 0;
-  double assd = 0.0;
-  for (int i=0; i<NUMHISTO; i++)
-    assd += perf.h->histogram[i];
   WINDOW* win = disasm->win;
   long pc = disasm->base;
   wmove(win, 0, 0);
-  wprintw(win, "%16s %-6s %-4s %-5s %-5s", "Count", " CPI", "#D", "I$", "D$");
-  wprintw(win, "%7.1fB insns  CPI=%5.2f #D=%4.2f ", perf.h->insns/1e9,
-	  (double)perf.h->cycles/perf.h->insns, assd/perf.h->insns);
-  wprintw(win, "%8s %8s %s\n", "PC", "Hex", "Assembly                q=quit");
+  wprintw(win, "%16s %-5s %-4s %-5s %-5s", "Count", " CPI", "#ssi", "I$", "D$");
+  wprintw(win, "%7.1fB insns  CPI=%5.2f", perf.h->insns/1e9, (double)perf.h->cycles/perf.h->insns);
+  //  wprintw(win, "] %8s %8s %s\n", "PC", "Hex", "Assembly                q=quit");
   if (pc != 0) {
+    const struct insn_t* p = insn(pc);
     const struct count_t* c = count(pc);
-    const long* ibm = ibmiss(pc);
     const long* icm = icmiss(pc);
     const long* dcm = dcmiss(pc);
     for (int y=1; y<getmaxy(win) && pc<perf.h->bound; y++) {    
       wmove(win, y, 0);
-      if (c->count != disasm->old[y])
+      long count = c->count[0] + c->count[1] + c->count[2];
+      if (count != disasm->old[y])
 	disasm->decay[y] = HOT_COLOR*PERSISTENCE;
-      disasm->old[y] = c->count;
-      paint_count_color(win, 16, c->count, disasm->decay[y], 1);
+      disasm->old[y] = count;
+      paint_count_color(win, 16, count, disasm->decay[y], 1);
       if (disasm->decay[y] > 0)
 	disasm->decay[y]--;
 
-      double cpi = (double)c->cycles/c->count;
-      int dim = cpi < 1.0+EPSILON || c->count == 0;
+      double cpi = (double)c->cycles/count;
+      int dim = cpi < 1.0+EPSILON || count == 0;
       if (dim)  wattron(win, A_DIM);
-      if (c->count == 0 || cpi < 0.01) wprintw(win, " %-5s", "");
-      else if (c->cycles == c->count)  wprintw(win, " %-5s", " 1");
-      else                             wprintw(win, " %5.2f", cpi);
-      if (c->count == 0 || (double)*icm/c->count < 0.01)
+      if (count == 0 || cpi < 0.01) wprintw(win, " %-5s", "");
+      else if (c->cycles == count)  wprintw(win, " %-5s", " 1");
+      else                          wprintw(win, " %5.2f", cpi);
+
+      /* average superscalar bundle size */
+      double assb = (c->count[0] + 2*c->count[1] + 3*c->count[2]) / (double)count;
+      if (count == 0 || assb < 0.01)
 	wprintw(win, "     ");
       else
-	wprintw(win, " %4.2f", (double)*icm/c->count);
+	wprintw(win, " %4.2f", assb);
       
       char buf[1024];
       char* b = buf;
-      b+=fmtpercent(b, *ibm, c->count);
-      //b+=fmtpercent(b, *icm, c->count);
-      b+=fmtpercent(b, *dcm, c->count);
+      b+=fmtpercent(b, *icm, count);
+      b+=fmtpercent(b, *dcm, count);
       b+=sprintf(b, " ");
       b+=format_pc(b, 28, pc);
-      b+=format_insn(b, &c->i, pc, *((unsigned int*)pc));
+      b+=format_insn(b, p, pc, *((unsigned int*)pc));
       wprintw(win, "%s\n", buf);
       if (dim)  wattroff(win, A_DIM);
-    
-      int sz = shortOp(c->i.op_code) ? 1 : 2;
-      pc += 2*sz;
-      c  += sz, ibm += sz, icm += sz, dcm += sz;
+      if (shortOp(p->op_code))
+	pc += 2, p += 1, c += 1, icm += 1, dcm += 1;
+      else
+	pc += 4, p += 2, c += 2, icm += 2, dcm += 2;
     }
   }
   disasm->bound = pc;

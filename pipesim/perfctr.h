@@ -4,11 +4,10 @@
 
 
 
-struct count_t {		/* together for cache locality */
-  struct insn_t i;		/* decoded instruction */
-  long count;			/* how many times executed */
-  long cycles;			/* total including stalls */
-};				/* CPI = cycles/count */
+struct count_t {	      /* together for cache locality */
+  long cycles;		      /* total including stalls */
+  long count[3];	      /* #times superscalar bundle n+1 insn */
+};			      /* CPI = cycles/count */
 
 /*
     The performance monitoring shared memory segment consists of:
@@ -23,8 +22,6 @@ struct count_t {		/* together for cache locality */
 struct perf_header_t {
   long base, bound;		/* text segment addresses  */
   long size;			/* of shared memory segment */
-#define NUMHISTO  (8-3)		/* must pad up to 64B cache line */
-  long histogram[NUMHISTO];	/* superscalar issue count */
   long pad1[8-3];		/* read-only stuff in own 64B cache line */
   long ib_misses;		/* number of instruction buffer misses */
   long ic_misses;		/* number of instruction cache misses */
@@ -45,20 +42,15 @@ struct perfCounters_t {
   long* ib_miss;		/* counts instruction buffer miss */
   long* ic_miss;		/* counts instruction cache miss */
   long* dc_miss;		/* counts data cache miss */
-  //  char* text_segment;		/* copy of text segment in pipesim */
   struct timeval start;		/* time of day when program started */
 };
 
 extern struct perfCounters_t perf;
 
-#undef insn
-#define insn(pc)   ( &perf.count_array[(pc-perf.h->base)/2].i )
-
 static inline struct count_t* count(long pc)  { return &perf.count_array[(pc-perf.h->base)/2]; }
 static inline long* ibmiss(long pc)  { return &perf.ib_miss[(pc-perf.h->base)/2]; }
 static inline long* icmiss(long pc)  { return &perf.ic_miss[(pc-perf.h->base)/2]; }
 static inline long* dcmiss(long pc)  { return &perf.dc_miss[(pc-perf.h->base)/2]; }
-//static inline const char* image(long pc)  { return &perf.text_segment[pc-perf.h->base]; }
 
 void perf_create(const char* shm_name);
 void perf_open(const char* shm_name);

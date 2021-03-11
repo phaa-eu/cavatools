@@ -1,7 +1,8 @@
 # Path where things should be installed
 R = $(HOME)
 
-CFLAGS   = -I$R/include/cava -g -O3
+//CFLAGS   = -I$R/include/cava -g -O3
+CFLAGS   = -I$R/include/cava -g -O0
 LIBS     = $R/lib/libcava.a -lrt -lpthread -lncurses
 LDFLAGS  = -Wl,-Ttext=70000000
 

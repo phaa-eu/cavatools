@@ -22,29 +22,39 @@
 #include "lru_fsm_3way.h"
 #include "lru_fsm_4way.h"
 
-static const char *in_path, *out_path, *perf_path, *wflag;
+static const char *in_path, *out_path, *perf_path;
+
 long load_latency, fma_latency, branch_delay;
+
+#define mpy_cycles   8
+#define div_cycles  32
+#define fma_div_cycles (fma_latency*3)
+
 
 const struct options_t opt[] =
   {
-   { "--in=s",		.s=&in_path,		.ds=0,		.h="Trace file from caveat =name" },
-   { "--perf=s",	.s=&perf_path,		.ds=0,		.h="Performance counters in shared memory =name" },
+   { "--in=s",		.s=&in_path,		.ds=0,	.h="Trace file from caveat =name" },
+   { "--perf=s",	.s=&perf_path,		.ds=0,	.h="Performance counters in shared memory =name" },
      
-   { "--load=i",	.i=&load_latency,	.di=6,		.h="Load latency from cache" },
-   { "--fma=i",		.i=&fma_latency,	.di=2,		.h="fused multiply add unit latency" },
+   { "--load=i",	.i=&load_latency,	.di=6,	.h="Load latency from cache" },
+   { "--fma=i",		.i=&fma_latency,	.di=2,	.h="fused multiply add unit latency" },
    
-   { "--miss=i",	.i=&sc.penalty,		.di=200,	.h="Cache miss latency is =number cycles" },
-   { "--line=i",	.i=&sc.lg_line,		.di=8,		.h="Cache line size is 2^ =n bytes" },
-   { "--ways=i",	.i=&sc.ways,		.di=4,		.h="Cache is =w ways set associativity" },
-   { "--sets=i",	.i=&sc.lg_rows,		.di=10,		.h="Cache has 2^ =n sets per way" },
-   { "--write=s",	.s=&wflag,		.ds="b",	.h="Cache is write=[back|thru]" },
+   { "--imiss=i",	.i=&ic.penalty,		.di=12,	.h="I$ miss latency is =number cycles" },
+   { "--iline=i",	.i=&ic.lg_line,		.di=5,	.h="I$ line size is 2^ =n bytes" },
+   { "--iways=i",	.i=&ic.ways,		.di=4,	.h="I$ is =w ways set associativity" },
+   { "--isets=i",	.i=&ic.lg_rows,		.di=7,	.h="I$ has 2^ =n sets per way" },
+   
+   { "--dmiss=i",	.i=&dc.penalty,		.di=12,	.h="D$ miss latency is =number cycles" },
+   { "--dline=i",	.i=&dc.lg_line,		.di=5,	.h="D$ line size is 2^ =n bytes" },
+   { "--dways=i",	.i=&dc.ways,		.di=4,	.h="D$ is =w ways set associativity" },
+   { "--dsets=i",	.i=&dc.lg_rows,		.di=7,	.h="D$ has 2^ =n sets per way" },
 
-   { "--bdelay=i",	.i=&branch_delay,	.di=0,		.h="Taken branch delay is =number cycles" },
+   { "--bdelay=i",	.i=&branch_delay,	.di=2,	.h="Taken branch delay is =number cycles" },
    
-   { "--out=s",		.s=&out_path,		.ds=0,		.h="Create output trace file =name" },
-   { "--report=i",	.i=&report,    		.di=100,	.h="Progress report every =number million instructions" },
-   { "--quiet",		.b=&quiet,		.bv=1,		.h="Don't report progress to stderr" },
-   { "-q",		.b=&quiet,		.bv=1,		.h="short for --quiet" },
+   { "--out=s",		.s=&out_path,		.ds=0,	.h="Create output trace file =name" },
+   { "--report=i",	.i=&report,    		.di=100,.h="Progress report every =number million instructions" },
+   { "--quiet",		.b=&quiet,		.bv=1,	.h="Don't report progress to stderr" },
+   { "-q",		.b=&quiet,		.bv=1,	.h="short for --quiet" },
    { 0 }
   };
 const char* usage = "pipesim --in=trace --perf=counters [pipesim-options] target-program";
@@ -54,17 +64,23 @@ struct timeval start_time;
 long instructions_executed, cycles_simulated;
 long ibuf_misses;
 
-struct cache_t sc;
+struct cache_t ic, dc;
 struct fifo_t* in;
 struct fifo_t* out;
 int hart;
 uint64_t mem_queue[tr_memq_len];
 
 
-#define mpy_cycles   8
-#define div_cycles  32
-#define fma_div_cycles (fma_latency*3)
-
+struct lru_fsm_t* choose_fsm(int ways)
+{
+  switch (ways) {
+  case 1:  return cache_fsm_1way;
+  case 2:  return cache_fsm_2way;
+  case 3:  return cache_fsm_3way;
+  case 4:  return cache_fsm_4way;
+  default:  fprintf(stderr, "--ways=1..4 only\n");  exit(-1);
+  }
+}
 
 int main(int argc, const char** argv)
 {
@@ -97,16 +113,11 @@ int main(int argc, const char** argv)
     perf.start = start_time;
   }
   
-  /* initialize cache */
-  struct lru_fsm_t* fsm;
-  switch (sc.ways) {
-  case 1:  fsm = cache_fsm_1way;  break;
-  case 2:  fsm = cache_fsm_2way;  break;
-  case 3:  fsm = cache_fsm_3way;  break;
-  case 4:  fsm = cache_fsm_4way;  break;
-  default:  fprintf(stderr, "--dways=1..4 only\n");  exit(-1);
-  }
-  init_cache(&sc,fsm, !(wflag && wflag[0]=='t'));
+  init_cache(&ic,choose_fsm(ic.ways), 0);
+  init_cache(&dc,choose_fsm(dc.ways), 1);
+
+  show_cache(&ic, "I$", 1, stdout);
+  show_cache(&dc, "D$", 1, stdout);
 
   simulate(report);
   if (out_path) {
@@ -120,19 +131,10 @@ int main(int argc, const char** argv)
   fprintf(stderr, "\n\n");
   fprintf(stdout, "%12ld instructions executed\n", instructions_executed);
   fprintf(stdout, "%12ld cycles simulated\n", cycles_simulated);
-  fprintf(stdout, "%12.3f IPC\n", (double)instructions_executed/cycles_simulated);
-  fprintf(stdout, "Ibuffer %dB capacity %dB blocksize\n", IBsize, 1<<IBblksz2);
-  fprintf(stdout, "%12ld instruction buffer misses (%3.1f%%)\n",
-	  ibuf_misses, 100.0*ibuf_misses/instructions_executed);
+  fprintf(stdout, "IPC = %12.3f\n", (double)instructions_executed/cycles_simulated);
 
-  fprintf(stdout, "Cache %ldB linesize %ldKB capacity %ld way\n", sc.line,
-	  (sc.line*sc.rows*sc.ways)/1024, sc.ways);
-  long reads = sc.refs-sc.updates;
-  fprintf(stdout, "%12ld cache reads (%3.1f%%)\n", reads, 100.0*reads/instructions_executed);
-  fprintf(stdout, "%12ld cache writes (%3.1f%%)\n", sc.updates, 100.0*sc.updates/instructions_executed);
-  fprintf(stdout, "%12ld cache misses (%5.3f%%)\n", sc.misses, 100.0*sc.misses/instructions_executed);
-  fprintf(stdout, "%12ld cache evictions (%5.3f%%)\n", sc.evictions,  100.0*sc.evictions/instructions_executed);
-
+  show_cache(&ic, "I$", instructions_executed, stdout);
+  show_cache(&dc, "I$", instructions_executed, stdout);
   return 0;
 }
 
@@ -153,9 +155,9 @@ void status_report(long now, long icount, long ibmisses)
     perf.h->insns = icount;
     perf.h->cycles = now;
     perf.h->ib_misses = ibmisses;
-    perf.h->dc_misses = sc.misses;
+    perf.h->dc_misses = dc.misses;
     double kinsns = icount/1e3;
-    fprintf(stderr, " IB=%3.0f SC$=%4.2f m/Ki", ibmisses/kinsns, sc.misses/kinsns);
+    fprintf(stderr, " IC$=%4.2f DC$=%4.2f m/Ki", ibmisses/kinsns, dc.misses/kinsns);
   }
 }
 
