@@ -157,7 +157,7 @@ void status_report(long now, long icount, long ibmisses)
     perf.h->ib_misses = ibmisses;
     perf.h->dc_misses = dc.misses;
     double kinsns = icount/1e3;
-    fprintf(stderr, " IC$=%4.2f DC$=%4.2f m/Ki", ibmisses/kinsns, dc.misses/kinsns);
+    fprintf(stderr, " IC$=%4.2f/Ki DC$=%5.3f%%", ic.misses/kinsns, 100.0*dc.misses/dc.refs);
   }
 }
 

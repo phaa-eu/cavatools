@@ -201,32 +201,40 @@ void disasm_paint(struct disasm_t* disasm)
     const long* dcm = dcmiss(pc);
     for (int y=1; y<getmaxy(win) && pc<perf.h->bound; y++) {    
       wmove(win, y, 0);
-      long count = c->count[0] + c->count[1] + c->count[2];
-      if (count != disasm->old[y])
+      long total = c->count[0] + c->count[1] + c->count[2];
+      if (total != disasm->old[y])
 	disasm->decay[y] = HOT_COLOR*PERSISTENCE;
-      disasm->old[y] = count;
-      paint_count_color(win, 16, count, disasm->decay[y], 1);
+      disasm->old[y] = total;
+      paint_count_color(win, 16, total, disasm->decay[y], 1);
       if (disasm->decay[y] > 0)
 	disasm->decay[y]--;
 
-      double cpi = (double)c->cycles/count;
-      int dim = cpi < 1.0+EPSILON || count == 0;
+      double cpi = (double)c->cycles/total;
+      int dim = cpi < 1.0+EPSILON || total == 0;
       if (dim)  wattron(win, A_DIM);
-      if (count == 0 || cpi < 0.01) wprintw(win, " %-5s", "");
-      else if (c->cycles == count)  wprintw(win, " %-5s", " 1");
+      if (total == 0 || cpi < 0.01) wprintw(win, " %-5s", "");
+      else if (c->cycles == total)  wprintw(win, " %-5s", " 1");
       else                          wprintw(win, " %5.2f", cpi);
-
       /* average superscalar bundle size */
-      double assb = (c->count[0] + 2*c->count[1] + 3*c->count[2]) / (double)count;
-      if (count == 0 || assb < 0.01)
-	wprintw(win, "     ");
-      else
-	wprintw(win, " %4.2f", assb);
-      
+      {
+	long npc = pc;
+	double assb = 0.0;
+	for (int i=0; i<3; i++) {
+	  //	  assb += (i+1) * (double)count(npc)->count[i];
+	  assb += count(npc)->count[i];
+	  npc  += (shortOp(insn(npc)->op_code) ? 2 : 4);
+	}
+	assb /= total;
+	if (total == 0 || assb < 0.01)
+	  wprintw(win, "     ");
+	else
+	  wprintw(win, " %4.2f", assb);
+      }      
       char buf[1024];
       char* b = buf;
-      b+=fmtpercent(b, *icm, count);
-      b+=fmtpercent(b, *dcm, count);
+      b+=fmtpercent(b, *icm, total);
+      b+=fmtpercent(b, *dcm, total);
+      //b+=sprintf(b, "%12ld %12ld", *dcm, total);
       b+=sprintf(b, " ");
       b+=format_pc(b, 28, pc);
       b+=format_insn(b, p, pc, *((unsigned int*)pc));

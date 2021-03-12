@@ -115,54 +115,66 @@ void simulate(long next_report)
   uint64_t tr = fifo_get(in);
   for ( ;; ) {
     while (!is_frame(tr)) {
-      if (is_mem(tr))
-	mem_queue[cursor++] = tr;
-      else if (is_bbk(tr)) {
+      while (is_mem(tr)) {
+	mem_queue[cursor++] = tr_value(tr);
+	tr = fifo_get(in);
+      }
+      if (is_bbk(tr)) {
 	long epc = pc + tr_delta(tr);
 	cursor = 0;		/* read list of memory addresses */
 	long before_issue = now; /* for counting stall cycles */
 	const struct insn_t* p = insn(pc);
 	while (pc < epc) {
 	  /* calculate stall cycles */
-	  now = max(now, icache(now, pc, pc));
+	  long ready = icache(now, pc, pc);
+	  if (ready > now) now = ready;
 	  /* scoreboarding: advance time until source registers not busy */
-	  now = max(now, busy[p->op_rs1]);
-	  now = max(now, busy[p->op.rs2]);
-	  if (threeOp(p->op_code))
-	    now = max(now, busy[p->op.rs3]);
+	  if (                        busy[p->op_rs1] > now) now = busy[p->op_rs1];
+	  if (!konstOp(p->op_code) && busy[p->op.rs2] > now) now = busy[p->op.rs2];
+	  if ( threeOp(p->op_code) && busy[p->op.rs3] > now) now = busy[p->op.rs3];
 #ifdef COUNT
 	  struct count_t* c = count(pc);
-	  c->cycles += now - before_issue + 1;
+	  c->cycles += now - before_issue; /* stall charged to first instruction in bundle */
 #endif
 	  int dispatched = 0;
+#if 0
 	  long cutoff = min(pc+8, epc); /* stop after taken branch */
 	  if ((pc^cutoff) & (1<<ic.lg_line))
 	    cutoff &= ~((1<<ic.lg_line)-1); /* stop at end of cache line */
+#endif
 	  int consumed = 0;		    /* resources already consumed */
 	  /* resource scorebording */
-	  while ((consumed & insnAttr[p->op_code].flags) == 0 && pc < cutoff) {
+	  //while ((consumed & insnAttr[p->op_code].flags) == 0 && pc < cutoff) {
+	  while ((consumed & insnAttr[p->op_code].flags) == 0) {
 	    /* register scoreboarding:  end bundle if not ready */
 	    if (                        busy[p->op_rs1] > now) break;
 	    if (!konstOp(p->op_code) && busy[p->op.rs2] > now) break;
 	    if ( threeOp(p->op_code) && busy[p->op.rs3] > now) break;
 	    /* model function unit latency */
-	    long ready = now + insnAttr[p->op_code].latency;
-	    if (memOp(p->op_code))
-	      ready = max(ready, dcache(now, tr_value(mem_queue[cursor++]), writeOp(p->op_code), pc));
+	    ready = now + insnAttr[p->op_code].latency;
+	    if (memOp(p->op_code)) {
+	      //long avail = dcache(now, tr_value(mem_queue[cursor++]), writeOp(p->op_code), pc);
+	      long avail = dcache(now, mem_queue[cursor++], writeOp(p->op_code), pc);
+	      if (avail > ready) ready = avail; /* avail may be long in the past */
+	    }
 	    busy[p->op_rd] = ready;
 	    busy[NOREG] = 0;	/* in case p->op_rd not valid */
 	    consumed |= insnAttr[p->op_code].flags;
 	    icount++;
-	    pc += shortOp(p->op_code) ? 2 : 4;
-	    p += shortOp(p->op_code) ? 1 : 2;
-	    //p = insn(pc);
-	    if (++dispatched >= 1) break;
+#ifdef COUNT
+	    c->count[dispatched]++;
+	    c->cycles++;
+#endif
+	    if (shortOp(p->op_code))
+	      pc+=2, p+=1, c+=1;
+	    else
+	      pc+=4, p+=2, c+=2;
+	    dispatched++;
+	    //if (++dispatched >= 2) break;
 	  }
 	  /* sumarize dispatched bundle */
-#ifdef COUNT
-	  c->count[dispatched-1]++; /* associated with starting pc */
-#endif
-	  before_issue = ++now;
+	  now++;
+	  before_issue = now;
 	} /* while (pc < epc) */
 
 	/* model taken branch */
@@ -170,9 +182,14 @@ void simulate(long next_report)
 	  pc = tr_pc(tr);
 	  now += branch_delay;	/* charged to next instruction */
 	}
-      } /* else if (is_bbk(tr)) */
-      cursor = 0;	       /* get ready to enqueue another list */
+      } /* if (is_bbk(tr)) */
+      else {
+	if (!tr_code(tr) == tr_icount)
+	  tr_print(tr, stderr);
+      }
       tr=fifo_get(in);
+      
+      cursor = 0;	       /* get ready to enqueue another list */
       if (icount >= report) {
 	status_report(now, icount, ibmisses);
 	report += next_report;

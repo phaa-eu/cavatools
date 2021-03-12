@@ -20,7 +20,7 @@ libs := -lrt -lpthread -lm
 
 # Compiler flags
 CFLAGS := -I$R/include/cava -g -Ofast
-#CFLAGS := -I$R/include/cava -g -O1
+#CFLAGS := -I$R/include/cava -g -O0
 
 
 # Dependent headers

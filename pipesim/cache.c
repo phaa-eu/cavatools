@@ -39,9 +39,10 @@ void show_cache( struct cache_t* c, const char* name, long n, FILE* f )
 
   long size = c->line * c->rows * c->ways;
   if (size >= 1024)
-    fprintf(f, "%s %ldB linesize %gKB capacity %ld way\n", name, c->line, size/1024.0, c->ways);
+    fprintf(f, "%s %gKB capacity", name, size/1024.0);
   else
-    fprintf(f, "%s %ldB linesize %ldB capacity %ld way\n", name, c->line, size, c->ways);
+    fprintf(f, "%s %ldB capacity", name, size);;
+  fprintf(f, " %ld ways %ldB linesize %ld rowmask\n", c->ways, c->line, c->row_mask);
   long reads = c->refs-c->updates;
   fprintf(f, "%s %12ld cache reads (%3.1f%%)\n", name, reads, 100.0*reads/n);
   fprintf(f, "%s %12ld cache writes (%3.1f%%)\n", name, c->updates, 100.0*c->updates/n);
