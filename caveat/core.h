@@ -62,3 +62,16 @@ int proxy_ecall( struct core_t* cpu );
 void proxy_csr( struct core_t* cpu, const struct insn_t* p, int which );
 void status_report(struct core_t* cpu, FILE*);
 
+
+
+#define  IR(rn)  cpu->reg[rn]
+#define  FR(rn)  cpu->reg[rn]
+
+#ifdef SOFT_FP
+#define  F32(rn)  cpu->reg[rn].f32
+#define  F64(rn)  cpu->reg[rn].f64
+#define  NF32(rn)  negateF32(cpu->reg[rn].f32)
+#define  NF64(rn)  negateF64(cpu->reg[rn].f64)
+inline float32_t negateF32(float32_t x)  { x.v^=F32_SIGN; return x; }
+inline float64_t negateF64(float64_t x)  { x.v^=F64_SIGN; return x; }
+#endif

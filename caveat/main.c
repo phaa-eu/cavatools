@@ -109,6 +109,69 @@ int run_program(struct core_t* cpu)
     print_registers(cpu->reg, stderr);
     return -1;
   }
-  return outer_loop(&core);
+
+  if (cpu->params.breakpoint)
+    insert_breakpoint(cpu->params.breakpoint);
+  int fast_mode = 1;
+  cpu->holding_pc = 0;
+  while (1) {	       /* terminated by program making exit() ecall */
+    long next_report = (cpu->counter.insn_executed+cpu->params.report) / cpu->params.report;
+    next_report = next_report*cpu->params.report - cpu->counter.insn_executed;
+    if (fast_mode)
+      fast_sim(cpu, next_report);
+    else
+      slow_sim(cpu, next_report);
+    if (cpu->state.mcause != 3) /* Not breakpoint */
+      break;
+    if (fast_mode) {
+      if (--cpu->params.after > 0 || /* not ready to trace yet */
+	  --cpu->params.skip > 0) {  /* only trace every n call */
+	cpu->holding_pc = 0L;	/* do not include current pc */
+	cpu->params.skip = cpu->params.every;
+	/* put instruction back */
+	decode_instruction(insn(cpu->pc), cpu->pc);
+	cpu->state.mcause = 0;
+	fast_sim(cpu, 1);	/* single step */
+	/* reinserting breakpoint at subroutine entry */	  
+	insert_breakpoint(cpu->params.breakpoint);
+      }
+      else { /* insert breakpoint at subroutine return */
+	if (cpu->reg[RA].a)	/* _start called with RA==0 */
+	  insert_breakpoint(cpu->reg[RA].a);
+	fast_mode = 0;		/* start tracing */
+	fifo_put(cpu->tb, trP(cpu->params.flags, 0, cpu->pc));
+      }
+    }
+    else {  /* reinserting breakpoint at subroutine entry */
+      insert_breakpoint(cpu->params.breakpoint);
+      fast_mode = 1;		/* stop tracing */
+      cpu->holding_pc = 0L;	/* do not include current pc */
+    }
+    cpu->state.mcause = 0;
+    decode_instruction(insn(cpu->pc), cpu->pc);
+  }
+  if (cpu->state.mcause == 8) { /* only exit() ecall not handled */
+    cpu->counter.insn_executed++;	/* don't forget to count last ecall */
+    if (!cpu->params.quiet) {
+      clock_t end_tick = clock();
+      double elapse_time = (end_tick - cpu->counter.start_tick)/CLOCKS_PER_SEC;
+      double mips = cpu->counter.insn_executed / (1e6*elapse_time);
+      fprintf(stderr, "\n\nExecuted %ld instructions in %3.1f seconds for %3.1f MIPS\n",
+	      cpu->counter.insn_executed, elapse_time, mips);
+    }
+    return cpu->reg[10].i;
+  }
+  /* The following cases do not fall out */
+  switch (cpu->state.mcause) {
+  case 2:
+    fprintf(stderr, "Illegal instruction at 0x%08lx\n", cpu->pc);
+    GEN_SEGV;
+  case 10:
+    fprintf(stderr, "Unknown instruction at 0x%08lx\n", cpu->pc);
+    GEN_SEGV;
+  default:
+    abort();
+  }
 }
+
 

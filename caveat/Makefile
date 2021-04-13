@@ -55,7 +55,7 @@ $R/lib/libcava.a : $(aobj)
 $(aobj):  $(incf)
 $(cobj):  $(incf)
 
-$B/slow_sim.o $B/fast_sim.o:  sim_body.h execute_insn.h caveat_fp.h core.h
+$B/slow_sim.o $B/fast_sim.o:  execute_insn.h caveat_fp.h core.h
 $B/ecall.o:  core.h ecall_nums.h
 $B/insn.o:  decode_insn.h disasm_insn.h
 $B/trace.o:  fifo.h

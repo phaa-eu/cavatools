@@ -52,7 +52,7 @@ static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
 int proxy_ecall( struct core_t* cpu )
 {
   static long previous =0;
-  assert(insn(cpu->pc)->op_code == Op_ecall);
+  //  assert(insn(cpu->pc)->op_code == Op_ecall);
   long rvnum = cpu->reg[17].l;
   if (rvnum < 0 || rvnum >= rv_syscall_entries) {
   no_mapping:
