@@ -15,27 +15,65 @@
 #include "insn.h"
 #include "shmfifo.h"
 #include "core.h"
+#include "pipesim.h"
+#include "cache.h"
+#include "lru_fsm_1way.h"
+#include "lru_fsm_2way.h"
+#include "lru_fsm_3way.h"
+#include "lru_fsm_4way.h"
+#include "perfctr.h"
 
-
-#define DEFAULT_REPORT_INTERVAL  1000
+unsigned char fu_latency[Number_of_units] =
+  { [Unit_a] = 4,	/* FP Adder */
+    [Unit_b] = 1,	/* Branch unit */
+    [Unit_f] = 4,	/* FP fused Multiply-Add */
+    [Unit_i] = 1,	/* Scalar Integer ALU */
+    [Unit_j] = 1,	/* Media Integer ALU */
+    [Unit_m] = 4,	/* FP Multipler*/
+    [Unit_n] = 8,	/* Scalar Integer Multipler */
+    [Unit_r] = 2,	/* Load unit */
+    [Unit_s] = 1,	/* Scalar Shift unit */
+    [Unit_t] = 1,	/* Media Shift unit */
+    [Unit_w] = 1,	/* Store unit */
+    [Unit_x] = 5,	/* Special unit */
+  };
 
 
 struct core_t core;
   
-const char* tracing;
+static const char* tracing;
+static const char *perf_path;
+
 static long bufsize;
 static const char* func;
+
 
 const struct options_t opt[] =
   {
    { "--out=s",		.s=&tracing,		.ds=0,		.h="Create trace file/fifo =name" },
-   { "--trace=s",	.s=&tracing,		.ds=0,		.h="synonym for --out" },
    { "--buffer=i",	.i=&bufsize,		.di=12,		.h="Shared memory buffer size is 2^ =n bytes" },
+   { "--perf=s",	.s=&perf_path,		.ds=0,		.h="Performance counters in shared memory =name" },
+   
    { "--func=s",	.s=&func,		.ds="_start",	.h="Trace function =name" },       
-   { "--withregs",	.b=&core.params.flags,	.bv=tr_has_reg,	.h="Include register values in trace" },
    { "--after=i",	.i=&core.params.after,	.di=1,		.h="Start tracing function after =number calls" },
    { "--every=i",	.i=&core.params.every,	.di=1,		.h="Trace only every =number times function is called" },
    { "--skip=i",	.i=&core.params.skip,	.di=1,		.h="Trace function once every =number times called" },
+
+   { "--bdelay=i",	.i=&ib.delay,		.di=2,		.h="Taken branch delay is =number cycles" },
+   { "--bmiss=i",	.i=&ib.penalty,		.di=5,		.h="L0 instruction buffer refill latency is =number cycles" },
+   { "--bufsz=i",	.i=&ib.bufsz,		.di=7,		.h="L0 instruction buffer capacity is 2*2^ =n bytes" },
+   { "--blocksz=i",	.i=&ib.blksize,		.di=4,		.h="L0 instruction buffer block size is 2^ =n bytes" },
+     
+   { "--imiss=i",	.i=&ic.penalty,		.di=25,		.h="L1 instruction cache miss latency is =number cycles" },
+   { "--iline=i",	.i=&ic.lg_line,		.di=6,		.h="L1 instrucdtion cache line size is 2^ =n bytes" },
+   { "--iways=i",	.i=&ic.ways,		.di=4,		.h="L1 instrucdtion cache is =n ways set associativity" },
+   { "--isets=i",	.i=&ic.lg_rows,		.di=6,		.h="L1 instrucdtion cache has 2^ =n sets per way" },
+     
+   { "--dmiss=i",	.i=&dc.penalty,		.di=25,		.h="L1 data cache miss latency is =number cycles" },
+   { "--dline=i",	.i=&dc.lg_line,		.di=6,		.h="L1 data cache line size is 2^ =n bytes" },
+   { "--dways=i",	.i=&dc.ways,		.di=4,		.h="L1 data cache is =w ways set associativity" },
+   { "--dsets=i",	.i=&dc.lg_rows,		.di=6,		.h="L1 data cache has 2^ =n sets per way" },
+   
    { "--report=i",	.i=&core.params.report,	.di=1000,	.h="Progress report every =number million instructions" },
    { "--quiet",		.b=&core.params.quiet,	.bv=1,		.h="Don't report progress to stderr" },
    { "-q",		.b=&core.params.quiet,	.bv=1,		.h="short for --quiet" },
@@ -47,6 +85,8 @@ int main(int argc, const char* argv[], const char* envp[])
 {
   struct timeval start_timeval;
   gettimeofday(&start_timeval, 0);
+  for (int i=0; i<Number_of_opcodes; i++)
+    insnAttr[i].latency = fu_latency[insnAttr[i].unit];
   init_core(&core, clock(), &start_timeval);
 
   int numopts = parse_options(argv+1);
@@ -58,26 +98,54 @@ int main(int argc, const char* argv[], const char* envp[])
   Addr_t stack_top = initialize_stack(argc-1-numopts, argv+1+numopts, envp);
   core.pc = entry_pc;
   core.reg[SP].a = stack_top;
-  if (tracing) {
-    if (!func)
-      func = "_start";
-    if (! find_symbol(func, &core.params.breakpoint, 0)) {
-      fprintf(stderr, "function %s cannot be found in symbol table\n", func);
-      exit(1);
-    }
-    fprintf(stderr, "Tracing %s at 0x%lx\n", func, core.params.breakpoint);
-    core.params.flags |= tr_has_pc | tr_has_mem;
-    core.tb = fifo_create(tracing, bufsize);
+  
+  if (!func)
+    func = "_start";
+  if (! find_symbol(func, &core.params.breakpoint, 0)) {
+    fprintf(stderr, "function %s cannot be found in symbol table\n", func);
+    exit(1);
   }
-  else
-    core.params.breakpoint = 0;
+  fprintf(stderr, "Tracing %s at 0x%lx\n", func, core.params.breakpoint);
+  core.params.flags |= tr_has_pc | tr_has_mem;
+
+  perf_create(perf_path);
+  perf.start = start_timeval;
+  
+  /* initialize instruction buffer */
+  ib.tag_mask = ~( (1L << (ib.bufsz-1)) - 1 );
+  ib.numblks = (1<<ib.bufsz)/(1<<ib.blksize) - 1;
+  ib.blk_mask = ib.numblks - 1;
+  for (int i=0; i<2; i++) {
+    ib.ready[i] = (long*)malloc(ib.numblks*sizeof(long));
+    memset((char*)ib.ready[i], 0, ib.numblks*sizeof(long));
+  }
+
+  /* initialize instruction cache */
+  struct lru_fsm_t* fsm;
+  switch (ic.ways) {
+  case 1:  fsm = cache_fsm_1way;  break;
+  case 2:  fsm = cache_fsm_2way;  break;
+  case 3:  fsm = cache_fsm_3way;  break;
+  case 4:  fsm = cache_fsm_4way;  break;
+  default:  fprintf(stderr, "--iways=1..4 only\n");  exit(-1);
+  }
+  init_cache(&ic, fsm, 0);
+  
+  /* initialize data cache */
+  switch (dc.ways) {
+  case 1:  fsm = cache_fsm_1way;  break;
+  case 2:  fsm = cache_fsm_2way;  break;
+  case 3:  fsm = cache_fsm_3way;  break;
+  case 4:  fsm = cache_fsm_4way;  break;
+  default:  fprintf(stderr, "--dways=1..4 only\n");  exit(-1);
+  }
+  init_cache(&dc,fsm, 1);
+  
   int rc = run_program(&core);
-  if (tracing) {
-    fifo_put(core.tb, trM(tr_eof, 0));
-    fifo_finish(core.tb);
-  }
   return rc;
 }
+
+
 
 #include <signal.h>
 #include <setjmp.h>
@@ -139,7 +207,6 @@ int run_program(struct core_t* cpu)
 	if (cpu->reg[RA].a)	/* _start called with RA==0 */
 	  insert_breakpoint(cpu->reg[RA].a);
 	fast_mode = 0;		/* start tracing */
-	fifo_put(cpu->tb, trP(cpu->params.flags, 0, cpu->pc));
       }
     }
     else {  /* reinserting breakpoint at subroutine entry */

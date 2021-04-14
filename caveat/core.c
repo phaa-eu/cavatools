@@ -19,7 +19,9 @@
 #include "insn.h"
 #include "shmfifo.h"
 #include "core.h"
-
+#include "cache.h"
+#include "perfctr.h"
+#include "pipesim.h"
 
 unsigned long lrsc_set = 0;	/* global atomic lock */
 long regval[tr_memq_len];	/* space for maximum number of instructions */
@@ -77,7 +79,6 @@ int outer_loop( struct core_t* cpu )
 	  if (cpu->reg[RA].a)	/* _start called with RA==0 */
 	    insert_breakpoint(cpu->reg[RA].a);
 	  fast_mode = 0;		/* start tracing */
-	  fifo_put(cpu->tb, trP(cpu->params.flags, 0, cpu->pc));
 	}
       }
       else {  /* reinserting breakpoint at subroutine entry */
@@ -121,27 +122,23 @@ void status_report( struct core_t* cpu, FILE* f )
 {
   if (cpu->params.quiet)
     return;
-#if 0
-  clock_t end_tick = clock();
-  double elapse_time = (end_tick - cpu->counter.start_tick)/CLOCKS_PER_SEC;
-#endif
   struct timeval *t1=&cpu->counter.start_timeval, t2;
   gettimeofday(&t2, 0);
   
   double msec = (t2.tv_sec - t1->tv_sec)*1000;
   msec += (t2.tv_usec - t1->tv_usec)/1000.0;
   double mips = cpu->counter.insn_executed / (1e3*msec);
-  if (cpu->counter.insn_executed < 1000000000)
-    fprintf(f, "\rExecuted %ld instructions in %3.1f milliseconds for %3.1f MIPS",
-	    cpu->counter.insn_executed, msec, mips);
-  else {
-    double minutes = floor(msec/1e3 / 60.0);
-    double seconds = msec/1e3 - 60.0*minutes;
-    if (minutes > 0.0)
-      fprintf(f, "\rExecuted %3.1f billion instructions in %3.0f minutes %3.0f seconds for %3.1f MIPS",
-	      cpu->counter.insn_executed/1e9, minutes, seconds, mips);
-    else
-      fprintf(f, "\rExecuted %3.1f billion instructions in %3.1f seconds for %3.1f MIPS",
-	      cpu->counter.insn_executed/1e9, msec/1e3, mips);
-  }
+  double icount = cpu->counter.insn_executed;
+  double now = cpu->counter.cycles_simulated;
+  
+  fprintf(stderr, "\r%3.1fBi %3.1fBc IPC=%5.3f CPS=%5.3f in %lds at %3.1f MIPS",
+	  icount/1e9, now/1e9, (double)icount/now, now/(1e3*msec), (long)(msec/1e3), mips);
+  perf.h->insns = icount;
+  perf.h->cycles = now;
+  perf.h->ib_misses = ib.misses;
+  perf.h->ic_misses = ic.misses;
+  perf.h->dc_misses = dc.misses;
+  double kinsns = icount/1e3;
+  fprintf(stderr, " IB=%3.0f I$=%5.3f D$=%4.2f m/Ki",
+	  ib.misses/kinsns, ic.misses/kinsns, dc.misses/kinsns);
 }
