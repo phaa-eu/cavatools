@@ -70,6 +70,6 @@ void status_report(struct core_t* cpu, FILE*);
 #define  F64(rn)  cpu->reg[rn].f64
 #define  NF32(rn)  negateF32(cpu->reg[rn].f32)
 #define  NF64(rn)  negateF64(cpu->reg[rn].f64)
-inline float32_t negateF32(float32_t x)  { x.v^=F32_SIGN; return x; }
-inline float64_t negateF64(float64_t x)  { x.v^=F64_SIGN; return x; }
+static inline float32_t negateF32(float32_t x)  { x.v^=F32_SIGN; return x; }
+static inline float64_t negateF64(float64_t x)  { x.v^=F64_SIGN; return x; }
 #endif

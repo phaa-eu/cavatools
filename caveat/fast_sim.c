@@ -22,7 +22,6 @@
 #define trace_bbk(code, v)
 #define advance(sz)
 #define restart()
-#define on_every_insn(p)
 #define update_regfile(rd, val)
 
 #define amo_lock_begin
@@ -105,14 +104,20 @@
 
 
 
+
 void fast_sim(struct core_t* cpu, long report_frequency)
 {
-  register long countdown = report_frequency;
-  register Addr_t PC = cpu->pc;
+  Addr_t PC = cpu->pc;
+  fprintf(stderr, "fast_sim, rf=%ld, PC=%lx\n", report_frequency, PC);
+  long icount;
   while (1) {			/* exit by special opcodes above */
-    do {
+    for (icount=0; icount<report_frequency; icount++) {
+#if DEBUG
+      fprintf(stderr, "F ");
+      print_pc(PC, stderr);
+      print_insn(PC, stderr);
+#endif
       register const struct insn_t* p = insn(PC);
-      on_every_insn(p);
       switch (p->op_code) {
 #include "execute_insn.h"
       case Op_zero:
@@ -125,14 +130,37 @@ void fast_sim(struct core_t* cpu, long report_frequency)
 	goto stop_fast_sim;
       }
       IR(0).l = 0L;
-    } while (--countdown > 0);
+    }
     cpu->pc = PC;  /* program counter cached in register */
-    cpu->counter.insn_executed += report_frequency;
+    cpu->counter.insn_executed += icount;
     status_report(cpu, stderr);
-    countdown = report_frequency;
   }
 
  stop_fast_sim:
   cpu->pc = PC;  /* program counter cached in register */
-  cpu->counter.insn_executed += report_frequency - countdown;
+  cpu->counter.insn_executed += icount;
+  status_report(cpu, stderr);
+}
+
+
+
+
+
+void single_step(struct core_t* cpu)
+{
+#define PC cpu->pc
+  register const struct insn_t* p = insn(PC);
+  switch (p->op_code) {
+#include "execute_insn.h"
+  case Op_zero:
+    abort();		/* should never occur */
+  case Op_illegal:
+    cpu->state.mcause = 2;	/* Illegal instruction */
+    break;
+  default:
+    cpu->state.mcause = 10; /* Unknown instruction */
+    break;
+  }
+ stop_fast_sim:
+  IR(0).l = 0L;
 }

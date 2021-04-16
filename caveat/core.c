@@ -136,9 +136,9 @@ void status_report( struct core_t* cpu, FILE* f )
   perf.h->insns = icount;
   perf.h->cycles = now;
   perf.h->ib_misses = ib.misses;
-  perf.h->ic_misses = ic.misses;
-  perf.h->dc_misses = dc.misses;
+  perf.h->ic_misses = icache.misses;
+  perf.h->dc_misses = dcache.misses;
   double kinsns = icount/1e3;
   fprintf(stderr, " IB=%3.0f I$=%5.3f D$=%4.2f m/Ki",
-	  ib.misses/kinsns, ic.misses/kinsns, dc.misses/kinsns);
+	  ib.misses/kinsns, icache.misses/kinsns, dcache.misses/kinsns);
 }

@@ -64,6 +64,9 @@ $B/main.o:  lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
 $B/fast_sim.o:  fast_sim.c
 	$(CC) $(CFLAGS) -Ofast -o $@ -c $<
 
+$B/slow_sim.o:  slow_sim.c
+	$(CC) $(CFLAGS) -Ofast -o $@ -c $<
+
 $B/core.o:  core.c core.h
 	$(CC) $(CFLAGS) -o $@ -c $<
 

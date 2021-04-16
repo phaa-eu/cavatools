@@ -24,12 +24,16 @@
 
 
 struct ibuf_t  ib;		/* instruction buffer model */
-struct cache_t ic;		/* instruction cache model */
-struct cache_t dc;		/* data cache model */
+struct cache_t icache;		/* instruction cache model */
+struct cache_t dcache;		/* data cache model */
 
 
-#define advance(sz)  { since+=sz; if (since >= tr_max_number-4L) { fifo_put(cpu->tb, trP(tr_any, since, 0)); restart(); } }
-#define restart()  (withregs ? dump_regs(cpu, updates) : 0, since=updates=0 )
+long load_latency, fma_latency, branch_delay;
+
+#define mpy_cycles   8
+#define div_cycles  32
+#define fma_div_cycles (fma_latency*3)
+
 
 #define amo_lock_begin
 #define amo_lock_end
@@ -40,13 +44,15 @@ struct cache_t dc;		/* data cache model */
 #define INCPC(bytes)    PC+=bytes
 
 // Discontinuous program counter macros
-#define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; INCPC(sz); PC=tgt; break; }
-#define RETURN(npc, sz)  { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; break; }
-#define JUMP(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; break; }
-#define GOTO(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; break; }
+#define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; INCPC(sz); PC=tgt; consumed=~0; break; }
+#define RETURN(npc, sz)  { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; consumed=~0; break; }
+#define JUMP(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; consumed=~0; break; }
+#define GOTO(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; consumed=~0; break; }
 
 #define EBRK(num, sz)   { cpu->state.mcause= 3; goto stop_slow_sim; }
 #define ECALL(sz)       if (proxy_ecall(cpu)) { cpu->state.mcause = 8; goto stop_slow_sim; }
+//#define EBRK(num, sz)   cpu->state.mcause= 3;
+//#define ECALL(sz)       if (proxy_ecall(cpu)) cpu->state.mcause = 8;
 #define DOCSR(num, sz)  proxy_csr(cpu, insn(PC), num)
 
 // Memory reference instructions
@@ -108,65 +114,151 @@ struct cache_t dc;		/* data cache model */
 #define FENCE(rd, r1, immed)  {  __sync_synchronize();  INCPC(4); break; }
 
 
-#define max(a, b) (a) > (b) ? (a) : (b)
+
+
+
+
+
 
 static long busy[256];
 
 void slow_sim(struct core_t* cpu, long report_frequency)
 {
-  register long countdown = report_frequency;
-  register Addr_t PC = cpu->pc;
-  register Addr_t VA;		/* load/store address */
+  Addr_t PC = cpu->pc;
+  Addr_t VA;			/* load/store address */
+  long icount = 0;		/* instructions executed */
   long now = cpu->counter.cycles_simulated;
-  int since =0, updates=0;
-  int withregs = (cpu->params.flags & tr_has_reg) != 0;
-  while (1) {			/* exit by special opcodes above */
-    do {
-      const struct insn_t* p = insn(PC);
-      Addr_t lastPC = PC;
-      switch (p->op_code) {
-#include "execute_insn.h"
-      case Op_zero:
-	abort();		/* should never occur */
-      case Op_illegal:
-	cpu->state.mcause = 2;	/* Illegal instruction */
-	goto stop_slow_sim;
-      default:
-	cpu->state.mcause = 10; /* Unknown instruction */
-	goto stop_slow_sim;
-      }
-      IR(0).l = 0L;
+  fprintf(stderr, "slow_sim, rf=%ld, now=%ld\n", report_frequency, now);
+  while (cpu->state.mcause == 0) {
+    /* calculate stall cycles before 1st of bundle in epoch */
+    icount = 0;
+    while (icount < report_frequency) {
+      /* calculate stall cycles before next bundle */
       long before_issue = now;
+      /* model instruction cache */
+      struct cache_t* ic = &icache;
+      long addr = PC >> ic->lg_line; /* make proper tag (ok to include index) */
+      int index = addr & ic->row_mask;
+      unsigned short* state = ic->states + index;
+      struct lru_fsm_t* w = ic->fsm + *state; /* recall ic->fsm points to [-1] */
+      struct lru_fsm_t* end = w + ic->ways;	 /* hence +ways = last entry */
+      struct tag_t* tag;
+      ic->refs++;
+      do {
+	w++;
+	tag = ic->tags[w->way] + index;
+	if (addr == tag->addr)
+	  goto icache_hit;
+      } while (w < end);
+      ic->misses++;
+      *icmiss(PC) += 1;
+      tag->addr = addr;
+      tag->ready = now + ic->penalty;
+      /* fifo_put(out, trM(tr_d1get, addr)); */
+    icache_hit:
+      *state = w->next_state;	/* already multiplied by ic->ways */
+      if (tag->ready > now)
+	now = tag->ready;
       /* scoreboarding: advance time until source registers not busy */
-      now = max(now, busy[p->op_rs1]);
-      now = max(now, busy[p->op.rs2]);
-      if (threeOp(p->op_code))
-	now = max(now, busy[p->op.rs3]);
-      /* model loads and stores */
-      long ready = now;
-      if (memOp(p->op_code)) {
-	ready = lookup_cache(&dc, VA, writeOp(p->op_code), now+dc.penalty);
-	/* note ready may be long in the past */
-	if (ready == now+dc.penalty)
-	  *dcmiss(lastPC) += 1;
-      }
-      /* model function unit latency */
-      busy[p->op_rd] = ready + insnAttr[p->op_code].latency;
-      busy[NOREG] = 0;	/* in case p->op_rd not valid */
-      now += 1;		/* single issue machine */
-      struct count_t* c = count(lastPC);
-      c->count++;
+      const struct insn_t* p = insn(PC);
+      struct count_t* c = count(PC);
+      if (                        busy[p->op_rs1] > now) now = busy[p->op_rs1];
+      if (!konstOp(p->op_code) && busy[p->op.rs2] > now) now = busy[p->op.rs2];
+      if ( threeOp(p->op_code) && busy[p->op.rs3] > now) now = busy[p->op.rs3];
+      /* stall charged to first instruction in bundle */    
       c->cycles += now - before_issue;
-    } while (--countdown > 0);
+      /* issue superscalar bundle */
+      int dispatched = 0;
+      int consumed = 0;		    /* resources already consumed */
+      while (1) {
+#ifdef DEBUG
+	fprintf(stderr, "%d ", dispatched);
+	print_pc(PC, stderr);
+	print_insn(PC, stderr);
+#endif
+	/* interprete instruction */
+	Addr_t lastPC = PC;
+	switch (p->op_code) {
+#include "execute_insn.h"
+	case Op_zero:
+	  abort();		/* should never occur */
+	case Op_illegal:
+	  cpu->state.mcause = 2;	/* Illegal instruction */
+	  goto stop_slow_sim;
+	default:
+	  cpu->state.mcause = 10; /* Unknown instruction */
+	  goto stop_slow_sim;
+	}
+	IR(0).l = 0L;
+	/* model data cache */
+	long ready = now;
+	if (memOp(p->op_code)) {
+	  struct cache_t* dc = &dcache;
+	  long addr = VA >> dc->lg_line; /* make proper tag (ok to include index) */
+	  int index = addr & dc->row_mask;
+	  unsigned short* state = dc->states + index;
+	  struct lru_fsm_t* w = dc->fsm + *state; /* recall dc->fsm points to [-1] */
+	  struct lru_fsm_t* end = w + dc->ways;	 /* hence +ways = last entry */
+	  struct tag_t* tag;
+	  dc->refs++;
+	  do {
+	    w++;
+	    tag = dc->tags[w->way] + index;
+	    if (addr == tag->addr)
+	      goto dcache_hit;
+	  } while (w < end);
+	  dc->misses++;
+	  *dcmiss(lastPC) += 1;
+	  if (tag->dirty) {
+	    /* fifo_put(out, trM(tr_d1put, tag->addr<<dc->lg_line)); */
+	    dc->evictions++;
+	    tag->dirty = 0;
+	  }
+	  tag->addr = addr;
+	  tag->ready = now + dc->penalty;
+	  /* fifo_put(out, trM(tr_d1get, addr)); */
+	dcache_hit:
+	  *state = w->next_state;	/* already multiplied by dc->ways */
+	  if (writeOp(p->op_code)) {
+	    tag->dirty = 1;
+	    dc->updates++;
+	  }
+	  if (tag->ready > ready)
+	    ready = tag->ready;
+	}
+	/* model function unit latency for register scoreboarding */
+	ready += insnAttr[p->op_code].latency;
+	busy[p->op_rd] = ready;
+	busy[NOREG] = 0;	/* in case p->op_rd not valid */
+	/* model consumed resources */
+	consumed |= insnAttr[p->op_code].flags;
+	icount++;
+	/* record superscalar-ness */
+	c->count[dispatched]++;
+	c->cycles++;
+	dispatched++;
+	/* advance to next instruction in bundle */
+	if (shortOp(p->op_code))
+	  p+=1, c+=1;
+	else
+	  p+=2, c+=2;
+	/* end bundle if resource conflict */
+	if ((consumed & insnAttr[p->op_code].flags) != 0)  break;
+	/* register scoreboarding:  end bundle if not ready */
+	if (                        busy[p->op_rs1] > now) break;
+	if (!konstOp(p->op_code) && busy[p->op.rs2] > now) break;
+	if ( threeOp(p->op_code) && busy[p->op.rs3] > now) break;
+      } /* issued one superscalar bundle */
+      now++;
+    }
     cpu->pc = PC;  /* program counter cached in register */
-    cpu->counter.insn_executed += report_frequency;
+    cpu->counter.insn_executed += icount;
     cpu->counter.cycles_simulated = now;
     status_report(cpu, stderr);
-    countdown = report_frequency;
   }
  stop_slow_sim:
   cpu->pc = PC;  /* program counter cached in register */
-  cpu->counter.insn_executed += report_frequency - countdown;
+  cpu->counter.insn_executed += icount;
   cpu->counter.cycles_simulated = now;
 }
 

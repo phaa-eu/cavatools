@@ -213,5 +213,7 @@ int parse_options(const char** argv)
   next_option:
     ;
   }
+  //  for (int i=0; opt[i].name; ++i)
+  //    fprintf(stderr, "%s = %ld\n", opt[i].name, *opt[i].i);
   return numargs;
 }
