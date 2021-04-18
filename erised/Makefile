@@ -15,7 +15,7 @@ hdrs := $(addprefix $R/include/cava/,$(hdrs))
 erised:  erised.o $(LIBS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-erised.o:  $(hdrs) ../pipesim/pipesim.h
+erised.o:  $(hdrs)
 
 install:  erised
 	-cp $^ $R/bin/

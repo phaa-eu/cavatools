@@ -32,17 +32,6 @@
 /* Use only this macro to advance program counter */
 #define INCPC(bytes)	PC+=bytes
 
-/* Discontinuous program counter macros */
-#define CALL(npc, sz)	{ Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; INCPC(sz); PC=tgt; break; }
-#define RETURN(npc, sz)	{ Addr_t tgt=npc;                       INCPC(sz); PC=tgt; break; }
-#define JUMP(npc, sz)	{ Addr_t tgt=npc;                       INCPC(sz); PC=tgt; break; }
-#define GOTO(npc, sz)	{ Addr_t tgt=npc;                       INCPC(sz); PC=tgt; break; }
-
-/* Special opcodes */
-#define EBRK(num, sz)   { cpu->state.mcause = 3; goto stop_fast_sim; }
-#define ECALL(sz)       if (proxy_ecall(cpu)) { cpu->state.mcause = 8; goto stop_fast_sim; }
-#define DOCSR(num, sz)  proxy_csr(cpu, insn(PC), num)
-
 
 // Memory reference instructions
 #define LOAD_B( a, sz)  ( trace_mem(tr_read1, a), *((          char*)(a)) )
@@ -105,19 +94,37 @@
 
 
 
+/* Taken branches end superscalar bundle by consuming all resources */
+#define RETURN(npc, sz)  { PC=npc; break; }
+#define JUMP(npc, sz)    { PC=npc; break; }
+#define GOTO(npc, sz)    { PC=npc; break; }
+#define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; PC=tgt; break; }
+
+
+#define STATS(cpu) { cpu->pc=PC; cpu->counter.insn_executed+=icount; }
+#define UNSTATS(cpu) cpu->counter.insn_executed-=icount;
+
+/* Special instructions, may exit simulation */
+#define DOCSR(num, sz)  STATS(cpu); proxy_csr(cpu, insn(PC), num); UNSTATS(cpu);
+#define ECALL(sz)       STATS(cpu); if (proxy_ecall(cpu)) { cpu->state.mcause = 8; INCPC(sz); goto stop_fast_sim; } UNSTATS(cpu);
+#define EBRK(num, sz)   STATS(cpu); cpu->state.mcause= 3; goto stop_fast_sim; /* no INCPC! */
+
+
+
+
+
 void fast_sim(struct core_t* cpu, long report_frequency)
 {
   Addr_t PC = cpu->pc;
-  fprintf(stderr, "fast_sim, rf=%ld, PC=%lx\n", report_frequency, PC);
-  long icount;
+  long icount = 0;
   while (1) {			/* exit by special opcodes above */
-    for (icount=0; icount<report_frequency; icount++) {
+    while (icount < report_frequency) {
 #if DEBUG
       fprintf(stderr, "F ");
       print_pc(PC, stderr);
       print_insn(PC, stderr);
 #endif
-      register const struct insn_t* p = insn(PC);
+      const struct insn_t* p = insn(PC);
       switch (p->op_code) {
 #include "execute_insn.h"
       case Op_zero:
@@ -130,15 +137,14 @@ void fast_sim(struct core_t* cpu, long report_frequency)
 	goto stop_fast_sim;
       }
       IR(0).l = 0L;
+      icount++;
     }
-    cpu->pc = PC;  /* program counter cached in register */
-    cpu->counter.insn_executed += icount;
+    STATS(cpu);
     status_report(cpu, stderr);
+    icount = 0;
   }
 
  stop_fast_sim:
-  cpu->pc = PC;  /* program counter cached in register */
-  cpu->counter.insn_executed += icount;
   status_report(cpu, stderr);
 }
 
@@ -148,6 +154,7 @@ void fast_sim(struct core_t* cpu, long report_frequency)
 
 void single_step(struct core_t* cpu)
 {
+  long icount = 1;
 #define PC cpu->pc
   register const struct insn_t* p = insn(PC);
   switch (p->op_code) {
@@ -163,4 +170,5 @@ void single_step(struct core_t* cpu)
   }
  stop_fast_sim:
   IR(0).l = 0L;
+  STATS(cpu);
 }

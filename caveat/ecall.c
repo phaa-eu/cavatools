@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
+#include <sys/times.h>
 #include <math.h>
 #include <string.h>
 
@@ -21,6 +22,7 @@
 #include "insn.h"
 #include "shmfifo.h"
 #include "core.h"
+#include "perfctr.h"
 #include "riscv-opc.h"
 #include "ecall_nums.h"
 
@@ -51,8 +53,7 @@ static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
 
 int proxy_ecall( struct core_t* cpu )
 {
-  static long previous =0;
-  //  assert(insn(cpu->pc)->op_code == Op_ecall);
+  cpu->counter.ecalls++;
   long rvnum = cpu->reg[17].l;
   if (rvnum < 0 || rvnum >= rv_syscall_entries) {
   no_mapping:
@@ -62,12 +63,6 @@ int proxy_ecall( struct core_t* cpu )
     abort();
   }
   long sysnum = rv_to_host[rvnum].sysnum;
-#ifdef DEBUG
-  fprintf(stderr, "%10ld: %s[%ld:%ld](%lx, %lx, %lx, %lx, %lx, %lx)", cpu->counter.insn_executed-previous,
-	  rv_to_host[rvnum].name, rvnum, sysnum,
-	  cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
-  previous = cpu->counter.insn_executed;
-#endif
   switch (sysnum) {
   case -1:
     goto no_mapping;
@@ -76,30 +71,44 @@ int proxy_ecall( struct core_t* cpu )
     abort();
     
 #if 0
-  case 12:  /* sys_brk */
+  case __NR_brk:
     cpu->reg[10].l = emulate_brk(cpu->reg[10].l, &current);
     break;
 #endif
 
-  case 60:  /* sys_exit */
-  case 231: /* sys_exit_group */\
+  case __NR_exit:
+  case __NR_exit_group:
     return 1;
 
-  case 13: /* sys_rt_sigaction */
+  case __NR_rt_sigaction:
     fprintf(stderr, "Trying to call rt_sigaction, always succeed without error.\n");
     cpu->reg[10].l = 0;  // always succeed without error
     break;
 
-  case 56: /* sys_clone */
+  case __NR_clone: /* sys_clone */
     abort();
 
-  case 96:  /* gettimeofday */
-#define PRETEND_MIPS 1000
-#ifdef PRETEND_MIPS
+  case __NR_times:
     {
+      long count = (perf.h && cpu->params.mhz) ? cpu->counter.cycles_simulated : cpu->counter.insn_executed;
+      long denominator = cpu->params.mhz ? cpu->params.mhz*1000000 : 1000000000;
+      count = (double)count * sysconf(_SC_CLK_TCK) / denominator;
+      struct tms tms;
+      memset(&tms, 0, sizeof tms);
+      tms.tms_utime = count;
+      //      fprintf(stderr, "times(tms_utime=%ld)\n", tms.tms_utime);
+      memcpy(cpu->reg[10].p, &tms, sizeof tms);
+      cpu->reg[10].l = 0;
+    }
+    break;
+
+  case __NR_gettimeofday:
+    { 
+      long count = (perf.h && cpu->params.mhz) ? cpu->counter.cycles_simulated : cpu->counter.insn_executed;
+      long denominator = cpu->params.mhz ? cpu->params.mhz*1000000 : 1000000000;
       struct timeval tv;
-      tv.tv_sec  = (cpu->counter.insn_executed / PRETEND_MIPS) / 1000000;
-      tv.tv_usec = (cpu->counter.insn_executed / PRETEND_MIPS) % 1000000;
+      tv.tv_sec  = count / denominator;
+      tv.tv_usec = count % denominator;
       tv.tv_sec  += cpu->counter.start_timeval.tv_sec;
       tv.tv_usec += cpu->counter.start_timeval.tv_usec;
       tv.tv_sec  += tv.tv_usec / 1000000;  // microseconds overflow
@@ -109,11 +118,8 @@ int proxy_ecall( struct core_t* cpu )
       cpu->reg[10].l = 0;
     }
     break;
-#else
-    goto default_case;
-#endif
 
-  case 3: /* sys_close */
+  case __NR_close:
     if (cpu->reg[10].l <= 2) { // Don't close stdin, stdout, stderr
       cpu->reg[10].l = 0;
       break;

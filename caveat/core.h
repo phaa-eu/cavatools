@@ -3,17 +3,11 @@
 */
 
 
-#define sex(rd)  IR(rd).l  = IR(rd).l  << 32 >> 32
-#define zex(rd)  IR(rd).ul = IR(rd).ul << 32 >> 32
-#define box(rd)
-
 extern unsigned long lrsc_set;  // globally shared location for atomic lock
 extern long regval[];
 
 struct core_t {
   struct reg_t reg[64];		// Register files, IR[0-31], FR[32-63]
-#define IR(rn)  cpu->reg[rn]
-#define FR(rn)  cpu->reg[rn]
   Addr_t pc;			// Next instruction to be executed
   Addr_t holding_pc;		// For verification tracing
 
@@ -35,6 +29,7 @@ struct core_t {
   struct {
     long insn_executed;
     long cycles_simulated;
+    long ecalls;
     long start_tick;
     struct timeval start_timeval;
   } counter;
@@ -45,10 +40,19 @@ struct core_t {
     long every;			/* but only trace once per n-1 calls */
     long skip;			/* skip until negative, reset to every */
     long report;
-    long flags;
+    //    long flags;
     long quiet;
+    long mhz;			/* pretend clock MHz */
   } params;
 };
+
+
+#define IR(rn)  cpu->reg[rn]
+#define FR(rn)  cpu->reg[rn]
+#define sex(rd)  IR(rd).l  = IR(rd).l  << 32 >> 32
+#define zex(rd)  IR(rd).ul = IR(rd).ul << 32 >> 32
+//#define box(rd)  FR(rd).ul |= 0Xffffffff00000000L
+#define box(rd)
 
 
 void init_core(struct core_t* cpu, long start_tick, const struct timeval* start_timeval);
@@ -56,6 +60,7 @@ int run_program(struct core_t* cpu);
 int outer_loop(struct core_t* cpu);
 void fast_sim(struct core_t*, long max_count);
 void slow_sim(struct core_t*, long max_count);
+void single_step();
 int proxy_ecall( struct core_t* cpu );
 void proxy_csr( struct core_t* cpu, const struct insn_t* p, int which );
 void status_report(struct core_t* cpu, FILE*);

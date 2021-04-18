@@ -45,6 +45,7 @@ const struct options_t opt[] =
    { "--every=i",	.i=&core.params.every,	.di=1,		.h="Trace only every =number times function is called" },
    { "--skip=i",	.i=&core.params.skip,	.di=1,		.h="Trace function once every =number times called" },
      
+   { "--mhz=i",		.i=&core.params.mhz,	.di=1000,	.h="Pretend clock frequency =MHz" },
    { "--bdelay=i",	.i=&branch_delay,	.di=2,		.h="Taken branch delay is =number cycles" },
    { "--load=i",	.i=&load_latency,	.di=6,		.h="Load latency from cache" },
    { "--fma=i",		.i=&fma_latency,	.di=2,		.h="fused multiply add unit latency" },
@@ -101,56 +102,61 @@ int main(int argc, const char* argv[], const char* envp[])
 			   1);
     //    if ((attr_l|attr_f) & a) printf("%s %d\n", insnAttr[i].name, insnAttr[i].latency);
   }
+  insnAttr[Op_ecall   ].flags = ~0;
+  insnAttr[Op_ebreak  ].flags = ~0;
+  insnAttr[Op_c_ebreak].flags = ~0;
 
   Addr_t entry_pc = load_elf_binary(argv[1+numopts], 1);
   insnSpace_init();
   Addr_t stack_top = initialize_stack(argc-1-numopts, argv+1+numopts, envp);
   core.pc = entry_pc;
   core.reg[SP].a = stack_top;
-  
-  if (!func)
-    func = "_start";
-  if (! find_symbol(func, &core.params.breakpoint, 0)) {
-    fprintf(stderr, "function %s cannot be found in symbol table\n", func);
-    exit(1);
-  }
-  fprintf(stderr, "Tracing %s at 0x%lx\n", func, core.params.breakpoint);
-  core.params.flags |= tr_has_pc | tr_has_mem;
 
-  perf_create(perf_path);
-  perf.start = start_timeval;
-  
-  /* initialize instruction buffer */
-  ib.tag_mask = ~( (1L << (ib.bufsz-1)) - 1 );
-  ib.numblks = (1<<ib.bufsz)/(1<<ib.blksize) - 1;
-  ib.blk_mask = ib.numblks - 1;
-  for (int i=0; i<2; i++) {
-    ib.ready[i] = (long*)malloc(ib.numblks*sizeof(long));
-    memset((char*)ib.ready[i], 0, ib.numblks*sizeof(long));
-  }
+  if (perf_path) {
+    if (!func)
+      func = "_start";
+    if (! find_symbol(func, &core.params.breakpoint, 0)) {
+      fprintf(stderr, "function %s cannot be found in symbol table\n", func);
+      exit(1);
+    }
+    fprintf(stderr, "Tracing %s at 0x%lx\n", func, core.params.breakpoint);
 
-  /* initialize instruction cache */
-  struct lru_fsm_t* fsm;
-  switch (icache.ways) {
-  case 1:  fsm = cache_fsm_1way;  break;
-  case 2:  fsm = cache_fsm_2way;  break;
-  case 3:  fsm = cache_fsm_3way;  break;
-  case 4:  fsm = cache_fsm_4way;  break;
-  default:  fprintf(stderr, "--iways=1..4 only\n");  exit(-1);
-  }
-  init_cache(&icache, fsm, 0);
+    perf_create(perf_path);
+    perf.start = start_timeval;
   
-  /* initialize data cache */
-  switch (dcache.ways) {
-  case 1:  fsm = cache_fsm_1way;  break;
-  case 2:  fsm = cache_fsm_2way;  break;
-  case 3:  fsm = cache_fsm_3way;  break;
-  case 4:  fsm = cache_fsm_4way;  break;
-  default:  fprintf(stderr, "--dways=1..4 only\n");  exit(-1);
-  }
-  init_cache(&dcache,fsm, 1);
+    /* initialize instruction buffer */
+    ib.tag_mask = ~( (1L << (ib.bufsz-1)) - 1 );
+    ib.numblks = (1<<ib.bufsz)/(1<<ib.blksize) - 1;
+    ib.blk_mask = ib.numblks - 1;
+    for (int i=0; i<2; i++) {
+      ib.ready[i] = (long*)malloc(ib.numblks*sizeof(long));
+      memset((char*)ib.ready[i], 0, ib.numblks*sizeof(long));
+    }
+
+    /* initialize instruction cache */
+    struct lru_fsm_t* fsm;
+    switch (icache.ways) {
+    case 1:  fsm = cache_fsm_1way;  break;
+    case 2:  fsm = cache_fsm_2way;  break;
+    case 3:  fsm = cache_fsm_3way;  break;
+    case 4:  fsm = cache_fsm_4way;  break;
+    default:  fprintf(stderr, "--iways=1..4 only\n");  exit(-1);
+    }
+    init_cache(&icache, fsm, 0);
   
+    /* initialize data cache */
+    switch (dcache.ways) {
+    case 1:  fsm = cache_fsm_1way;  break;
+    case 2:  fsm = cache_fsm_2way;  break;
+    case 3:  fsm = cache_fsm_3way;  break;
+    case 4:  fsm = cache_fsm_4way;  break;
+    default:  fprintf(stderr, "--dways=1..4 only\n");  exit(-1);
+    }
+    init_cache(&dcache,fsm, 1);
+  }
   int rc = run_program(&core);
+  if (perf_path)
+    perf_close();
   return rc;
 }
 
@@ -230,8 +236,8 @@ int run_program(struct core_t* cpu)
       clock_t end_tick = clock();
       double elapse_time = (end_tick - cpu->counter.start_tick)/CLOCKS_PER_SEC;
       double mips = cpu->counter.insn_executed / (1e6*elapse_time);
-      fprintf(stderr, "\n\nExecuted %ld instructions in %3.1f seconds for %3.1f MIPS\n",
-	      cpu->counter.insn_executed, elapse_time, mips);
+      fprintf(stderr, "\n\nExecuted %ld instructions (%ld system calls) in %3.1f seconds for %3.1f MIPS\n",
+	      cpu->counter.insn_executed, cpu->counter.ecalls, elapse_time, mips);
     }
     return cpu->reg[10].i;
   }

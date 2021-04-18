@@ -7,8 +7,6 @@ clean:
 	( cd softfloat/build/Linux-x86_64-GCC; rm -f softfloat.a *.o )
 	make -C caveat    clean
 	make -C cachesim  clean
-	make -C pipesim   clean
-	make -C traceinfo clean
 	make -C erised    clean
 
 #	(cd $(HOME)/bin; rm -f caveat cachesim pipesim traceinfo )
@@ -24,8 +22,6 @@ install:
 	cp -rp softfloat/source/include $(HOME)/include/softfloat
 	make -C caveat    install
 	make -C cachesim  install
-	make -C pipesim   install
-	make -C traceinfo install
 	make -C erised    install
 	make -C utilities/softpipe install
 

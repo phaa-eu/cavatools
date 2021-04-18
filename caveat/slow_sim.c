@@ -44,16 +44,10 @@ long load_latency, fma_latency, branch_delay;
 #define INCPC(bytes)    PC+=bytes
 
 // Discontinuous program counter macros
-#define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; INCPC(sz); PC=tgt; consumed=~0; break; }
-#define RETURN(npc, sz)  { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; consumed=~0; break; }
-#define JUMP(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; consumed=~0; break; }
-#define GOTO(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; consumed=~0; break; }
-
-#define EBRK(num, sz)   { cpu->state.mcause= 3; goto stop_slow_sim; }
-#define ECALL(sz)       if (proxy_ecall(cpu)) { cpu->state.mcause = 8; goto stop_slow_sim; }
-//#define EBRK(num, sz)   cpu->state.mcause= 3;
-//#define ECALL(sz)       if (proxy_ecall(cpu)) cpu->state.mcause = 8;
-#define DOCSR(num, sz)  proxy_csr(cpu, insn(PC), num)
+//#define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; INCPC(sz); PC=tgt; consumed=~0; break; }
+//#define RETURN(npc, sz)  { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; consumed=~0; break; }
+//#define JUMP(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; consumed=~0; break; }
+//#define GOTO(npc, sz)    { Addr_t tgt=npc;                       INCPC(sz); PC=tgt; consumed=~0; break; }
 
 // Memory reference instructions
 #define LOAD_B( a, sz)  ( VA=a, *((          char*)(a)) )
@@ -117,6 +111,19 @@ long load_latency, fma_latency, branch_delay;
 
 
 
+/* Taken branches end superscalar bundle by consuming all resources */
+#define RETURN(npc, sz)  { PC=npc; consumed=~0; break; }
+#define JUMP(npc, sz)    { PC=npc; consumed=~0; break; }
+#define GOTO(npc, sz)    { PC=npc; consumed=~0; break; }
+#define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; PC=tgt; consumed=~0; break; }
+
+#define STATS(cpu) { cpu->pc=PC; cpu->counter.insn_executed+=icount; cpu->counter.cycles_simulated=now; }
+#define UNSTATS(cpu) cpu->counter.insn_executed-=icount;
+
+/* Special instructions, may exit simulation */
+#define DOCSR(num, sz)  { STATS(cpu); proxy_csr(cpu, insn(PC), num); UNSTATS(cpu); }
+#define ECALL(sz)       { STATS(cpu); if (proxy_ecall(cpu)) { cpu->state.mcause = 8; INCPC(sz); goto stop_slow_sim; } UNSTATS(cpu); }
+#define EBRK(num, sz)   { STATS(cpu); cpu->state.mcause= 3; goto stop_slow_sim; } /* no INCPC! */
 
 
 
@@ -128,10 +135,8 @@ void slow_sim(struct core_t* cpu, long report_frequency)
   Addr_t VA;			/* load/store address */
   long icount = 0;		/* instructions executed */
   long now = cpu->counter.cycles_simulated;
-  fprintf(stderr, "slow_sim, rf=%ld, now=%ld\n", report_frequency, now);
   while (cpu->state.mcause == 0) {
     /* calculate stall cycles before 1st of bundle in epoch */
-    icount = 0;
     while (icount < report_frequency) {
       /* calculate stall cycles before next bundle */
       long before_issue = now;
@@ -251,14 +256,11 @@ void slow_sim(struct core_t* cpu, long report_frequency)
       } /* issued one superscalar bundle */
       now++;
     }
-    cpu->pc = PC;  /* program counter cached in register */
-    cpu->counter.insn_executed += icount;
-    cpu->counter.cycles_simulated = now;
+    STATS(cpu);
     status_report(cpu, stderr);
+    icount = 0;
   }
  stop_slow_sim:
-  cpu->pc = PC;  /* program counter cached in register */
-  cpu->counter.insn_executed += icount;
-  cpu->counter.cycles_simulated = now;
+  status_report(cpu, stderr);
 }
 
