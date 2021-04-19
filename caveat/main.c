@@ -27,7 +27,7 @@ static long load_latency, fma_latency, branch_delay;
 
 struct core_t core;
   
-static const char* tracing;
+static const char* out_path;
 static const char *perf_path;
 
 static long bufsize;
@@ -36,7 +36,7 @@ static const char* func;
 
 const struct options_t opt[] =
   {
-   { "--out=s",		.s=&tracing,		.ds=0,		.h="Create trace file/fifo =name" },
+   { "--out=s",		.s=&out_path,		.ds=0,		.h="Create cache miss trace file/fifo =name" },
    { "--buffer=i",	.i=&bufsize,		.di=12,		.h="Shared memory buffer size is 2^ =n bytes" },
    { "--perf=s",	.s=&perf_path,		.ds=0,		.h="Performance counters in shared memory =name" },
    
@@ -67,7 +67,8 @@ const struct options_t opt[] =
    
    { "--report=i",	.i=&core.params.report,	.di=1000,	.h="Progress report every =number million instructions" },
    { "--quiet",		.b=&core.params.quiet,	.bv=1,		.h="Don't report progress to stderr" },
-   { "-q",		.b=&core.params.quiet,	.bv=1,		.h="short for --quiet" },
+   { "-q",		.b=&core.params.quiet,	.bv=1,		.h="Short for --quiet" },
+   { "--verify",	.b=&core.params.verify,	.bv=1,		.h="Include PC and register rd values in trace file" },
    { 0 }
   };
 const char* usage = "caveat [caveat-options] target-program [target-options]";
@@ -90,6 +91,7 @@ int main(int argc, const char* argv[], const char* envp[])
   int numopts = parse_options(argv+1);
   if (argc == numopts+1)
     help_exit();
+  core.params.report *= 1000000; /* unit is millions of instructions */
 
   //  printf("load_latency=%ld fma_latency=%ld\n", load_latency, fma_latency);
   for (int i=0; i<Number_of_opcodes; i++) {
@@ -199,9 +201,9 @@ int run_program(struct core_t* cpu)
   cpu->holding_pc = 0;
   while (1) {	       /* terminated by program making exit() ecall */
     if (fast_mode)
-      fast_sim(cpu, cpu->params.report * 1000000);
+      fast_sim(cpu);
     else
-      slow_sim(cpu, cpu->params.report * 1000000);
+      slow_sim(cpu);
     if (cpu->state.mcause != 3) /* Not breakpoint */
       break;
     if (fast_mode) {

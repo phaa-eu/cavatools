@@ -117,8 +117,8 @@ long load_latency, fma_latency, branch_delay;
 #define GOTO(npc, sz)    { PC=npc; consumed=~0; break; }
 #define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; PC=tgt; consumed=~0; break; }
 
-#define STATS(cpu) { cpu->pc=PC; cpu->counter.insn_executed+=icount; cpu->counter.cycles_simulated=now; }
-#define UNSTATS(cpu) cpu->counter.insn_executed-=icount;
+#define STATS(cpu) { cpu->pc=PC; cpu->counter.insn_executed+=cpu->params.report-icount; cpu->counter.cycles_simulated=now; }
+#define UNSTATS(cpu) cpu->counter.insn_executed-=cpu->params.report-icount;
 
 /* Special instructions, may exit simulation */
 #define DOCSR(num, sz)  { STATS(cpu); proxy_csr(cpu, insn(PC), num); UNSTATS(cpu); }
@@ -129,15 +129,15 @@ long load_latency, fma_latency, branch_delay;
 
 static long busy[256];
 
-void slow_sim(struct core_t* cpu, long report_frequency)
+void slow_sim(struct core_t* cpu)
 {
   Addr_t PC = cpu->pc;
   Addr_t VA;			/* load/store address */
-  long icount = 0;		/* instructions executed */
+  long icount = cpu->params.report; /* instructions to be executed */
   long now = cpu->counter.cycles_simulated;
   while (cpu->state.mcause == 0) {
     /* calculate stall cycles before 1st of bundle in epoch */
-    while (icount < report_frequency) {
+    while (icount > 0) {
       /* calculate stall cycles before next bundle */
       long before_issue = now;
       /* model instruction cache */
@@ -237,7 +237,7 @@ void slow_sim(struct core_t* cpu, long report_frequency)
 	busy[NOREG] = 0;	/* in case p->op_rd not valid */
 	/* model consumed resources */
 	consumed |= insnAttr[p->op_code].flags;
-	icount++;
+	icount--;
 	/* record superscalar-ness */
 	c->count[dispatched]++;
 	c->cycles++;
@@ -258,7 +258,7 @@ void slow_sim(struct core_t* cpu, long report_frequency)
     }
     STATS(cpu);
     status_report(cpu, stderr);
-    icount = 0;
+    icount = cpu->params.report;
   }
  stop_slow_sim:
   status_report(cpu, stderr);

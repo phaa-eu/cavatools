@@ -100,9 +100,9 @@
 #define GOTO(npc, sz)    { PC=npc; break; }
 #define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; PC=tgt; break; }
 
+#define STATS(cpu) { cpu->pc=PC; cpu->counter.insn_executed+=cpu->params.report-icount; }
+#define UNSTATS(cpu) cpu->counter.insn_executed-=cpu->params.report-icount;
 
-#define STATS(cpu) { cpu->pc=PC; cpu->counter.insn_executed+=icount; }
-#define UNSTATS(cpu) cpu->counter.insn_executed-=icount;
 
 /* Special instructions, may exit simulation */
 #define DOCSR(num, sz)  STATS(cpu); proxy_csr(cpu, insn(PC), num); UNSTATS(cpu);
@@ -113,12 +113,12 @@
 
 
 
-void fast_sim(struct core_t* cpu, long report_frequency)
+void fast_sim(struct core_t* cpu)
 {
   Addr_t PC = cpu->pc;
-  long icount = 0;
+  long icount = cpu->params.report;
   while (1) {			/* exit by special opcodes above */
-    while (icount < report_frequency) {
+    while (icount > 0) {
 #if DEBUG
       fprintf(stderr, "F ");
       print_pc(PC, stderr);
@@ -137,11 +137,11 @@ void fast_sim(struct core_t* cpu, long report_frequency)
 	goto stop_fast_sim;
       }
       IR(0).l = 0L;
-      icount++;
+      icount--;
     }
     STATS(cpu);
     status_report(cpu, stderr);
-    icount = 0;
+    icount = cpu->params.report;
   }
 
  stop_fast_sim:

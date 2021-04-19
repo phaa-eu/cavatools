@@ -36,13 +36,14 @@ struct core_t {
 
   struct {
     Addr_t breakpoint;		/* entrypoint of traced function */
-    long after;			/* countdown, negative=start tracing */
+    long after;			/* countdown, negative=start pipeline simulation */
     long every;			/* but only trace once per n-1 calls */
     long skip;			/* skip until negative, reset to every */
     long report;
     //    long flags;
     long quiet;
     long mhz;			/* pretend clock MHz */
+    long verify;		/* output PC and register rd value */
   } params;
 };
 
@@ -58,8 +59,8 @@ struct core_t {
 void init_core(struct core_t* cpu, long start_tick, const struct timeval* start_timeval);
 int run_program(struct core_t* cpu);
 int outer_loop(struct core_t* cpu);
-void fast_sim(struct core_t*, long max_count);
-void slow_sim(struct core_t*, long max_count);
+void fast_sim(struct core_t*);
+void slow_sim(struct core_t*);
 void single_step();
 int proxy_ecall( struct core_t* cpu );
 void proxy_csr( struct core_t* cpu, const struct insn_t* p, int which );
