@@ -27,8 +27,7 @@ static long load_latency, fma_latency, branch_delay;
 
 struct core_t core;
   
-static const char* out_path;
-static const char *perf_path;
+static const char *trace_path, *perf_path;
 
 static long bufsize;
 static const char* func;
@@ -36,9 +35,9 @@ static const char* func;
 
 const struct options_t opt[] =
   {
-   { "--out=s",		.s=&out_path,		.ds=0,		.h="Create cache miss trace file/fifo =name" },
-   { "--buffer=i",	.i=&bufsize,		.di=12,		.h="Shared memory buffer size is 2^ =n bytes" },
    { "--perf=s",	.s=&perf_path,		.ds=0,		.h="Performance counters in shared memory =name" },
+   { "--trace=s",	.s=&trace_path,		.ds=0,		.h="Create cache miss trace file/fifo =name" },
+   { "--buffer=i",	.i=&bufsize,		.di=12,		.h="Shared memory buffer size is 2^ =n bytes" },
    
    { "--func=s",	.s=&func,		.ds="_start",	.h="Trace function =name" },       
    { "--after=i",	.i=&core.params.after,	.di=1,		.h="Start tracing function after =number calls" },
@@ -47,20 +46,15 @@ const struct options_t opt[] =
      
    { "--mhz=i",		.i=&core.params.mhz,	.di=1000,	.h="Pretend clock frequency =MHz" },
    { "--bdelay=i",	.i=&branch_delay,	.di=2,		.h="Taken branch delay is =number cycles" },
-   { "--load=i",	.i=&load_latency,	.di=6,		.h="Load latency from cache" },
-   { "--fma=i",		.i=&fma_latency,	.di=2,		.h="fused multiply add unit latency" },
-
-   { "--bdelay=i",	.i=&ib.delay,		.di=2,		.h="Taken branch delay is =number cycles" },
-   { "--bmiss=i",	.i=&ib.penalty,		.di=5,		.h="L0 instruction buffer refill latency is =number cycles" },
-   { "--bufsz=i",	.i=&ib.bufsz,		.di=7,		.h="L0 instruction buffer capacity is 2*2^ =n bytes" },
-   { "--blocksz=i",	.i=&ib.blksize,		.di=4,		.h="L0 instruction buffer block size is 2^ =n bytes" },
+   { "--load=i",	.i=&load_latency,	.di=2,		.h="Load latency from cache" },
+   { "--fma=i",		.i=&fma_latency,	.di=4,		.h="fused multiply add unit latency" },
      
-   { "--imiss=i",	.i=&icache.penalty,	.di=25,		.h="L1 instruction cache miss latency is =number cycles" },
+   { "--imiss=i",	.i=&icache.penalty,	.di=5,		.h="L1 instruction cache miss latency is =number cycles" },
    { "--iline=i",	.i=&icache.lg_line,	.di=6,		.h="L1 instrucdtion cache line size is 2^ =n bytes" },
    { "--iways=i",	.i=&icache.ways,	.di=4,		.h="L1 instrucdtion cache is =n ways set associativity" },
    { "--isets=i",	.i=&icache.lg_rows,	.di=6,		.h="L1 instrucdtion cache has 2^ =n sets per way" },
      
-   { "--dmiss=i",	.i=&dcache.penalty,	.di=25,		.h="L1 data cache miss latency is =number cycles" },
+   { "--dmiss=i",	.i=&dcache.penalty,	.di=4,		.h="L1 data cache miss latency is =number cycles" },
    { "--dline=i",	.i=&dcache.lg_line,	.di=6,		.h="L1 data cache line size is 2^ =n bytes" },
    { "--dways=i",	.i=&dcache.ways,	.di=4,		.h="L1 data cache is =w ways set associativity" },
    { "--dsets=i",	.i=&dcache.lg_rows,	.di=6,		.h="L1 data cache has 2^ =n sets per way" },
@@ -68,7 +62,7 @@ const struct options_t opt[] =
    { "--report=i",	.i=&core.params.report,	.di=1000,	.h="Progress report every =number million instructions" },
    { "--quiet",		.b=&core.params.quiet,	.bv=1,		.h="Don't report progress to stderr" },
    { "-q",		.b=&core.params.quiet,	.bv=1,		.h="Short for --quiet" },
-   { "--verify",	.b=&core.params.verify,	.bv=1,		.h="Include PC and register rd values in trace file" },
+   { "--sim",		.b=&core.params.simulate,.bv=1,		.h="Perform simulation" },
    { 0 }
   };
 const char* usage = "caveat [caveat-options] target-program [target-options]";
@@ -114,25 +108,12 @@ int main(int argc, const char* argv[], const char* envp[])
   core.pc = entry_pc;
   core.reg[SP].a = stack_top;
 
-  if (perf_path) {
+  if (core.params.simulate) {
     if (!func)
       func = "_start";
     if (! find_symbol(func, &core.params.breakpoint, 0)) {
       fprintf(stderr, "function %s cannot be found in symbol table\n", func);
       exit(1);
-    }
-    fprintf(stderr, "Tracing %s at 0x%lx\n", func, core.params.breakpoint);
-
-    perf_create(perf_path);
-    perf.start = start_timeval;
-  
-    /* initialize instruction buffer */
-    ib.tag_mask = ~( (1L << (ib.bufsz-1)) - 1 );
-    ib.numblks = (1<<ib.bufsz)/(1<<ib.blksize) - 1;
-    ib.blk_mask = ib.numblks - 1;
-    for (int i=0; i<2; i++) {
-      ib.ready[i] = (long*)malloc(ib.numblks*sizeof(long));
-      memset((char*)ib.ready[i], 0, ib.numblks*sizeof(long));
     }
 
     /* initialize instruction cache */
@@ -156,9 +137,21 @@ int main(int argc, const char* argv[], const char* envp[])
     }
     init_cache(&dcache,fsm, 1);
   }
+
+  if (perf_path) {
+    perf_create(perf_path);
+    perf.start = start_timeval;
+  }
+  if (trace_path) {
+    trace = fifo_create(trace_path, bufsize);
+  }
   int rc = run_program(&core);
   if (perf_path)
     perf_close();
+  if (trace_path) {
+    fifo_put(trace, tr_eof);
+    fifo_finish(trace);
+  }
   return rc;
 }
 
@@ -198,18 +191,22 @@ int run_program(struct core_t* cpu)
   if (cpu->params.breakpoint)
     insert_breakpoint(cpu->params.breakpoint);
   int fast_mode = 1;
-  cpu->holding_pc = 0;
   while (1) {	       /* terminated by program making exit() ecall */
     if (fast_mode)
       fast_sim(cpu);
+    else if (!perf_path && !trace_path)
+      only_sim(cpu);
+    else if ( perf_path && !trace_path)
+      count_sim(cpu);
+    else if (!perf_path &&  trace_path)
+      trace_sim(cpu);
     else
-      slow_sim(cpu);
+      count_trace_sim(cpu);
     if (cpu->state.mcause != 3) /* Not breakpoint */
       break;
     if (fast_mode) {
       if (--cpu->params.after > 0 || /* not ready to trace yet */
 	  --cpu->params.skip > 0) {  /* only trace every n call */
-	cpu->holding_pc = 0L;	/* do not include current pc */
 	cpu->params.skip = cpu->params.every;
 	/* put instruction back */
 	decode_instruction(insn(cpu->pc), cpu->pc);
@@ -227,7 +224,6 @@ int run_program(struct core_t* cpu)
     else {  /* reinserting breakpoint at subroutine entry */
       insert_breakpoint(cpu->params.breakpoint);
       fast_mode = 1;		/* stop tracing */
-      cpu->holding_pc = 0L;	/* do not include current pc */
     }
     cpu->state.mcause = 0;
     decode_instruction(insn(cpu->pc), cpu->pc);

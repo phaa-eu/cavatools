@@ -17,7 +17,8 @@ void init_cache( struct cache_t* c, struct lru_fsm_t* fsm, int writeable )
   c->line = 1 << c->lg_line;
   c->rows = 1 << c->lg_rows;
   c->ways = fsm->way;
-  c->row_mask = c->rows-1;
+  c->tag_mask = ~(c->line-1);
+  c->row_mask =  (c->rows-1) << c->lg_line;
   c->tags = (struct tag_t**)malloc(c->ways*sizeof(struct tag_t**));
   for (int k=0; k<c->ways; k++)
     c->tags[k] = (struct tag_t*)malloc(c->rows*sizeof(struct tag_t));

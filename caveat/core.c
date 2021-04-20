@@ -23,7 +23,9 @@
 #include "perfctr.h"
 #include "pipesim.h"
 
+struct fifo_t* trace;
 unsigned long lrsc_set = 0;	/* global atomic lock */
+
 
 void init_core( struct core_t* cpu, long start_tick, const struct timeval* start_timeval )
 {
@@ -49,14 +51,12 @@ void status_report( struct core_t* cpu, FILE* f )
   
   fprintf(stderr, "\r%3.1fBi %3.1fBc IPC=%5.3f in %lds at %3.1f MIPS",
 	  icount/1e9, now/1e9, (double)icount/now, (long)(msec/1e3), mips);
+  if (cpu->params.simulate)
+    fprintf(stderr, " I$=%5.3f/Mi D$=%4.2f/Ki", icache.misses/(icount/1e6), dcache.misses/(icount/1e3));
   if (perf.h) {
     perf.h->insns = icount;
     perf.h->cycles = now;
-    perf.h->ib_misses = ib.misses;
     perf.h->ic_misses = icache.misses;
     perf.h->dc_misses = dcache.misses;
-    double kinsns = icount/1e3;
-    fprintf(stderr, " IB=%3.0f I$=%5.3f D$=%4.2f m/Ki",
-	    ib.misses/kinsns, icache.misses/kinsns, dcache.misses/kinsns);
   }
 }

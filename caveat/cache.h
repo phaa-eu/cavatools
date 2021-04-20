@@ -23,8 +23,9 @@ struct cache_t {		/* cache descriptor */
   long line;			/* line size in bytes */
   long rows;			/* number of rows */
   long ways;			/* number of ways */
-  long lg_line, lg_rows;		/* specified in log-base-2 units */
-  long row_mask;		/* row index mask = (1<<lg_rows)-1 */
+  long lg_line, lg_rows;	/* specified in log-base-2 units */
+  long tag_mask;		/* = ~((1<<lg_line)-1) */
+  long row_mask;		/* row index mask = ((1<<lg_rows)-1) << dc->lg_line */
   struct tag_t** tags;		/* cache tag array [ways]->[rows] */
   unsigned short* states;	/* LRU state vector [rows] */
   long* evicted;		/* tag of evicted line, 0 if clean, NULL if unwritable */
