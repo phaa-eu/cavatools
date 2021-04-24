@@ -8,9 +8,10 @@
 
 
 struct tag_t {			/* 16 byte object */
-  long      addr     ;		/* 64-bit entry */
-  unsigned dirty :  1;		/*  1 bit flag */
-  long     ready : 63;		/* 63 bit time */
+  long     addr         ;	/* cache line tag */
+  unsigned dirty    :  1;	/* line is modified */
+  unsigned prefetch :  1;	/* line was prefetched */
+  long     ready    : 62;	/* time when line available */
 };
 
 struct lru_fsm_t {
@@ -19,6 +20,7 @@ struct lru_fsm_t {
 };
 
 struct cache_t {		/* cache descriptor */
+  const char* name;		/* for printing */
   struct lru_fsm_t* fsm;	/* LRU state transitions [ways!][ways] */
   long line;			/* line size in bytes */
   long rows;			/* number of rows */
@@ -34,11 +36,10 @@ struct cache_t {		/* cache descriptor */
   long updates, evictions;	/* if writeable */
 };
 
-void flush_cache( struct cache_t* c );
-
-void init_cache( struct cache_t* c, struct lru_fsm_t* fsm, int writeable );
-
-void show_cache( struct cache_t* c );
+void flush_cache(struct cache_t* c);
+void init_cache(struct cache_t* c, const char* name, struct lru_fsm_t* fsm, int writeable);
+void show_cache(struct cache_t* c);
+void print_cache(struct cache_t* c, FILE* f);
 
 
 /* returns cycle when line available (may be in past)
@@ -79,7 +80,6 @@ static inline long lookup_cache( struct cache_t* c, long addr, int write, long w
   }
   return tag->ready;
 }
-
 
 
 #endif

@@ -11,7 +11,7 @@ hdrs := opcodes.h insn.h shmfifo.h caveat.h
 hdrs := $(addprefix $R/include/cava/,$(hdrs))
 
 aobj := tagonlycache.o container.o queues.o utilities.o
-cobj := cachesim.o
+cobj := tilesim.o
 
 # Text substitutions
 aobj := $(addprefix $B/,$(aobj))
@@ -20,19 +20,19 @@ cobj := $(addprefix $B/,$(cobj))
 CFLAGS	= -I$R/include/cava -g -Ofast
 LIBS	= $R/lib/libcava.a -lrt -lpthread
 
-$B/cachesim:  $(cobj) $R/lib/libcava.a
-	$(CC) $(CFLAGS) -o $B/cachesim $^ $(LIBS)
+$B/tilesim:  $(cobj) $R/lib/libcava.a
+	$(CC) $(CFLAGS) -o $B/tilesim $^ $(LIBS)
 
 $R/lib/libcava.a:  $(aobj)
 	ar rs $@ $^
 
-$B/cachesim.o:  $(hdrs)
+$B/tilesim.o:  $(hdrs)
 
 $B/%.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $<
 
-install: $B/cachesim
-	cp $B/cachesim $R/bin/
+install: $B/tilesim
+	cp $B/tilesim $R/bin/
 
 clean:
 	rm -rf $B *~

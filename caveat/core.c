@@ -21,7 +21,6 @@
 #include "core.h"
 #include "cache.h"
 #include "perfctr.h"
-#include "pipesim.h"
 
 struct fifo_t* trace;
 unsigned long lrsc_set = 0;	/* global atomic lock */
@@ -42,13 +41,11 @@ void status_report( struct core_t* cpu, FILE* f )
     return;
   struct timeval *t1=&cpu->counter.start_timeval, t2;
   gettimeofday(&t2, 0);
-  
   double msec = (t2.tv_sec - t1->tv_sec)*1000;
   msec += (t2.tv_usec - t1->tv_usec)/1000.0;
   double mips = cpu->counter.insn_executed / (1e3*msec);
   double icount = cpu->counter.insn_executed;
   double now = cpu->counter.cycles_simulated;
-  
   fprintf(stderr, "\r%3.1fBi %3.1fBc IPC=%5.3f in %lds at %3.1f MIPS",
 	  icount/1e9, now/1e9, (double)icount/now, (long)(msec/1e3), mips);
   if (cpu->params.simulate)

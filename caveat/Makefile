@@ -14,7 +14,7 @@ cobj := main.o core.o fast_sim.o slow_sim.o ecall.o
 cobj := $(addprefix $B/,$(cobj))
 
 # Include files for libcava.a
-incf := opcodes.h insn.h caveat.h shmfifo.h perfctr.h cache.h pipesim.h
+incf := opcodes.h insn.h caveat.h shmfifo.h perfctr.h cache.h lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
 
 # Libraries
 libs := $R/lib/softfloat.a -lrt -lpthread -lm

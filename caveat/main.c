@@ -125,7 +125,7 @@ int main(int argc, const char* argv[], const char* envp[])
     case 4:  fsm = cache_fsm_4way;  break;
     default:  fprintf(stderr, "--iways=1..4 only\n");  exit(-1);
     }
-    init_cache(&icache, fsm, 0);
+    init_cache(&icache, "Instruction", fsm, 0);
   
     /* initialize data cache */
     switch (dcache.ways) {
@@ -135,7 +135,7 @@ int main(int argc, const char* argv[], const char* envp[])
     case 4:  fsm = cache_fsm_4way;  break;
     default:  fprintf(stderr, "--dways=1..4 only\n");  exit(-1);
     }
-    init_cache(&dcache,fsm, 1);
+    init_cache(&dcache, "Data", fsm, 1);
   }
 
   if (perf_path) {
@@ -146,6 +146,10 @@ int main(int argc, const char* argv[], const char* envp[])
     trace = fifo_create(trace_path, bufsize);
   }
   int rc = run_program(&core);
+  if (core.params.simulate) {
+    print_cache(&icache, stdout);
+    print_cache(&dcache, stdout);
+  }
   if (perf_path)
     perf_close();
   if (trace_path) {

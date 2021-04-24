@@ -99,6 +99,7 @@
 #ifdef COUNT
 	  *dcmiss(PC) += 1;
 #endif
+	    /* evict old line and load new line */
 #ifdef TRACE
 	  if (tag->dirty) {
 	    trMiss(tr_update, tag->addr, now);
@@ -119,7 +120,7 @@
 #endif
 	  tag->addr = addr;
 	  tag->ready = now + dc->penalty;
-	  /* fifo_put(out, trM(tr_d1get, addr)); */
+	  tag->prefetch = 1;
 	dcache_hit:
 	  *state = w->next_state;	/* already multiplied by dc->ways */
 	  if (writeOp(p->op_code)) {
@@ -132,6 +133,44 @@
 	  }
 	  if (tag->ready > ready)
 	    ready = tag->ready;
+	  /* prefetch next line */
+	  if (tag->prefetch) {
+	    tag->prefetch = 0;	/* only once */
+	    addr += 1 << dc->lg_line;
+	    index = (addr & dc->row_mask) >> dc->lg_line;
+	    state = dc->states + index;
+	    w = dc->fsm + *state;
+	    end = w + dc->ways;
+	    do {
+	      w++;
+	      tag = dc->tags[w->way] + index;
+	      if (addr == tag->addr)
+		goto prefetch_hit;
+	    } while (w < end);
+#ifdef TRACE
+	    if (tag->dirty) {
+	      trMiss(tr_update, tag->addr, now);
+	      dc->evictions++;
+	      tag->dirty = 0;
+	    }
+	    else
+	      trMiss(tr_evict, tag->addr, now);
+	    if (writeOp(p->op_code))
+	      trMiss(tr_exclusive, addr, now);
+	    else
+	      trMiss(tr_shared, addr, now);
+#else
+	    if (tag->dirty) {
+	      dc->evictions++;
+	      tag->dirty = 0;
+	    }
+#endif
+	    tag->addr = addr;
+	    tag->ready = now + dc->penalty + 1; /* XXX trailing edge */
+	    tag->prefetch = 1;
+	  prefetch_hit:
+	    *state = w->next_state;	/* already multiplied by dc->ways */
+	  }
 	}
 	/* model function unit latency for register scoreboarding */
 	ready += insnAttr[p->op_code].latency;
