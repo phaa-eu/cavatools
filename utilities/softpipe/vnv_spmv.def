@@ -11,46 +11,35 @@
 #error static inline double vnv_spmv_minus(long nnz, const int* c, const double* v, const double* x, double ac)
 #endif
 
-#define Stage(label)  asm volatile (label);
-
 {
 #ifdef CAREFULLY
   double sum = ac;
+  long count = nnz;
 #endif
+  const int *cp = c;
+  const double *vp = v;
   
-?limit=nnz
-?iter=j
-  register int j=0;
-?{
-  register int    c$;
-  register double v$;
-  register double x$;
-?}
-?[
-0	c$ = c[j+@];
-1	v$ = v[j+@];
-1	x$ = x[c$];
-2	ac SPMV_OP v$*x$;
-?]
+${ nnz
+$	int    c$;
+$	double v$;
+$	double x$;
+0	c$ = *cp++;
+3	v$ = *vp++;
+3	x$ = x[c$];
+6	ac SPMV_OP v$*x$;
+$}
 
 #ifdef CAREFULLY
-  {
-    static long count = 0;
-    count++;
-    for (int k=0; k<nnz; k++)
-      sum SPMV_OP v[k]*x[c[k]];
-    if (sum != ac) {
-#define MISTAKES  1000000
-      static long mistakes = 0;
+
+#define MISTAKES  10
 #define Q(x)  #x
 #define QUOTE(x) Q(x)
-//      fprintf(stderr, "count=%ld nnz=%ld sum=%12e(0x%016lx) ac=%12e(0x%016lx) vnv_spmv(" QUOTE(SPMV_OP) ")\n",
-//              count, nnz, sum, (long)sum, ac, (long)ac);
-      fprintf(stderr, "count=%ld nnz mod 3=%ld sum-ac=%g(0x%016lx)\n",
-              count, nnz%3L, sum-ac, (long)(sum-ac));
-      if (++mistakes > MISTAKES)
-        exit(-1);
-    }
+
+  {
+    for (int k=0; k<count; k++)
+      sum SPMV_OP v[k]*x[c[k]];
+    if (sum != ac)
+      abort();
   }
 #endif
   return ac;

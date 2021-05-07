@@ -80,10 +80,22 @@ static inline void fifo_put( struct fifo_t* fifo, uint64_t item )
 }
 
 
+/* Check if fifo empty */
+static inline int fifo_empty( struct fifo_t* fifo )
+{
+  return fifo->head == fifo->TAIL;
+}
+
+/* Peek at head item in fifo.  Invalid if fifo empty */
+static inline uint64_t fifo_peek( struct fifo_t* fifo )
+{
+  return fifo->buffer[fifo->head];
+}
+
 /* Get item from fifo */
 static inline uint64_t fifo_get( struct fifo_t* fifo )
 {
-  if (fifo->head == fifo->TAIL) {
+  if (fifo_empty(fifo)) {
     int spins = MAX_SPINS;
     do {
       _mm_pause();

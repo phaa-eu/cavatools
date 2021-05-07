@@ -15,7 +15,6 @@
 #include "insn.h"
 #include "shmfifo.h"
 #include "core.h"
-#include "pipesim.h"
 #include "cache.h"
 #include "lru_fsm_1way.h"
 #include "lru_fsm_2way.h"

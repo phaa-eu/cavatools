@@ -20,7 +20,6 @@
 #include "core.h"
 #include "cache.h"
 #include "perfctr.h"
-#include "pipesim.h"
 
 
 struct cache_t icache;		/* instruction cache model */

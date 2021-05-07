@@ -22,7 +22,6 @@
 #include "lru_fsm_4way.h"
 
 static const char* in_path;
-struct fifo_t* fifo;
 struct cache_t cache;
 
 struct timeval start_timeval;
@@ -41,7 +40,18 @@ const struct options_t opt[] =
   };
 const char* usage = "cachesim --in=trace [cachesim-options]";
 
-void report_status(long now)
+
+int N = 1;
+
+struct trace_t {
+  struct fifo_t* fifo;
+  long now;
+};
+
+struct trace_t* trace;
+long now = 0;
+
+void report_status()
 {
   struct timeval *t1=&start_timeval, t2;
   gettimeofday(&t2, 0);
@@ -49,6 +59,25 @@ void report_status(long now)
   msec += (t2.tv_usec - t1->tv_usec)/1000.0;
   fprintf(stderr, "\r%3.1fB cycles %3.1fB refs %5.3f%% miss in %3.1fs for %3.1fM CPS    ",
 	  now/1e9, cache.refs/1e9, 100.0*cache.misses/cache.refs, msec/1e3, now/(1e3*msec));
+}
+
+void open_traces(const char* names)
+{
+  char name[1024];
+  /* count number of traces */
+  for (const char* p=names; *p; p++)
+    if (*p == ',')
+      N++;
+  trace = malloc(N*sizeof *trace);
+  for (int i=0; i<N-1; i++) {
+    char* p = name;
+    while (*names && *names != ',')
+      *p++ = *names++;
+    *p = 0;
+    trace[i].fifo = fifo_open(name);
+    names++;
+  }
+  trace[N-1].fifo = fifo_open(names);
 }
 
 int main(int argc, const char** argv)
@@ -71,14 +100,40 @@ int main(int argc, const char** argv)
   init_cache(&cache, "L2", fsm, 1);
   //  print_cache(&cache, stdout);
   long next_report = report;
-  fifo = fifo_open(in_path);
-  long now = 0;
+  open_traces(in_path);
   struct cache_t* c = &cache;
-  for (uint64_t tr=fifo_get(fifo); tr!=tr_eof; tr=fifo_get(fifo)) {
+  while (1) {
+    /* find oldest trace entry */
+    struct trace_t* t = 0;	/* points to oldest trace  */
+    long oldest = 0x7ffffffffffffffL;
+    int finished;
+    for (int i=0; i<N; i++)
+      if (!fifo_empty(trace[i].fifo)) {
+	long tr = fifo_peek(trace[i].fifo);
+	if (tr == tr_eof) {
+	  finished++;
+	  continue;
+	}
+	long now = tr_code(tr)==tr_time ? tr_cycle(tr) : trace[i].now + tr_delta(tr);
+	if (now < oldest) {
+	  t = &trace[i];
+	  oldest = now;
+	}
+      }
+    if (finished == N)		/* all traces at eof */
+      break;
+    if (t == 0) {		/* nothing in any trace buffer */
+      static const struct timespec nap = { 0, 1000 };
+      nanosleep(&nap, 0);
+      continue;
+    }
+    long tr = fifo_get(t->fifo);
     if (tr_code(tr) == tr_time)
-      now = tr_cycle(tr);
+      t->now = tr_cycle(tr);
     else {
-      now += tr_delta(tr);
+      t->now += tr_delta(tr);
+      assert(t->now >= now);
+      now = t->now;
       int write = tr_code(tr) == tr_exclusive || tr_code(tr) == tr_dirty;
       long addr = tr_addr(tr) & c->tag_mask;
       int index = (addr & c->row_mask) >> c->lg_line;
@@ -114,15 +169,15 @@ int main(int argc, const char** argv)
       //      return tag->ready;
     }
     if (now >= next_report && !quiet) {
-      report_status(now);
+      report_status();
       next_report += report;
     }
   }
-  fprintf(stderr, "\n\n");
-  report_status(now);
+  report_status();
   fprintf(stderr, "\n\n");
   print_cache(&cache, stdout);
   printf("Miss rate %5.3f%% per cycle\n", 100.0*cache.misses/now);
-  fifo_close(fifo);
+  for (int i=0; i<N; i++)
+    fifo_close(trace[i].fifo);
   return 0;
 }

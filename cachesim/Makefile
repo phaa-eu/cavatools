@@ -17,7 +17,7 @@ cobj := tilesim.o
 aobj := $(addprefix $B/,$(aobj))
 cobj := $(addprefix $B/,$(cobj))
 
-CFLAGS	= -I$R/include/cava -g -Ofast
+CFLAGS	= -I$R/include/cava -g -Ofast -O0
 LIBS	= $R/lib/libcava.a -lrt -lpthread
 
 $B/tilesim:  $(cobj) $R/lib/libcava.a
