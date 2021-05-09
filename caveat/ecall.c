@@ -1,15 +1,24 @@
+/*
+  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+*/
+#include <stdlib.h>
+#define abort() { fprintf(stderr, "Aborting in %s line %d\n", __FILE__, __LINE__); exit(-1); }
+
 #include <unistd.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
 #include <errno.h>
+#include <sys/types.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <sys/times.h>
 #include <math.h>
 #include <string.h>
+
+#define _GNU_SOURCE
+#include <linux/sched.h>
 
 //#include "encoding.h"
 
@@ -26,7 +35,6 @@
 #include "riscv-opc.h"
 #include "ecall_nums.h"
 
-//#define DEBUG
 
 
 static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
@@ -50,6 +58,32 @@ static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
   return newbrk;
 }
 
+int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
+	  void *parent_tidptr, void *tls, void *child_tidptr);
+
+static int child_func(void* arg)
+{
+  pid_t tid = syscall(SYS_gettid);
+  fprintf(stderr, "Child pid=%d, tid=%d\n", getpid(), tid);
+#if 0
+  struct core_t* newcpu = malloc(sizeof(struct core_t));
+  *newcpu = *(struct core_t*)arg;
+  newcpu->pc += 4;
+  newcpu->reg[10].l = 0;
+  newcpu->params.ecalls = 1;
+  //sleep(8);
+  int rc = run_program(newcpu);
+#endif
+  struct core_t newcpu;
+  newcpu = *(struct core_t*)arg;
+  newcpu.pc += 4;
+  newcpu.reg[10].l = 0;
+  newcpu.params.ecalls = 1;
+  //sleep(8);
+  int rc = run_program(&newcpu);
+  exit(rc);
+}
+
 
 int proxy_ecall( struct core_t* cpu )
 {
@@ -63,6 +97,10 @@ int proxy_ecall( struct core_t* cpu )
     abort();
   }
   long sysnum = rv_to_host[rvnum].sysnum;
+  if (cpu->params.ecalls) {
+    fprintf(stderr, "ecall %s->%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)", rv_to_host[rvnum].name, sysnum,
+            cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+  }
   switch (sysnum) {
   case -1:
     goto no_mapping;
@@ -86,7 +124,39 @@ int proxy_ecall( struct core_t* cpu )
     break;
 
   case __NR_clone: /* sys_clone */
-    abort();
+    {
+      /*
+	int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
+	          void *parent_tidptr, void *tls, void *child_tidptr);
+	RISC-V clone system call arguments:
+	  a0 = fn
+	  a1 = child_stack
+	  a2 = flags
+	  a3 = parent_tidptr
+	  a4 = tls
+	  a5 = child_tidptr
+      */
+      fprintf(stderr, "clone called\n");
+      const int STACK_SIZE = 1 << 16;
+      void* simstack = malloc(STACK_SIZE);
+      if (!simstack) {
+	perror("malloc for clone ecall");
+	exit(1);
+      }
+      //      long flags = CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID;
+      long flags = CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID;
+      int rc = clone(child_func, simstack+STACK_SIZE, flags, cpu, cpu->reg[13].p, cpu->reg[14].p, cpu->reg[15].p);
+      cpu->reg[10].l = rc;
+      pid_t tid = syscall(SYS_gettid);
+      fprintf(stderr, "Parent pid=%d, tid=%d\n", getpid(), tid);
+      //sleep(9);
+    }
+    break;
+
+    //  case __NR_futex:
+    //    fprintf(stderr, "futex(%lx, %lx, %ld, %lx\n", cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l);
+    //    cpu->reg[10].l = syscall(sysnum, cpu->reg[10].l, FUTEX_WAKE_PRIVATE, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+    //    break;
 
   case __NR_times:
     {
@@ -131,9 +201,10 @@ int proxy_ecall( struct core_t* cpu )
     cpu->reg[10].l = syscall(sysnum, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
     break;
   }
-#ifdef DEBUG
-  fprintf(stderr, " return %lx\n", cpu->reg[10].l);
-#endif
+  if (cpu->params.ecalls) {
+    pid_t tid = syscall(SYS_gettid);
+    fprintf(stderr, " return %lx pid=%d, tid=%d\n", cpu->reg[10].l, getpid(), tid);
+  }
   return 0;
 }
 

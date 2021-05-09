@@ -42,6 +42,7 @@ struct core_t {
     long quiet;
     long mhz;			/* pretend clock MHz */
     long simulate;		/* do performance counting */
+    long ecalls;		/* log system calls */
   } params;
 };
 

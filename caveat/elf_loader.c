@@ -205,7 +205,7 @@ Addr_t initialize_stack(int argc, const char** argv, const char** envp)
   current.phdr = stack_top;
 
   // copy argv to user stack
-  for (size_t i = 0; i < argc; i++) {
+  for (size_t i=0; i<argc; i++) {
     size_t len = strlen((char*)(uintptr_t)argv[i])+1;
     stack_top -= len;
     memcpy((void*)stack_top, (void*)(uintptr_t)argv[i], len);
@@ -213,8 +213,20 @@ Addr_t initialize_stack(int argc, const char** argv, const char** envp)
   }
 
   // copy envp to user stack
+#if 0
   size_t envc = sizeof(envp) / sizeof(envp[0]);
   for (size_t i = 0; i < envc; i++) {
+    size_t len = strlen(envp[i]) + 1;
+    stack_top -= len;
+    memcpy((void*)stack_top, envp[i], len);
+    envp[i] = (char*)stack_top;
+  }
+#endif
+  size_t envc = 0;
+  size_t envlen = 0;
+  while (envp[envc])
+    envlen += strlen(envp[envc++]) + 1;
+  for (size_t i=0; i<envc; i++) {
     size_t len = strlen(envp[i]) + 1;
     stack_top -= len;
     memcpy((void*)stack_top, envp[i], len);

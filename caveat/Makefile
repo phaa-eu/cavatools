@@ -60,6 +60,7 @@ $B/ecall.o:  core.h ecall_nums.h
 $B/insn.o:  decode_insn.h disasm_insn.h
 $B/trace.o:  fifo.h
 $B/main.o:  lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
+$B/core.o $B/ecall.o $B/fast_sim.o $B/slow_sim.o:  arith.h
 
 $B/fast_sim.o:  fast_sim.c
 	$(CC) $(CFLAGS) -Ofast -o $@ -c $<

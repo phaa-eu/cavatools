@@ -50,7 +50,8 @@ static inline long riscv_to_c_rm(long rm)
   case /* RTZ */ 0x1:  return FE_TOWARDZERO;
   case /* RDN */ 0x2:  return FE_DOWNWARD;
   case /* RUP */ 0x3:  return FE_UPWARD;
-  default:  abort();
+    //  default:  abort();
+  default:  fprintf(stderr, "unknown rounding mode %ld\n", rm);
   }
 }
 

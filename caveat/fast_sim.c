@@ -1,9 +1,11 @@
 /*
-  Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
+//#define DEBUG
+#include <stdlib.h>
+#define abort() { fprintf(stderr, "Aborting in %s line %d\n", __FILE__, __LINE__); exit(-1); }
 
 #include <stdint.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
@@ -23,9 +25,6 @@
 #define advance(sz)
 #define restart()
 #define update_regfile(rd, val)
-
-#define amo_lock_begin
-#define amo_lock_end
 
 
 
@@ -53,43 +52,59 @@
 #define STORE_D(a, sz, v)  { trace_mem(tr_write8, a); *((double*)(a))=v; }
 
 
+#define amo_lock_begin
+#define amo_lock_end
+
+static int amo_rd;
+//#define myids() { pid_t tid = syscall(SYS_gettid); fprintf(stderr, "(pid=%d, tid=%d) ", getpid(), tid); }
+#define myids()
+
+//#define amo_trace(name, rd, r1, r2) { myids(); amo_rd=rd; fprintf(stderr, "%s(%s=%lx, %s=%lx)", name, regName[r1], IR(r1).l, regName[r2], IR(r2).l); }
+//#define amo_end() fprintf(stderr, "->%s=%lx\n", regName[amo_rd], IR(amo_rd).l)
+
+#define amo_trace(name, rd, r1, r2)
+#define amo_end()
+
+
+
 // Define load reserve/store conditional emulation
 #define addrW(rn)  (( int*)IR(rn).p)
 #define addrL(rn)  ((long*)IR(rn).p)
 #define amoW(rn)  ( trace_mem(tr_amo4, IR(rn).l), ( int*)IR(rn).p )
 #define amoL(rn)  ( trace_mem(tr_amo8, IR(rn).l), (long*)IR(rn).p )
 
-#define LR_W(rd, r1)      { amo_lock_begin; lrsc_set = IR(rd).ul&~0x7; IR(rd).l=*addrW(r1); trace_mem(tr_lr4, IR(r1).ul|0x0L); amo_lock_end; }
-#define LR_L(rd, r1)      { amo_lock_begin; lrsc_set = IR(rd).ul&~0x7; IR(rd).l=*addrL(r1); trace_mem(tr_lr8, IR(r1).ul|0x1L); amo_lock_end; }
-#define SC_W(rd, r1, r2)  { amo_lock_begin; if (lrsc_set == IR(r1).ul&~0x7) { *addrW(r1)=IR(r2).i; IR(rd).l=1; } else IR(rd).l=0;  trace_mem(tr_sc4, IR(r1).ul|0x2L); amo_lock_end; }
-#define SC_L(rd, r1, r2)  { amo_lock_begin; if (lrsc_set == IR(r1).ul&~0x7) { *addrL(r1)=IR(r2).l; IR(rd).l=1; } else IR(rd).l=0;  trace_mem(tr_sc8, IR(r1).ul|0x3L); amo_lock_end; }
+#define LR_W(rd, r1)      { amo_trace("LR_W", rd, r1,  0); lrsc_set=IR(r1).l; IR(rd).l=*addrW(r1); trace_mem(tr_lr4, IR(r1).ul|0x0L); amo_end(); }
+#define LR_L(rd, r1)      { amo_trace("LR_L", rd, r1,  0); lrsc_set=IR(r1).l; IR(rd).l=*addrL(r1); trace_mem(tr_lr8, IR(r1).ul|0x1L); amo_end(); }
+#define SC_W(rd, r1, r2)  { amo_trace("SC_W", rd, r1, r2); IR(rd).l = __sync_bool_compare_and_swap(&lrsc_set, IR(r1).l, 0) ? 0 : 1; amo_end(); }
+#define SC_L(rd, r1, r2)  { amo_trace("SC_L", rd, r1, r2); IR(rd).l = __sync_bool_compare_and_swap(&lrsc_set, IR(r1).l, 0) ? 0 : 1; amo_end(); }
 
 
 // Define AMO instructions
-#define AMOSWAP_W(rd, r1, r2)  __sync_lock_test_and_set_4(amoW(r1), IR(r2).i)
-#define AMOSWAP_L(rd, r1, r2)  __sync_lock_test_and_set_8(amoL(r1), IR(r2).l)
+#define AMOSWAP_W(rd, r1, r2)  { amo_trace("AMOSWAP_W", rd, r1, r2); IR(rd).l = __sync_lock_test_and_set_4(amoW(r1), IR(r2).i); amo_end(); }
+#define AMOSWAP_L(rd, r1, r2)  { amo_trace("AMOSWAP_L", rd, r1, r2); IR(rd).l = __sync_lock_test_and_set_8(amoL(r1), IR(r2).l); amo_end(); }
 
-#define AMOADD_W(rd, r1, r2)   __sync_fetch_and_add_4( amoW(r1), IR(r2).i)
-#define AMOADD_L(rd, r1, r2)   __sync_fetch_and_add_8( amoL(r1), IR(r2).l)
-#define AMOXOR_W(rd, r1, r2)   __sync_fetch_and_xor_4( amoW(r1), IR(r2).i)
-#define AMOXOR_L(rd, r1, r2)   __sync_fetch_and_xor_8( amoL(r1), IR(r2).l)
-#define AMOOR_W( rd, r1, r2)   __sync_fetch_and_or_4(  amoW(r1), IR(r2).i)
-#define AMOOR_L( rd, r1, r2)   __sync_fetch_and_or_8(  amoL(r1), IR(r2).l)
-#define AMOAND_W(rd, r1, r2)   __sync_fetch_and_and_4( amoW(r1), IR(r2).i)
-#define AMOAND_L(rd, r1, r2)   __sync_fetch_and_and_8( amoL(r1), IR(r2).l)
+#define AMOADD_W(rd, r1, r2)   { amo_trace("AMOADD_W", rd, r1, r2); IR(rd).l=__sync_fetch_and_add_4( amoW(r1), IR(r2).i); amo_end(); }
+#define AMOADD_L(rd, r1, r2)   { amo_trace("AMOADD_L", rd, r1, r2); IR(rd).l=__sync_fetch_and_add_8( amoL(r1), IR(r2).l); amo_end(); }
+#define AMOXOR_W(rd, r1, r2)   { amo_trace("AMOXOR_W", rd, r1, r2); IR(rd).l=__sync_fetch_and_xor_4( amoW(r1), IR(r2).i); amo_end(); }
+#define AMOXOR_L(rd, r1, r2)   { amo_trace("AMOXOR_L", rd, r1, r2); IR(rd).l=__sync_fetch_and_xor_8( amoL(r1), IR(r2).l); amo_end(); }
+#define AMOOR_W( rd, r1, r2)   { amo_trace("AMOOR_W",  rd, r1, r2); IR(rd).l=__sync_fetch_and_or_4(  amoW(r1), IR(r2).i); amo_end(); }
+#define AMOOR_L( rd, r1, r2)   { amo_trace("AMOOR_L",  rd, r1, r2); IR(rd).l=__sync_fetch_and_or_8(  amoL(r1), IR(r2).l); amo_end(); }
+#define AMOAND_W(rd, r1, r2)   { amo_trace("AMOAND_W", rd, r1, r2); IR(rd).l=__sync_fetch_and_and_4( amoW(r1), IR(r2).i); amo_end(); }
+#define AMOAND_L(rd, r1, r2)   { amo_trace("AMOAND_L", rd, r1, r2); IR(rd).l=__sync_fetch_and_and_8( amoL(r1), IR(r2).l); amo_end(); }
 
-#define AMOMIN_W( rd, r1, r2) { amo_lock_begin;            int t1=*((          int*)amoW(r1)), t2=IR(r2).i;   if (t2 < t1) *addrW(r1) = t2;  IR(rd).l = t1;  amo_lock_end; }
-#define AMOMAX_W( rd, r1, r2) { amo_lock_begin;            int t1=*((          int*)amoW(r1)), t2=IR(r2).ui;  if (t2 > t1) *addrW(r1) = t2;  IR(rd).l = t1;  amo_lock_end; }
-#define AMOMIN_L( rd, r1, r2) { amo_lock_begin;           long t1=*((         long*)amoL(r1)), t2=IR(r2).i;   if (t2 < t1) *addrL(r1) = t2;  IR(rd).l = t1;  amo_lock_end; }
-#define AMOMAX_L( rd, r1, r2) { amo_lock_begin;           long t1=*((         long*)amoL(r1)), t2=IR(r2).ui;  if (t2 > t1) *addrL(r1) = t2;  IR(rd).l = t1;  amo_lock_end; }
-#define AMOMINU_W(rd, r1, r2) { amo_lock_begin;  unsigned  int t1=*((unsigned  int*)amoW(r1)), t2=IR(r2).l;   if (t2 < t1) *addrW(r1) = t2;  IR(rd).l = t1;  amo_lock_end; }
-#define AMOMAXU_W(rd, r1, r2) { amo_lock_begin;  unsigned  int t1=*((unsigned  int*)amoW(r1)), t2=IR(r2).ul;  if (t2 > t1) *addrW(r1) = t2;  IR(rd).l = t1;  amo_lock_end; }
-#define AMOMINU_L(rd, r1, r2) { amo_lock_begin;  unsigned long t1=*((unsigned long*)amoL(r1)), t2=IR(r2).l;   if (t2 < t1) *addrL(r1) = t2;  IR(rd).l = t1;  amo_lock_end; }
-#define AMOMAXU_L(rd, r1, r2) { amo_lock_begin;  unsigned long t1=*((unsigned long*)amoL(r1)), t2=IR(r2).ul;  if (t2 > t1) *addrL(r1) = t2;  IR(rd).l = t1;  amo_lock_end; }
+#define AMOMIN_W( rd, r1, r2) { amo_trace("AMOMIN_W",  rd, r1, r2); amo_lock_begin;            int t1=*((          int*)amoW(r1)), t2=IR(r2).i;   if (t2 < t1) *addrW(r1) = t2;  IR(rd).l = t1;  amo_lock_end; amo_end(); }
+#define AMOMAX_W( rd, r1, r2) { amo_trace("AMOMAX_W",  rd, r1, r2); amo_lock_begin;            int t1=*((          int*)amoW(r1)), t2=IR(r2).ui;  if (t2 > t1) *addrW(r1) = t2;  IR(rd).l = t1;  amo_lock_end; amo_end(); }
+#define AMOMIN_L( rd, r1, r2) { amo_trace("AMOMIN_L",  rd, r1, r2); amo_lock_begin;           long t1=*((         long*)amoL(r1)), t2=IR(r2).i;   if (t2 < t1) *addrL(r1) = t2;  IR(rd).l = t1;  amo_lock_end; amo_end(); }
+#define AMOMAX_L( rd, r1, r2) { amo_trace("AMOMAX_L",  rd, r1, r2); amo_lock_begin;           long t1=*((         long*)amoL(r1)), t2=IR(r2).ui;  if (t2 > t1) *addrL(r1) = t2;  IR(rd).l = t1;  amo_lock_end; amo_end(); }
+#define AMOMINU_W(rd, r1, r2) { amo_trace("AMOMINU_W", rd, r1, r2); amo_lock_begin;  unsigned  int t1=*((unsigned  int*)amoW(r1)), t2=IR(r2).l;   if (t2 < t1) *addrW(r1) = t2;  IR(rd).l = t1;  amo_lock_end; amo_end(); }
+#define AMOMAXU_W(rd, r1, r2) { amo_trace("AMOMAXU_W", rd, r1, r2); amo_lock_begin;  unsigned  int t1=*((unsigned  int*)amoW(r1)), t2=IR(r2).ul;  if (t2 > t1) *addrW(r1) = t2;  IR(rd).l = t1;  amo_lock_end; amo_end(); }
+#define AMOMINU_L(rd, r1, r2) { amo_trace("AMOMINU_L", rd, r1, r2); amo_lock_begin;  unsigned long t1=*((unsigned long*)amoL(r1)), t2=IR(r2).l;   if (t2 < t1) *addrL(r1) = t2;  IR(rd).l = t1;  amo_lock_end; amo_end(); }
+#define AMOMAXU_L(rd, r1, r2) { amo_trace("AMOMAXU_L", rd, r1, r2); amo_lock_begin;  unsigned long t1=*((unsigned long*)amoL(r1)), t2=IR(r2).ul;  if (t2 > t1) *addrL(r1) = t2;  IR(rd).l = t1;  amo_lock_end; amo_end(); }
 
 
 // Define i-stream synchronization instruction
-#define FENCE(rd, r1, immed)  {  __sync_synchronize();  INCPC(4); trace_bbk(tr_fence, immed); break; }
+//#define FENCE(rd, r1, immed)  { amo_trace("FENCE", rd, r1, 0); __sync_synchronize();  INCPC(4); trace_bbk(tr_fence, immed); break; amo_end(); }
+#define FENCE(rd, r1, immed)  { amo_trace("FENCE", rd, r1, 0); __sync_synchronize(); amo_end(); }
 
 
 
@@ -105,8 +120,17 @@
 
 
 /* Special instructions, may exit simulation */
+
+int ecall_wrapper(struct core_t* cpu)
+{
+  int rc = proxy_ecall(cpu);
+  //  pid_t tid = syscall(SYS_gettid);
+  //  fprintf(stderr, "ecall_wrapper, pid=%d, tid=%d\n", getpid(), tid);
+  return rc;
+}
+
 #define DOCSR(num, sz)  STATS(cpu); proxy_csr(cpu, insn(PC), num); UNSTATS(cpu);
-#define ECALL(sz)       STATS(cpu); if (proxy_ecall(cpu)) { cpu->state.mcause = 8; INCPC(sz); goto stop_fast_sim; } UNSTATS(cpu);
+#define ECALL(sz)       STATS(cpu); if (ecall_wrapper(cpu)) { cpu->state.mcause = 8; INCPC(sz); goto stop_fast_sim; } UNSTATS(cpu);
 #define EBRK(num, sz)   STATS(cpu); cpu->state.mcause= 3; goto stop_fast_sim; /* no INCPC! */
 
 
@@ -119,7 +143,7 @@ void fast_sim(struct core_t* cpu)
   long icount = cpu->params.report;
   while (1) {			/* exit by special opcodes above */
     while (icount > 0) {
-#if DEBUG
+#ifdef DEBUG
       fprintf(stderr, "F ");
       print_pc(PC, stderr);
       print_insn(PC, stderr);
@@ -128,6 +152,7 @@ void fast_sim(struct core_t* cpu)
       switch (p->op_code) {
 #include "execute_insn.h"
       case Op_zero:
+	fprintf(stderr, "ZERO opcode at %lx\n", PC);
 	abort();		/* should never occur */
       case Op_illegal:
 	cpu->state.mcause = 2;	/* Illegal instruction */

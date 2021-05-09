@@ -1,9 +1,10 @@
 /*
   Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
+#include <stdlib.h>
+#define abort() { fprintf(stderr, "Aborting in %s line %d\n", __FILE__, __LINE__); exit(-1); }
 
 #include <stdint.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
@@ -62,6 +63,7 @@ const struct options_t opt[] =
    { "--quiet",		.b=&core.params.quiet,	.bv=1,		.h="Don't report progress to stderr" },
    { "-q",		.b=&core.params.quiet,	.bv=1,		.h="Short for --quiet" },
    { "--sim",		.b=&core.params.simulate,.bv=1,		.h="Perform simulation" },
+   { "--ecalls",	.b=&core.params.ecalls,	.bv=1,		.h="Log system calls" },
    { 0 }
   };
 const char* usage = "caveat [caveat-options] target-program [target-options]";
