@@ -11,6 +11,7 @@
 #include <math.h>
 #include <string.h>
 #include <sys/time.h>
+#include <pthread.h>
 
 #include "caveat.h"
 #include "opcodes.h"

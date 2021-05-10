@@ -139,13 +139,18 @@ int main(int argc, const char* argv[], const char* envp[])
     init_cache(&dcache, "Data", fsm, 1);
   }
 
+  core.params.sim_mode = sim_only;
   if (perf_path) {
     perf_create(perf_path);
     perf.start = start_timeval;
+    core.params.sim_mode = sim_count;
   }
   if (trace_path) {
     trace = fifo_create(trace_path, bufsize);
+    core.params.sim_mode = sim_trace;
   }
+  if (perf_path && trace_path)
+    core.params.sim_mode = sim_count_trace;
   int rc = run_program(&core);
   if (core.params.simulate) {
     print_cache(&icache, stdout);
@@ -160,101 +165,5 @@ int main(int argc, const char* argv[], const char* envp[])
   return rc;
 }
 
-
-
-#include <signal.h>
-#include <setjmp.h>
-
-jmp_buf return_to_top_level;
-
-void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
-{
-//  ucontext_t* context = (ucontext_t*)vcontext;
-//  context->uc_mcontext.gregs[]
-  fprintf(stderr, "\n\nSegV %p\n", si->si_addr);
-  longjmp(return_to_top_level, 1);
-}
-
-int run_program(struct core_t* cpu)
-{
-  struct sigaction action;
-  memset(&action, 0, sizeof(struct sigaction));
-  sigemptyset(&action.sa_mask);
-  sigemptyset(&action.sa_mask);
-//  action.sa_flags = SA_SIGINFO;
-  action.sa_sigaction = signal_handler;
-  action.sa_flags = 0;
-
-  sigaction(SIGSEGV, &action, NULL);
-  if (setjmp(return_to_top_level) != 0) {
-    //fprintf(stderr, "Back to main\n");
-    print_insn(cpu->pc, stderr);
-    print_registers(cpu->reg, stderr);
-    return -1;
-  }
-
-  if (cpu->params.breakpoint)
-    insert_breakpoint(cpu->params.breakpoint);
-  int fast_mode = 1;
-  while (1) {	       /* terminated by program making exit() ecall */
-    if (fast_mode)
-      fast_sim(cpu);
-    else if (!perf_path && !trace_path)
-      only_sim(cpu);
-    else if ( perf_path && !trace_path)
-      count_sim(cpu);
-    else if (!perf_path &&  trace_path)
-      trace_sim(cpu);
-    else
-      count_trace_sim(cpu);
-    if (cpu->state.mcause != 3) /* Not breakpoint */
-      break;
-    if (fast_mode) {
-      if (--cpu->params.after > 0 || /* not ready to trace yet */
-	  --cpu->params.skip > 0) {  /* only trace every n call */
-	cpu->params.skip = cpu->params.every;
-	/* put instruction back */
-	decode_instruction(insn(cpu->pc), cpu->pc);
-	cpu->state.mcause = 0;
-	single_step(cpu);
-	/* reinserting breakpoint at subroutine entry */
-	insert_breakpoint(cpu->params.breakpoint);
-      }
-      else { /* insert breakpoint at subroutine return */
-	if (cpu->reg[RA].a)	/* _start called with RA==0 */
-	  insert_breakpoint(cpu->reg[RA].a);
-	fast_mode = 0;		/* start tracing */
-      }
-    }
-    else {  /* reinserting breakpoint at subroutine entry */
-      insert_breakpoint(cpu->params.breakpoint);
-      fast_mode = 1;		/* stop tracing */
-    }
-    cpu->state.mcause = 0;
-    decode_instruction(insn(cpu->pc), cpu->pc);
-  }
-  if (cpu->state.mcause == 8) { /* only exit() ecall not handled */
-    cpu->counter.insn_executed++;	/* don't forget to count last ecall */
-    if (!cpu->params.quiet) {
-      clock_t end_tick = clock();
-      double elapse_time = (end_tick - cpu->counter.start_tick)/CLOCKS_PER_SEC;
-      double mips = cpu->counter.insn_executed / (1e6*elapse_time);
-      fprintf(stderr, "\n\nExecuted %ld instructions (%ld system calls) in %3.1f seconds for %3.1f MIPS\n",
-	      cpu->counter.insn_executed, cpu->counter.ecalls, elapse_time, mips);
-    }
-    return cpu->reg[10].i;
-  }
-  /* The following cases do not fall out */
-  switch (cpu->state.mcause) {
-  case 2:
-    fprintf(stderr, "Illegal instruction at 0x%08lx\n", cpu->pc);
-    GEN_SEGV;
-  case 10:
-    fprintf(stderr, "Unknown instruction at 0x%08lx\n", cpu->pc);
-    GEN_SEGV;
-  default:
-    abort();
-  }
-}
 
 

@@ -16,14 +16,7 @@
 #include <sys/times.h>
 #include <math.h>
 #include <string.h>
-#include <pthread.h>
 
-//#define _GNU_SOURCE
-//#include <linux/sched.h>
-
-//#include "encoding.h"
-
-//#define NO_FP_MACROS
 #include "caveat_fp.h"
 #include "arith.h"
 
@@ -37,67 +30,6 @@
 #include "ecall_nums.h"
 
 
-
-/*
-  int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
-  void *parent_tidptr, void *tls, void *child_tidptr);
-  RISC-V clone system call arguments:
-  a0 = fn
-  a1 = child_stack
-  a2 = flags
-  a3 = parent_tidptr
-  a4 = tls
-  a5 = child_tidptr
-*/
-
-struct start_arg {
-  struct core_t* cpu;
-  pid_t tid;
-  pthread_cond_t cv;
-  pthread_mutex_t mv;
-};
-
-static struct start_arg sa;
-
-static void* child_func(void* arg)
-{
-  //  struct start_arg* sa = (struct start_arg*)arg;
-  struct core_t newcpu;
-  newcpu = *sa.cpu;		  /* child registers same as parent */
-  newcpu.pc += 4;		  /* skip over ecall instruction */
-  newcpu.reg[2] = newcpu.reg[11]; /* child sp from a1 */
-  newcpu.reg[4] = newcpu.reg[14]; /* child tp from a1 */
-  newcpu.reg[10].l = 0;		  /* child a0=0 indicating child */
-  //  newcpu.params.ecalls = 1;
-  //  newcpu.params.visible = 1;
-  //sleep(8);
-  pthread_mutex_lock(&sa.mv);
-  sa.tid = syscall(SYS_gettid);
-  pthread_cond_signal(&sa.cv);
-  pthread_mutex_unlock(&sa.mv);
-  //  fprintf(stderr, "Child pid=%d, tid=%d\n", getpid(), sa.tid);
-  long rc = run_program(&newcpu);
-  return (void*)rc;
-}
-
-static void parent_func(struct core_t* cpu)
-{
-  //  fprintf(stderr, "clone called\n");
-  pthread_t child;
-  //  struct start_arg sa;
-  sa.cpu = cpu;
-  dieif(pthread_cond_init(&sa.cv, NULL), "pthread_cond_init");
-  pthread_mutex_lock(&sa.mv);
-  dieif(pthread_create(&child, NULL, child_func, &sa), "pthread_create");
-  pthread_cond_wait(&sa.cv, &sa.mv);
-  //  fprintf(stderr, "child created with tid=%d\n", sa.tid);
-  cpu->reg[10].l = sa.tid;
-  pthread_mutex_unlock(&sa.mv);
-  pid_t tid = syscall(SYS_gettid);
-  //  fprintf(stderr, "Parent pid=%d, tid=%d\n", getpid(), tid);
-  //  cpu->params.visible = 1;
-  //sleep(9);
-}
 
 
 static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)

@@ -73,10 +73,10 @@
 	  abort();		/* should never occur */
 	case Op_illegal:
 	  cpu->state.mcause = 2;	/* Illegal instruction */
-	  goto stop_slow_sim;
+	  goto stop_run;
 	default:
 	  cpu->state.mcause = 10; /* Unknown instruction */
-	  goto stop_slow_sim;
+	  goto stop_run;
 	}
 	IR(0).l = 0L;
 	/* model data cache */
@@ -200,7 +200,7 @@
     status_report(cpu, stderr);
     icount = cpu->params.report;
   }
- stop_slow_sim:
+ stop_run:
   status_report(cpu, stderr);
 }
 

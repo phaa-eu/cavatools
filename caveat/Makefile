@@ -10,7 +10,7 @@ aobj := elf_loader.o insn.o shmfifo.o perfctr.o cache.o
 aobj := $(addprefix $B/,$(aobj))
 
 # Object files for caveat not in libcava.a
-cobj := main.o core.o fast_sim.o slow_sim.o ecall.o
+cobj := main.o core.o fast_sim.o slow_sim.o ecall.o multithread.o
 cobj := $(addprefix $B/,$(cobj))
 
 # Include files for libcava.a
@@ -55,7 +55,7 @@ $R/lib/libcava.a : $(aobj)
 $(aobj):  $(incf)
 $(cobj):  $(incf)
 
-$B/slow_sim.o $B/fast_sim.o:  execute_insn.h caveat_fp.h core.h	
+$B/slow_sim.o $B/fast_sim.o:  execute_insn.h caveat_fp.h core.h	imacros.h
 $B/ecall.o:  core.h ecall_nums.h
 $B/insn.o:  decode_insn.h disasm_insn.h
 $B/trace.o:  fifo.h
