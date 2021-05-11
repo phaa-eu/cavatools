@@ -16,6 +16,7 @@
 #include <sys/times.h>
 #include <math.h>
 #include <string.h>
+#include <pthread.h>
 
 #include "caveat_fp.h"
 #include "arith.h"
@@ -53,6 +54,7 @@ static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
   return newbrk;
 }
 
+static pthread_mutex_t ecall_mutex;
 
 int proxy_ecall( struct core_t* cpu )
 {
@@ -66,7 +68,7 @@ int proxy_ecall( struct core_t* cpu )
     abort();
   }
   long sysnum = rv_to_host[rvnum].sysnum;
-  if (cpu->params.ecalls) {
+  if (simparam.ecalls) {
     fprintf(stderr, "ecall %s->%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)", rv_to_host[rvnum].name, sysnum,
             cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
   }
@@ -96,15 +98,24 @@ int proxy_ecall( struct core_t* cpu )
     parent_func(cpu);
     break;
 
-    //  case __NR_futex:
-    //    fprintf(stderr, "futex(%lx, %lx, %ld, %lx\n", cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l);
-    //    cpu->reg[10].l = syscall(sysnum, cpu->reg[10].l, FUTEX_WAKE_PRIVATE, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
-    //    break;
+#if 0
+  case __NR_futex:
+    {
+      //    cpu->reg[10].l = syscall(sysnum, cpu->reg[10].l, FUTEX_WAKE_PRIVATE, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+      int rc = syscall(sysnum, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+      if (rc != 0) {
+	fprintf(stderr, "futex(%lx, %lx, %ld, %lx) returns error %ld\n", cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[10].l);
+	perror("proxy_ecall:");
+      }
+      cpu->reg[10].l = rc;
+    }
+    break;
+#endif
 
   case __NR_times:
     {
-      long count = (perf.h && cpu->params.mhz) ? cpu->counter.cycles_simulated : cpu->counter.insn_executed;
-      long denominator = cpu->params.mhz ? cpu->params.mhz*1000000 : 1000000000;
+      long count = (perf.h && simparam.mhz) ? cpu->counter.cycles_simulated : cpu->counter.insn_executed;
+      long denominator = simparam.mhz ? simparam.mhz*1000000 : 1000000000;
       count = (double)count * sysconf(_SC_CLK_TCK) / denominator;
       struct tms tms;
       memset(&tms, 0, sizeof tms);
@@ -117,8 +128,8 @@ int proxy_ecall( struct core_t* cpu )
 
   case __NR_gettimeofday:
     { 
-      long count = (perf.h && cpu->params.mhz) ? cpu->counter.cycles_simulated : cpu->counter.insn_executed;
-      long denominator = cpu->params.mhz ? cpu->params.mhz*1000000 : 1000000000;
+      long count = (perf.h && simparam.mhz) ? cpu->counter.cycles_simulated : cpu->counter.insn_executed;
+      long denominator = simparam.mhz ? simparam.mhz*1000000 : 1000000000;
       struct timeval tv;
       tv.tv_sec  = count / denominator;
       tv.tv_usec = count % denominator;
@@ -141,10 +152,12 @@ int proxy_ecall( struct core_t* cpu )
 
   default:
   default_case:
+    //    pthread_mutex_lock(&ecall_mutex);
     cpu->reg[10].l = syscall(sysnum, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+    //    pthread_mutex_unlock(&ecall_mutex);
     break;
   }
-  if (cpu->params.ecalls) {
+  if (simparam.ecalls) {
     pid_t tid = syscall(SYS_gettid);
     fprintf(stderr, " return %lx pid=%d, tid=%d\n", cpu->reg[10].l, getpid(), tid);
   }

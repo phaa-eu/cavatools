@@ -20,7 +20,7 @@ incf := opcodes.h insn.h caveat.h shmfifo.h perfctr.h cache.h lru_fsm_1way.h lru
 libs := $R/lib/softfloat.a -lrt -lpthread -lm
 
 # Compiler flags
-CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O3
+CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O3 -pthread
 LDFLAGS	:= -Wl,-Ttext=70000000
 
 

@@ -34,6 +34,18 @@ const char* regName[] = {
   "NOT"
 };
 
+const char* color[] =
+  {
+   [0] = "\e[91m",		/* Red */
+   [1] = "\e[92m",		/* Green */
+   [2] = "\e[93m",		/* Yellow */
+   [3] = "\e[94m",		/* Blue */
+   [4] = "\e[95m",		/* Magenta */
+   [5] = "\e[96m",		/* Cyan */
+   [6] = "\e[97m",		/* Light Gray */
+   [7] = "\e[90m",		/* Black */
+  };
+
 
 void insnSpace_init()
 {

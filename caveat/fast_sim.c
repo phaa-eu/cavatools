@@ -31,18 +31,6 @@
 
 pthread_mutex_t amolock;
 
-static const char* color[] =
-  {
-   [0] = "\e[31m",		/* Red */
-   [1] = "\e[32m",		/* Green */
-   [2] = "\e[33m",		/* Yellow */
-   [3] = "\e[34m",		/* Blue */
-   [4] = "\e[35m",		/* Magenta */
-   [5] = "\e[36m",		/* Cyan */
-   [6] = "\e[37m",		/* Light Gray */
-   [7] = "\e[97m",		/* White */
-  };
-
 static void amoBegin(struct core_t* cpu, const char* name, int r1, int r2)
 {
   pid_t tid = syscall(SYS_gettid);
@@ -83,14 +71,14 @@ int ecall_wrapper(struct core_t* cpu)
 
 
 void fast_sim(struct core_t* cpu)
-{
+{ 
   pid_t tid = syscall(SYS_gettid);
   Addr_t PC = cpu->pc;
-  long icount = cpu->params.report;
+  long icount = simparam.report;
   while (1) {			/* exit by special opcodes above */
     while (icount > 0) {
       //#ifdef DEBUG
-      if (cpu->params.visible) {
+      if (simparam.visible) {
 	fprintf(stderr, "%s %x", color[tid%8], tid);
 	fprintf(stderr, "F ");
 	print_pc(PC, stderr);
@@ -116,7 +104,7 @@ void fast_sim(struct core_t* cpu)
     }
     STATS(cpu);
     status_report(cpu, stderr);
-    icount = cpu->params.report;
+    icount = simparam.report;
   }
 
  stop_run:

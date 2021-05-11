@@ -11,6 +11,7 @@
 #include <math.h>
 #include <string.h>
 #include <sys/time.h>
+#include <sys/syscall.h>
 #include <pthread.h>
 
 #include "caveat.h"
@@ -34,11 +35,12 @@ void init_core( struct core_t* cpu, long start_tick, const struct timeval* start
     cpu->reg[i].ul = 0xffffffff00000000UL;
   cpu->counter.start_tick = start_tick;
   cpu->counter.start_timeval = *start_timeval;
+  cpu->tid = syscall(SYS_gettid);
 }
 
 void status_report( struct core_t* cpu, FILE* f )
 {
-  if (cpu->params.quiet)
+  if (simparam.quiet)
     return;
   struct timeval *t1=&cpu->counter.start_timeval, t2;
   gettimeofday(&t2, 0);
@@ -47,10 +49,11 @@ void status_report( struct core_t* cpu, FILE* f )
   double mips = cpu->counter.insn_executed / (1e3*msec);
   double icount = cpu->counter.insn_executed;
   double now = cpu->counter.cycles_simulated;
-  fprintf(stderr, "\r%3.1fBi %3.1fBc IPC=%5.3f in %lds at %3.1f MIPS",
-	  icount/1e9, now/1e9, (double)icount/now, (long)(msec/1e3), mips);
-  if (cpu->params.simulate)
+  fprintf(stderr, "\r%s %3.1fBi %3.1fBc IPC=%5.3f in %lds at %3.1f MIPS",
+	  color[cpu->tid%8], icount/1e9, now/1e9, (double)icount/now, (long)(msec/1e3), mips);
+  if (simparam.simulate)
     fprintf(stderr, " I$=%5.3f/Mi D$=%4.2f/Ki", icache.misses/(icount/1e6), dcache.misses/(icount/1e3));
+  fprintf(stderr, "\e[39m");
   if (perf.h) {
     perf.h->insns = icount;
     perf.h->cycles = now;

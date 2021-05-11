@@ -22,6 +22,7 @@
 #include "opcodes.h"
 #include "insn.h"
 #include "core.h"
+#include "cache.h"
 
 
 /*
@@ -37,37 +38,42 @@
   a5 = child_tidptr
 */
 
+static pthread_cond_t  clone_condv;
+static pthread_mutex_t clone_mutex;
+static struct core_t* childcpu;	/* protected by mutex */
+
+
 void parent_func(struct core_t* parent)
 {
-  struct core_t* child = malloc(sizeof(struct core_t));
-  *child = *parent;		/* initialize child registers to same */
-  child->parent = parent;
-  child->next = parent->children;
-  parent->children = child;
-  dieif(pthread_cond_init(&child->cv, NULL), "pthread_cond_init");
-  pthread_mutex_lock(&child->mv);
-  dieif(pthread_create(&child->me, NULL, child_func, child), "pthread_create");
-  pthread_cond_wait(&child->cv, &child->mv);
-  parent->reg[10].l = child->tid;
-  pthread_mutex_unlock(&child->mv);
+  static pthread_t childthread;
+  pthread_mutex_lock(&clone_mutex);
+  dieif(pthread_cond_init(&clone_condv, NULL), "pthread_cond_init");
+  dieif(pthread_create(&childthread, NULL, child_func, parent), "pthread_create");
+  pthread_cond_wait(&clone_condv, &clone_mutex);
+  parent->reg[10].l = childcpu->tid;
+  pthread_mutex_unlock(&clone_mutex);
 }
 
 void* child_func(void* arg)
 {
-  struct core_t* cpu = (struct core_t*)arg;
+  struct core_t* parent = (struct core_t*)arg;
+  struct core_t* cpu = malloc(sizeof(struct core_t));
+  *cpu = *parent;		/* initialize child registers to same */
+  cpu->next = maincpu.next;	/* add child to cpu list */
+  maincpu.next = cpu;
+  cpu->parent = parent;
   cpu->pc += 4;			/* skip over ecall instruction */
   cpu->reg[2] = cpu->reg[11];	/* child sp from a1 */
-  cpu->reg[4] = cpu->reg[14];	/* child tp from a1 */
-  cpu->reg[10].l = 0;		/* child a0=0 indicating am child */
-  //  cpu->params.ecalls = 1;
-  //  cpu->params.visible = 1;
-  //sleep(8);
-  pthread_mutex_lock(&cpu->mv);
+  cpu->reg[4] = cpu->reg[14];	/* child tp from a4 */
+  cpu->reg[10].l = 0;		/* child a0=0 indicating I am child */
+  pthread_mutex_lock(&clone_mutex);
   cpu->tid = syscall(SYS_gettid);
-  pthread_cond_signal(&cpu->cv);
-  pthread_mutex_unlock(&cpu->mv);
-  long rc = run_program(cpu);
-  return (void*)rc;
+  childcpu = cpu;
+  pthread_cond_signal(&clone_condv);
+  pthread_mutex_unlock(&clone_mutex);
+  int rc = run_program(cpu);
+  fprintf(stderr, "child %d about to exit\n", cpu->tid);
+  pthread_exit(NULL);
 }
 
 
@@ -88,15 +94,18 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
   longjmp(return_to_top_level, 1);
 }
 
-void final_stats(struct core_t* cpu, int rv)
+void final_stats()
 {
-  if (cpu->params.quiet)
+  if (simparam.quiet)
     return;
   clock_t end_tick = clock();
-  double elapse_time = (end_tick - cpu->counter.start_tick)/CLOCKS_PER_SEC;
-  double mips = cpu->counter.insn_executed / (1e6*elapse_time);
-  fprintf(stderr, "\n\nThread %ld exit(%d) executed %ld instructions (%ld system calls) in %3.1f seconds for %3.1f MIPS\n",
-	  cpu->tid, rv, cpu->counter.insn_executed, cpu->counter.ecalls, elapse_time, mips);
+  fprintf(stderr, "\n\n");
+  for (struct core_t* cpu=&maincpu; cpu; cpu=cpu->next) {
+    double elapse_time = (end_tick - cpu->counter.start_tick)/CLOCKS_PER_SEC;
+    double mips = cpu->counter.insn_executed / (1e6*elapse_time);
+    fprintf(stderr, "%sThread %d executed %ld instructions (%ld system calls) in %3.1f seconds for %3.1f MIPS\e[39m\n",
+	    color[cpu->tid%8], cpu->tid, cpu->counter.insn_executed, cpu->counter.ecalls, elapse_time, mips);
+  }
 }
 
 int run_program(struct core_t* cpu)
@@ -111,7 +120,6 @@ int run_program(struct core_t* cpu)
 
   sigaction(SIGSEGV, &action, NULL);
   if (setjmp(return_to_top_level) != 0) {
-    //fprintf(stderr, "Back to main\n");
     print_insn(cpu->pc, stderr);
     print_registers(cpu->reg, stderr);
     return -1;
@@ -123,7 +131,7 @@ int run_program(struct core_t* cpu)
   while (1) {	       /* terminated by program making exit() ecall */
     if (fast_mode)
       fast_sim(cpu);
-    else switch (cpu->params.sim_mode) {
+    else switch (simparam.sim_mode) {
       case sim_only:
 	only_sim(cpu);
 	break;
@@ -167,12 +175,6 @@ int run_program(struct core_t* cpu)
   }
   if (cpu->state.mcause == 8) { /* only exit() ecall not handled */
     //cpu->counter.insn_executed++;	/* don't forget to count last ecall */
-    for (struct core_t* c=cpu->children; c; c=c->next) {
-      int rv;
-      dieif(pthread_join(c->me, (void*)&rv), "pthread_join");
-      final_stats(cpu, rv);
-    }
-    final_stats(cpu, cpu->reg[10].i);
     return cpu->reg[10].i;
   }
   /* The following cases do not fall out */

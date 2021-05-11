@@ -8,13 +8,9 @@ extern unsigned long lrsc_set;  // globally shared location for atomic lock
 struct core_t {
   struct reg_t reg[64];		/* Register files, IR[0-31], FR[32-63] */
   Addr_t pc;			/* Next instruction to be executed */
-  struct core_t* children;	/* Clone call simulators */
   struct core_t* next;		/* Cloned cores in linked list */
   struct core_t* parent;	/* Who cloned me */
-  pthread_t me;			/* Opaque pthread id */
-  long tid;			/* Linux thread id (not same as pthread) */
-  pthread_cond_t cv;
-  pthread_mutex_t mv;
+  int tid;			/* Linux thread id (not same as pthread) */
 
   struct {
     long coreid;
@@ -44,18 +40,10 @@ struct core_t {
     long after;			/* countdown, negative=start pipeline simulation */
     long every;			/* but only trace once per n-1 calls */
     long skip;			/* skip until negative, reset to every */
-    long report;
-    //    long flags;
-    long quiet;
-    long mhz;			/* pretend clock MHz */
-    long simulate;		/* do performance counting */
-    long ecalls;		/* log system calls */
-    long visible;		/* show every instruction */
-    enum { sim_only, sim_count, sim_trace, sim_count_trace } sim_mode;
   } params;
 };
 
-
+extern struct core_t maincpu;	/* main thread, first of clone list */
 extern struct cache_t icache;	/* instruction cache model */
 extern struct cache_t dcache;	/* data cache model */
 extern struct fifo_t* trace;	/* of L2 references */
@@ -73,6 +61,7 @@ void single_step();
 int proxy_ecall( struct core_t* cpu );
 void proxy_csr( struct core_t* cpu, const struct insn_t* p, int which );
 void status_report(struct core_t* cpu, FILE*);
+void final_stats();
 void parent_func(struct core_t* cpu);
 void* child_func(void* arg);
 

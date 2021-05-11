@@ -23,9 +23,11 @@
 #include "lru_fsm_4way.h"
 #include "perfctr.h"
 
+struct simparam_t simparam;
+struct core_t maincpu;
+
 static long load_latency, fma_latency, branch_delay;
 
-struct core_t core;
   
 static const char *trace_path, *perf_path;
 
@@ -40,11 +42,11 @@ const struct options_t opt[] =
    { "--buffer=i",	.i=&bufsize,		.di=12,		.h="Shared memory buffer size is 2^ =n bytes" },
    
    { "--func=s",	.s=&func,		.ds="_start",	.h="Trace function =name" },       
-   { "--after=i",	.i=&core.params.after,	.di=1,		.h="Start tracing function after =number calls" },
-   { "--every=i",	.i=&core.params.every,	.di=1,		.h="Trace only every =number times function is called" },
-   { "--skip=i",	.i=&core.params.skip,	.di=1,		.h="Trace function once every =number times called" },
+   { "--after=i",	.i=&maincpu.params.after,.di=1,		.h="Start tracing function after =number calls" },
+   { "--every=i",	.i=&maincpu.params.every,.di=1,		.h="Trace only every =number times function is called" },
+   { "--skip=i",	.i=&maincpu.params.skip,.di=1,		.h="Trace function once every =number times called" },
      
-   { "--mhz=i",		.i=&core.params.mhz,	.di=1000,	.h="Pretend clock frequency =MHz" },
+   { "--mhz=i",		.i=&simparam.mhz,	.di=1000,	.h="Pretend clock frequency =MHz" },
    { "--bdelay=i",	.i=&branch_delay,	.di=2,		.h="Taken branch delay is =number cycles" },
    { "--load=i",	.i=&load_latency,	.di=2,		.h="Load latency from cache" },
    { "--fma=i",		.i=&fma_latency,	.di=4,		.h="fused multiply add unit latency" },
@@ -59,11 +61,11 @@ const struct options_t opt[] =
    { "--dways=i",	.i=&dcache.ways,	.di=4,		.h="L1 data cache is =w ways set associativity" },
    { "--dsets=i",	.i=&dcache.lg_rows,	.di=6,		.h="L1 data cache has 2^ =n sets per way" },
    
-   { "--report=i",	.i=&core.params.report,	.di=1000,	.h="Progress report every =number million instructions" },
-   { "--quiet",		.b=&core.params.quiet,	.bv=1,		.h="Don't report progress to stderr" },
-   { "-q",		.b=&core.params.quiet,	.bv=1,		.h="Short for --quiet" },
-   { "--sim",		.b=&core.params.simulate,.bv=1,		.h="Perform simulation" },
-   { "--ecalls",	.b=&core.params.ecalls,	.bv=1,		.h="Log system calls" },
+   { "--report=i",	.i=&simparam.report,	.di=1000,	.h="Progress report every =number million instructions" },
+   { "--quiet",		.b=&simparam.quiet,	.bv=1,		.h="Don't report progress to stderr" },
+   { "-q",		.b=&simparam.quiet,	.bv=1,		.h="Short for --quiet" },
+   { "--sim",		.b=&simparam.simulate,	.bv=1,		.h="Perform simulation" },
+   { "--ecalls",	.b=&simparam.ecalls,	.bv=1,		.h="Log system calls" },
    { 0 }
   };
 const char* usage = "caveat [caveat-options] target-program [target-options]";
@@ -81,12 +83,12 @@ int main(int argc, const char* argv[], const char* envp[])
 {
   struct timeval start_timeval;
   gettimeofday(&start_timeval, 0);
-  init_core(&core, clock(), &start_timeval);
+  init_core(&maincpu, clock(), &start_timeval);
   
   int numopts = parse_options(argv+1);
   if (argc == numopts+1)
     help_exit();
-  core.params.report *= 1000000; /* unit is millions of instructions */
+  simparam.report *= 1000000; /* unit is millions of instructions */
 
   //  printf("load_latency=%ld fma_latency=%ld\n", load_latency, fma_latency);
   for (int i=0; i<Number_of_opcodes; i++) {
@@ -106,13 +108,13 @@ int main(int argc, const char* argv[], const char* envp[])
   Addr_t entry_pc = load_elf_binary(argv[1+numopts], 1);
   insnSpace_init();
   Addr_t stack_top = initialize_stack(argc-1-numopts, argv+1+numopts, envp);
-  core.pc = entry_pc;
-  core.reg[SP].a = stack_top;
+  maincpu.pc = entry_pc;
+  maincpu.reg[SP].a = stack_top;
 
-  if (core.params.simulate) {
+  if (simparam.simulate) {
     if (!func)
       func = "_start";
-    if (! find_symbol(func, &core.params.breakpoint, 0)) {
+    if (! find_symbol(func, &maincpu.params.breakpoint, 0)) {
       fprintf(stderr, "function %s cannot be found in symbol table\n", func);
       exit(1);
     }
@@ -139,20 +141,21 @@ int main(int argc, const char* argv[], const char* envp[])
     init_cache(&dcache, "Data", fsm, 1);
   }
 
-  core.params.sim_mode = sim_only;
+  simparam.sim_mode = sim_only;
   if (perf_path) {
     perf_create(perf_path);
     perf.start = start_timeval;
-    core.params.sim_mode = sim_count;
+    simparam.sim_mode = sim_count;
   }
   if (trace_path) {
     trace = fifo_create(trace_path, bufsize);
-    core.params.sim_mode = sim_trace;
+    simparam.sim_mode = sim_trace;
   }
   if (perf_path && trace_path)
-    core.params.sim_mode = sim_count_trace;
-  int rc = run_program(&core);
-  if (core.params.simulate) {
+    simparam.sim_mode = sim_count_trace;
+  int rc = run_program(&maincpu);
+  final_stats();
+  if (simparam.simulate) {
     print_cache(&icache, stdout);
     print_cache(&dcache, stdout);
   }

@@ -10,7 +10,7 @@
   Addr_t PC = cpu->pc;
   cur_line = ~0L;     /* current insn cache line set by ilookup() */
   Addr_t VA;	      /* load/store address set by "execute_insn.h" */
-  long icount = cpu->params.report; /* instructions to be executed */
+  long icount = simparam.report; /* instructions to be executed */
   long now = cpu->counter.cycles_simulated;
   while (cpu->state.mcause == 0) {
     /* calculate stall cycles before 1st of bundle in epoch */
@@ -198,7 +198,7 @@
     }
     STATS(cpu);
     status_report(cpu, stderr);
-    icount = cpu->params.report;
+    icount = simparam.report;
   }
  stop_run:
   status_report(cpu, stderr);

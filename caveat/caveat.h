@@ -71,5 +71,19 @@ void help_exit();
 int parse_options( const char** argv );
 
 
+struct simparam_t {
+  long report;			/* interval, in millions of instructions */
+  long quiet;			/* no progress report */
+  long mhz;			/* pretend clock MHz */
+  long simulate;		/* do performance counting */
+  long ecalls;			/* log system calls */
+  long visible;			/* show every instruction */
+  enum { sim_only, sim_count, sim_trace, sim_count_trace } sim_mode;
+};
+
+extern struct simparam_t simparam;
+extern const char* color[];
+
+
 
 #endif
