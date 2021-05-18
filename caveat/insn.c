@@ -34,7 +34,7 @@ const char* regName[] = {
   "NOT"
 };
 
-const char* color[] =
+const char* ascii_color[] =
   {
    [0] = "\e[91m",		/* Red */
    [1] = "\e[92m",		/* Green */
@@ -47,17 +47,20 @@ const char* color[] =
   };
 
 
-void insnSpace_init()
+void insnSpace_init(void* where)
 {
   dieif(insnSpace.base==0, "insnSpace_init() base, bound not initialized");
   assert(insnSpace.base < insnSpace.bound);
-  
-  long nelts = (insnSpace.bound - insnSpace.base) / 2;
-  insnSpace.insn_array = (struct insn_t*)mmap(0, nelts*sizeof(struct insn_t), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  assert(insnSpace.insn_array);
-  memset(insnSpace.insn_array, 0, nelts*sizeof(struct insn_t));
-  for (Addr_t pc=insnSpace.base; pc<insnSpace.bound; pc+=2)
-    decode_instruction(&insnSpace.insn_array[(pc-insnSpace.base)/2], pc);
+  if (where)
+    insnSpace.insn_array = (struct insn_t*)where;
+  else {
+    long nelts = (insnSpace.bound - insnSpace.base) / 2;
+    insnSpace.insn_array = (struct insn_t*)mmap(0, nelts*sizeof(struct insn_t), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    assert(insnSpace.insn_array);
+    memset(insnSpace.insn_array, 0, nelts*sizeof(struct insn_t));
+    for (Addr_t pc=insnSpace.base; pc<insnSpace.bound; pc+=2)
+      decode_instruction(&insnSpace.insn_array[(pc-insnSpace.base)/2], pc);
+  }
 }
 
 

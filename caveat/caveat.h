@@ -70,20 +70,39 @@ extern const char* usage;
 void help_exit();
 int parse_options( const char** argv );
 
-
-struct simparam_t {
+/*
+  Simulation configuration.
+*/
+struct conf_t {
   long report;			/* interval, in millions of instructions */
   long quiet;			/* no progress report */
-  long mhz;			/* pretend clock MHz */
   long simulate;		/* do performance counting */
+  const char* func;		/* function to analyze */
+  const char* perf;		/* name of shared segment with counters */
+  long breakpoint;		/* entrypoint of traced function */
+  long after;			/* countdown, negative=start pipeline simulation */
+  long every;			/* but only trace once per n-1 calls */
+  long skip;			/* skip until negative, reset to every */
+  long cores;			/* number of cores in simulation */
+  long mhz;			/* pretend clock MHz */
+  long branch;			/* branch delay */
+  long load;			/* load latency */
+  long fma;			/* fused multiply add pipeline depth */
+  long ipenalty;		/* IC cache miss penalty */
+  long iways;			/* IC set associativity */
+  long iline;			/* IC line size */
+  long irows;			/* IC number of sets */
+  long dpenalty;		/* DC cache miss penalty */
+  long dways;			/* DC set associativity */
+  long dline;			/* DC line size */
+  long drows;			/* DC number of sets */
   long ecalls;			/* log system calls */
-  long visible;			/* show every instruction */
-  enum { sim_only, sim_count, sim_trace, sim_count_trace } sim_mode;
 };
 
-extern struct simparam_t simparam;
-extern const char* color[];
+extern struct conf_t conf;
 
-
+extern const char* ascii_color[];
+#define color(n) ascii_color[(n)%8]
+#define nocolor "\e[39m"
 
 #endif

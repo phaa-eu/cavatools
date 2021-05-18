@@ -1,8 +1,14 @@
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/syscall.h>
 
 #include "cache.h"
+#include "lru_fsm_1way.h"
+#include "lru_fsm_2way.h"
+#include "lru_fsm_3way.h"
+#include "lru_fsm_4way.h"
 
 void flush_cache(struct cache_t* c)
 {
@@ -11,13 +17,24 @@ void flush_cache(struct cache_t* c)
   memset((char*)c->states, 0, c->rows*sizeof(unsigned short));
 }
 
-void init_cache(struct cache_t* c, const char* name, struct lru_fsm_t* fsm, int writeable)
+void init_cache(struct cache_t* c, const char* name, int penalty, int ways, int lg_line, int lg_rows, int writeable)
 {
   c->name = name;
-  c->fsm = fsm;			/* note purposely point to [-1] */
+  c->penalty = penalty;
+  switch (ways) {
+  case 1:  c->fsm = cache_fsm_1way;  break;
+  case 2:  c->fsm = cache_fsm_2way;  break;
+  case 3:  c->fsm = cache_fsm_3way;  break;
+  case 4:  c->fsm = cache_fsm_4way;  break;
+  default:
+    fprintf(stderr, "ways=%d only 1..4 ways implemented\n", ways);
+    syscall(SYS_exit_group, -1);
+  } /* note fsm purposely point to [-1] */
+  c->ways = ways;
+  c->lg_line = lg_line;
+  c->lg_rows = lg_rows;
   c->line = 1 << c->lg_line;
   c->rows = 1 << c->lg_rows;
-  c->ways = fsm->way;
   c->tag_mask = ~(c->line-1);
   c->row_mask =  (c->rows-1) << c->lg_line;
   c->tags = (struct tag_t**)malloc(c->ways*sizeof(struct tag_t**));

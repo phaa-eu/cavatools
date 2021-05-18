@@ -37,7 +37,7 @@ struct cache_t {		/* cache descriptor */
 };
 
 void flush_cache(struct cache_t* c);
-void init_cache(struct cache_t* c, const char* name, struct lru_fsm_t* fsm, int writeable);
+void init_cache(struct cache_t* c, const char* name, int penalty, int ways, int lg_line, int lg_rows, int writeable);
 void show_cache(struct cache_t* c);
 void print_cache(struct cache_t* c, FILE* f);
 

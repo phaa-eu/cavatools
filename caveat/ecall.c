@@ -24,12 +24,56 @@
 #include "caveat.h"
 #include "opcodes.h"
 #include "insn.h"
-#include "shmfifo.h"
+#include "cache.h"
 #include "core.h"
-#include "perfctr.h"
 #include "riscv-opc.h"
 #include "ecall_nums.h"
 
+
+#include <signal.h>
+
+Addr_t guest_handler[_NSIG];
+
+/*
+ * Generic signal handler proxy.
+ */
+void proxy_sa_handler(int signum)
+{
+  fprintf(stderr, "proxy_sa_handler(%d) called\n", signum);
+  /* First figure out which core signal came from */
+  struct core_t* cpu = 0;
+  pid_t my_tid = syscall(SYS_gettid);
+  for (int i=0; i<conf.cores; i++)
+    if (core[i].tid == my_tid) {
+      cpu = &core[i];
+      break;
+    }
+  if (!cpu) {
+    fprintf(stderr, "Cannot find core with tid=%d\n", my_tid);
+    exit(-1);
+  }
+  /* Push PC, fcsr onto stack, then registers */
+  assert(sizeof(struct reg_t) == 8);
+  long* sp = cpu->reg[SP].p;
+  *--sp = cpu->pc;
+  *--sp = cpu->state.fcsr_v;
+  sp -= 64;			/* registers */
+  memcpy(sp, cpu->reg, 64*sizeof(struct reg_t));
+  cpu->reg[SP].p = sp;
+  /* Call guest sa_handler(signum) */
+  cpu->pc = guest_handler[cpu-core];
+  cpu->reg[0].l = signum;
+  fast_sim(cpu);
+  fprintf(stderr, "sigreturn called\n");
+  /* Pop registers, then fcsr, finally PC */
+  assert(cpu->reg[SP].p == sp);
+  //  long* sp = cpu->reg[SP].p;
+  memcpy(cpu->reg, sp, 64*sizeof(struct reg_t));
+  sp += 64;			/* registers */
+  cpu->state.fcsr_v = *sp++;
+  cpu->pc = *sp++;
+  cpu->reg[SP].p = sp;
+}  
 
 
 
@@ -54,11 +98,9 @@ static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
   return newbrk;
 }
 
-static pthread_mutex_t ecall_mutex;
-
 int proxy_ecall( struct core_t* cpu )
 {
-  cpu->counter.ecalls++;
+  cpu->perf.ecalls++;
   long rvnum = cpu->reg[17].l;
   if (rvnum < 0 || rvnum >= rv_syscall_entries) {
   no_mapping:
@@ -68,7 +110,7 @@ int proxy_ecall( struct core_t* cpu )
     abort();
   }
   long sysnum = rv_to_host[rvnum].sysnum;
-  if (simparam.ecalls) {
+  if (conf.ecalls) {
     fprintf(stderr, "ecall %s->%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)", rv_to_host[rvnum].name, sysnum,
             cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
   }
@@ -90,37 +132,48 @@ int proxy_ecall( struct core_t* cpu )
     return 1;
 
   case __NR_rt_sigaction:
-    fprintf(stderr, "Trying to call rt_sigaction, always succeed without error.\n");
+    {
+      fprintf(stderr, "rt_sigaction called\n");
+      void (*action)(int) = cpu->reg[12].p;
+      if (action != SIG_DFL && action != SIG_IGN)
+	action = proxy_sa_handler;
+      long signum = cpu->reg[10].l;
+      struct sigaction* oldact = (struct sigaction*)cpu->reg[12].p;
+      /* remember current guest handler */
+      Addr_t old_handler = guest_handler[signum];
+      /* make a copy of action structure */
+      struct sigaction act;
+      memcpy(&act, cpu->reg[11].p, sizeof(struct sigaction));
+      /* then replace handler with proxy */
+      long previous_guest_handler = guest_handler[signum];
+      guest_handler[signum] = (Addr_t)act.sa_handler;
+      act.sa_handler = action;	/* proxy handler or SIG_DFL, SIG_IGN */
+      cpu->reg[10].l = syscall(__NR_rt_sigaction, signum, &act, oldact);
+      /* swap back the previous guest handler */
+      if (oldact)
+	oldact->sa_handler = (void*)previous_guest_handler;
+    }
+    break;
+
+#if 0
+  case __NR_rt_sigprocmask:
+    fprintf(stderr, "Trying to call rt_sigprocmask, always succeed without error.\n");
     cpu->reg[10].l = 0;  // always succeed without error
     break;
+#endif
 
   case __NR_clone: /* sys_clone */
     parent_func(cpu);
     break;
 
-#if 0
-  case __NR_futex:
-    {
-      //    cpu->reg[10].l = syscall(sysnum, cpu->reg[10].l, FUTEX_WAKE_PRIVATE, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
-      int rc = syscall(sysnum, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
-      if (rc != 0) {
-	fprintf(stderr, "futex(%lx, %lx, %ld, %lx) returns error %ld\n", cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[10].l);
-	perror("proxy_ecall:");
-      }
-      cpu->reg[10].l = rc;
-    }
-    break;
-#endif
-
   case __NR_times:
     {
-      long count = (perf.h && simparam.mhz) ? cpu->counter.cycles_simulated : cpu->counter.insn_executed;
-      long denominator = simparam.mhz ? simparam.mhz*1000000 : 1000000000;
+      long count = (perf.h && conf.mhz) ? cpu->perf.cycles_simulated : cpu->perf.insn_executed;
+      long denominator = conf.mhz ? conf.mhz*1000000 : 1000000000;
       count = (double)count * sysconf(_SC_CLK_TCK) / denominator;
       struct tms tms;
       memset(&tms, 0, sizeof tms);
       tms.tms_utime = count;
-      //      fprintf(stderr, "times(tms_utime=%ld)\n", tms.tms_utime);
       memcpy(cpu->reg[10].p, &tms, sizeof tms);
       cpu->reg[10].l = 0;
     }
@@ -128,16 +181,15 @@ int proxy_ecall( struct core_t* cpu )
 
   case __NR_gettimeofday:
     { 
-      long count = (perf.h && simparam.mhz) ? cpu->counter.cycles_simulated : cpu->counter.insn_executed;
-      long denominator = simparam.mhz ? simparam.mhz*1000000 : 1000000000;
+      long count = (perf.h && conf.mhz) ? cpu->perf.cycles_simulated : cpu->perf.insn_executed;
+      long denominator = conf.mhz ? conf.mhz*1000000 : 1000000000;
       struct timeval tv;
       tv.tv_sec  = count / denominator;
       tv.tv_usec = count % denominator;
-      tv.tv_sec  += cpu->counter.start_timeval.tv_sec;
-      tv.tv_usec += cpu->counter.start_timeval.tv_usec;
+      tv.tv_sec  += cpu->perf.start_timeval.tv_sec;
+      tv.tv_usec += cpu->perf.start_timeval.tv_usec;
       tv.tv_sec  += tv.tv_usec / 1000000;  // microseconds overflow
       tv.tv_usec %=              1000000;
-      //      fprintf(stderr, "gettimeofday(sec=%ld, usec=%4ld)\n", tv.tv_sec, tv.tv_usec);
       memcpy(cpu->reg[10].p, &tv, sizeof tv);
       cpu->reg[10].l = 0;
     }
@@ -152,12 +204,10 @@ int proxy_ecall( struct core_t* cpu )
 
   default:
   default_case:
-    //    pthread_mutex_lock(&ecall_mutex);
     cpu->reg[10].l = syscall(sysnum, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
-    //    pthread_mutex_unlock(&ecall_mutex);
     break;
   }
-  if (simparam.ecalls) {
+  if (conf.ecalls) {
     pid_t tid = syscall(SYS_gettid);
     fprintf(stderr, " return %lx pid=%d, tid=%d\n", cpu->reg[10].l, getpid(), tid);
   }
@@ -239,3 +289,52 @@ void proxy_csr( struct core_t* cpu, const struct insn_t* p, int which )
   }
   cpu->reg[p->op_rd].l = old_val;
 }
+
+
+
+int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
+	  void *parent_tidptr, void *tls, void *child_tidptr);
+
+#define _GNU_SOURCE
+#include <linux/sched.h>
+
+void parent_func(struct core_t* parent)
+{
+  dieif(active_cores >= conf.cores, "Too many clone system calls!");
+  struct core_t* child = core + active_cores++;
+  if (conf.simulate)
+    perf.h->active = active_cores;
+  init_core(child, parent, parent->pc+4, parent->reg[11].l, parent->reg[13].l);
+#define STACK_SIZE (1L<<16)
+  char* caveat_stack = malloc(STACK_SIZE);
+  /*
+    RISC-V clone system call arguments not same as wrapper or X86_64:
+    a0 = flags
+    a1 = child_stack
+    a2 = parent_tidptr
+    a3 = tls
+    a4 = child_tidptr
+  */
+  parent->reg[10].l =
+    clone(child_func,			     /* fn */
+	  caveat_stack+STACK_SIZE,	     /* not stack of guest! */
+	  parent->reg[10].l & ~CLONE_SETTLS, /* flags, but no host tls for now */
+	  child,			     /* arg */
+	  parent->reg[12].p,		     /* parent_tidptr of guest */
+	  0,				     /* tls, but none for now */
+	  parent->reg[14].p);		     /* child_tidptr of guest */
+  /* returns child tid in guest a0 */
+}
+    
+int child_func(void* arg)
+{
+  struct core_t* cpu = (struct core_t*)arg;
+  /* child core is copy of parent core but with proper PC, SP and TP */
+  cpu->tid = syscall(SYS_gettid);
+  cpu->reg[10].l = 0;	       /* child a0==0 indicating I am child */
+  fast_sim(cpu);
+  fprintf(stderr, "child %d about to exit\n", cpu->tid);
+  return 0;
+}
+
+

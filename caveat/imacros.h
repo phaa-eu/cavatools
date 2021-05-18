@@ -12,8 +12,8 @@
 #define CALL(npc, sz)    { Addr_t tgt=npc; IR(p->op_rd).l=PC+sz; PC=tgt; JUMP_ACTION(); break; }
 
 /* Special instructions, may exit simulation */
-#define STATS(cpu) { cpu->pc=PC; cpu->counter.insn_executed+=simparam.report-icount; STATS_ACTION(); }
-#define UNSTATS(cpu) cpu->counter.insn_executed-=simparam.report-icount;
+#define STATS(cpu) { cpu->pc=PC; cpu->perf.insn_executed+=conf.report-icount; STATS_ACTION(); }
+#define UNSTATS(cpu) cpu->perf.insn_executed-=conf.report-icount;
 #define DOCSR(num, sz)  { STATS(cpu); proxy_csr(cpu, insn(PC), num); UNSTATS(cpu); }
 #define ECALL(sz)       { STATS(cpu); if (proxy_ecall(cpu)) { cpu->state.mcause=8; INCPC(sz); goto stop_run; } UNSTATS(cpu); }
 #define EBRK(num, sz)   { STATS(cpu); cpu->state.mcause= 3; goto stop_run; } /* no INCPC! */
