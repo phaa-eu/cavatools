@@ -19,6 +19,7 @@ void flush_cache(struct cache_t* c)
 
 void init_cache(struct cache_t* c, const char* name, int penalty, int ways, int lg_line, int lg_rows, int writeable)
 {
+  memset(c, 0, sizeof(struct cache_t));
   c->name = name;
   c->penalty = penalty;
   switch (ways) {
@@ -64,6 +65,7 @@ void print_cache(struct cache_t* c, FILE* f)
   else                         fprintf(f, "  %ld B capacity\n", size);
   fprintf(f, "  %ld bytes line size\n", c->line);
   fprintf(f, "  %ld ways set associativity\n", c->ways);
+  fprintf(f, "  %ld cycles miss penalty\n", c->penalty);
   fprintf(f, "  %ld references\n", c->refs);
   fprintf(f, "  %ld stores (%5.3f%%)\n", c->updates, 100.0*c->updates/c->refs);
   fprintf(f, "  %ld misses (%5.3f%%)\n", c->misses, 100.0*c->misses/c->refs);

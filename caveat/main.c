@@ -32,10 +32,10 @@ const struct options_t opt[] =
    { "--perf=s",	.s=&conf.perf,		.ds="caveat",	.h="Performance counters in shared memory =name" },
    
    { "--ecalls",	.b=&conf.ecalls,	.bv=1,		.h="Log system calls" },
+   { "--visible",	.b=&conf.visible,	.bv=1,		.h="Print all instructions" },
    
    { "--after=i",	.i=&conf.after,		.di=1,		.h="Start tracing function after =number calls" },
    { "--every=i",	.i=&conf.every,		.di=1,		.h="Trace only every =number times function is called" },
-   { "--skip=i",	.i=&conf.skip,		.di=1,		.h="Trace function once every =number times called" },
      
    { "--mhz=i",		.i=&conf.mhz,		.di=1000,	.h="Pretend clock frequency =MHz" },
    { "--bdelay=i",	.i=&conf.branch,	.di=2,		.h="Taken branch delay is =number cycles" },
@@ -77,22 +77,7 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 {
   //  ucontext_t* context = (ucontext_t*)vcontext;
   //  context->uc_mcontext.gregs[]
-  pid_t tid = syscall(SYS_gettid);
-  fprintf(stderr, "\n\nSegV %p tid=%d\n", si->si_addr, tid);
-  struct core_t* cpu = 0;
-  for (int i=0; i<conf.cores; i++) {
-    fprintf(stderr, "%score[%d] tid[%d] pc=%lx\n", color(core[i].tid), i, core[i].tid, core[i].pc);
-    if (core[i].tid == tid)
-      cpu = &core[i];
-  }
-  if (cpu) {
-    fprintf(stderr, "%sSegV core[%ld] tid[%d] pc=%lx at 0x%p\n", color(cpu->tid), cpu-core, cpu->tid, cpu->pc, si->si_addr);
-    print_insn(cpu->pc, stderr);
-    print_registers(cpu->reg, stderr);
-    fprintf(stderr, "%s", nocolor);
-  }
-  else
-    fprintf(stderr, "Cannot find TID in cores\n");
+  fprintf(stderr, "signal_handler(%d)\n", nSIGnum);
   longjmp(return_to_top_level, 1);
 }
 
@@ -127,7 +112,6 @@ int main(int argc, const char* argv[], const char* envp[])
   insnAttr[Op_c_ebreak].flags = ~0;
 
   Addr_t entry_pc = load_elf_binary(argv[1+numopts], 1);
-  insnSpace_init(0);
   Addr_t stack_top = initialize_stack(argc-1-numopts, argv+1+numopts, envp);
   if (conf.simulate) {
     if (!conf.func)
@@ -136,36 +120,60 @@ int main(int argc, const char* argv[], const char* envp[])
       fprintf(stderr, "function %s cannot be found in symbol table\n", conf.func);
       exit(1);
     }
-    perf_init(conf.perf, 0);
+    perf_init(conf.perf, conf.cores);
+    insnSpace_init(perf.insn_array);
     core = perf.core;
     perf.h->active = 1;
   }
   else {
+    insnSpace_init(0);
     core = (struct core_t*)malloc(conf.cores * sizeof(struct core_t));
     memset(core, 0, conf.cores * sizeof(struct core_t));
   }
 
   init_core(&core[0], 0, entry_pc, stack_top, 0);
-  core[0].tid = syscall(SYS_gettid);
-  core[0].perf.after = conf.after;
-  core[0].perf.skip = conf.skip;
-  if (0) {
-    static struct sigaction action;
-    memset(&action, 0, sizeof(struct sigaction));
-    sigemptyset(&action.sa_mask);
-    sigemptyset(&action.sa_mask);
-    //  action.sa_flags = SA_SIGINFO;
-    action.sa_sigaction = signal_handler;
-    action.sa_flags = 0;
+  core->tid = syscall(SYS_gettid);
+  core->conf.after = conf.after;
+  core->conf.every = conf.every;
+  core->conf.ecalls = conf.ecalls;
+  core->conf.visible = conf.visible;
 
+  static struct sigaction action;
+  memset(&action, 0, sizeof(struct sigaction));
+  sigemptyset(&action.sa_mask);
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = 0;
+  if (0) {
+    action.sa_sigaction = signal_handler;
     sigaction(SIGSEGV, &action, NULL);
     if (setjmp(return_to_top_level) != 0) {
-      syscall(SYS_exit_group, -1);
-      //    return -1;
+      /* which core was running when signal received? */
+      pid_t tid = syscall(SYS_gettid);
+      //      fprintf(stderr, "\n\nSegV %p tid=%d\n", si->si_addr, tid);
+      struct core_t* cpu = 0;
+      for (int i=0; i<conf.cores; i++) {
+	// fprintf(stderr, "%score[%d] tid[%d] pc=%lx\n", color(core[i].tid), i, core[i].tid, core[i].pc);
+	if (core[i].tid == tid)
+	  cpu = &core[i];
+      }
+      if (!cpu) {
+	fprintf(stderr, "Cannot find TID in cores\n");
+	syscall(SYS_exit_group, -1);
+      }
+      //      fprintf(stderr, "%sSegV core[%ld] tid[%d] pc=%lx at 0x%p\n", color(cpu->tid), cpu-core, cpu->tid, cpu->pc, si->si_addr);
+      {
+	print_callstack(cpu);
+	print_pctrace(cpu);
+	print_registers(cpu->reg, stderr);
+	syscall(SYS_exit_group, -1);
+      }
     }
   }
   
-  int rc = run_program(&core[0]);
+  if (conf.breakpoint)
+    insert_breakpoint(conf.breakpoint);
+  core[0].fast_mode = 1;
+  int rc = interpreter(&core[0]);
   final_status();
   if (conf.simulate)
     perf_close();

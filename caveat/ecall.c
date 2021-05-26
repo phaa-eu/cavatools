@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <linux/futex.h>
 #include <sys/utsname.h>
 #include <sys/times.h>
 #include <math.h>
@@ -32,7 +33,7 @@
 
 #include <signal.h>
 
-Addr_t guest_handler[_NSIG];
+struct sigaction guestsig[_NSIG];
 
 /*
  * Generic signal handler proxy.
@@ -56,14 +57,15 @@ void proxy_sa_handler(int signum)
   assert(sizeof(struct reg_t) == 8);
   long* sp = cpu->reg[SP].p;
   *--sp = cpu->pc;
-  *--sp = cpu->state.fcsr_v;
+  *--sp = cpu->fcsr.l;
   sp -= 64;			/* registers */
   memcpy(sp, cpu->reg, 64*sizeof(struct reg_t));
   cpu->reg[SP].p = sp;
-  /* Call guest sa_handler(signum) */
-  cpu->pc = guest_handler[cpu-core];
-  cpu->reg[0].l = signum;
-  fast_sim(cpu);
+  cpu->reg[RA].p = guestsig[signum].sa_restorer;
+  cpu->reg[10].l = signum;
+  cpu->pc = (Addr_t)guestsig[signum].sa_handler;
+  //  fast_sim(cpu);
+#if 0
   fprintf(stderr, "sigreturn called\n");
   /* Pop registers, then fcsr, finally PC */
   assert(cpu->reg[SP].p == sp);
@@ -73,8 +75,13 @@ void proxy_sa_handler(int signum)
   cpu->state.fcsr_v = *sp++;
   cpu->pc = *sp++;
   cpu->reg[SP].p = sp;
-}  
+#endif
+}
 
+void proxy_sa_restorer()
+{
+  fprintf(stderr, "proxy_sa_restorer() called\n");
+}
 
 
 static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
@@ -98,9 +105,9 @@ static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
   return newbrk;
 }
 
-int proxy_ecall( struct core_t* cpu )
+void proxy_ecall(struct core_t* cpu)
 {
-  cpu->perf.ecalls++;
+  cpu->count.ecalls++;
   long rvnum = cpu->reg[17].l;
   if (rvnum < 0 || rvnum >= rv_syscall_entries) {
   no_mapping:
@@ -111,9 +118,11 @@ int proxy_ecall( struct core_t* cpu )
   }
   long sysnum = rv_to_host[rvnum].sysnum;
   if (conf.ecalls) {
-    fprintf(stderr, "ecall %s->%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)", rv_to_host[rvnum].name, sysnum,
-            cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
+    fprintf(stderr, "%secall %s->%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx%s)", ascii_color[cpu->tid%8], rv_to_host[rvnum].name, sysnum,
+            cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l, nocolor);
   }
+  cpu->running = 0;
+  syscall(SYS_futex, &cpu->running, FUTEX_WAKE, 1);
   switch (sysnum) {
   case -1:
     goto no_mapping;
@@ -128,30 +137,45 @@ int proxy_ecall( struct core_t* cpu )
 #endif
 
   case __NR_exit:
+    fprintf(stderr, "core[%ld] exit(%d) called\n", cpu-core, cpu->reg[10].i);
+    __sync_fetch_and_or(&cpu->exceptions, EXIT_SYSCALL);
+    break;
+    
   case __NR_exit_group:
-    return 1;
+    fprintf(stderr, "core[%ld] exit_group(%d) called\n", cpu-core, cpu->reg[10].i);
+    __sync_fetch_and_or(&cpu->exceptions, EXIT_SYSCALL);
+    break;
 
   case __NR_rt_sigaction:
     {
-      fprintf(stderr, "rt_sigaction called\n");
+      //      fprintf(stderr, "rt_sigaction called\n");
+      //      cpu->reg[10].l = 0;
+      //      break;
+      
       void (*action)(int) = cpu->reg[12].p;
       if (action != SIG_DFL && action != SIG_IGN)
 	action = proxy_sa_handler;
       long signum = cpu->reg[10].l;
+      struct sigaction* newact = (struct sigaction*)cpu->reg[11].p;
       struct sigaction* oldact = (struct sigaction*)cpu->reg[12].p;
-      /* remember current guest handler */
-      Addr_t old_handler = guest_handler[signum];
-      /* make a copy of action structure */
-      struct sigaction act;
-      memcpy(&act, cpu->reg[11].p, sizeof(struct sigaction));
+      if (oldact)
+	memcpy(oldact, &guestsig[signum], sizeof(struct sigaction));
+      memcpy(&guestsig[signum], newact, sizeof(struct sigaction));
+      newact->sa_handler = proxy_sa_handler;
+      newact->sa_restorer = proxy_sa_restorer;
+      cpu->reg[10].l = sigaction(signum, newact, oldact);
+      
+#if 0      
       /* then replace handler with proxy */
       long previous_guest_handler = guest_handler[signum];
       guest_handler[signum] = (Addr_t)act.sa_handler;
       act.sa_handler = action;	/* proxy handler or SIG_DFL, SIG_IGN */
-      cpu->reg[10].l = syscall(__NR_rt_sigaction, signum, &act, oldact);
+      //      cpu->reg[10].l = syscall(__NR_rt_sigaction, signum, &act, oldact);
+      cpu->reg[10].l = sigaction(signum, &act, oldact);
       /* swap back the previous guest handler */
       if (oldact)
 	oldact->sa_handler = (void*)previous_guest_handler;
+#endif
     }
     break;
 
@@ -166,9 +190,34 @@ int proxy_ecall( struct core_t* cpu )
     parent_func(cpu);
     break;
 
+  case __NR_clock_gettime:
+#if 1
+    {
+      long count = (perf.h && conf.mhz) ? cpu->count.cycle : cpu->count.insn;
+      long denominator = conf.mhz ? conf.mhz*1000000 : 1000000000;
+      struct timeval tv;
+      tv.tv_sec  = count / denominator;
+      tv.tv_usec = count % denominator;
+      tv.tv_sec  += cpu->conf.start_tv.tv_sec;
+      tv.tv_usec += cpu->conf.start_tv.tv_usec;
+      tv.tv_sec  += tv.tv_usec / 1000000;  // microseconds overflow
+      tv.tv_usec %=              1000000;
+      memcpy(cpu->reg[11].p, &tv, sizeof tv);
+      cpu->reg[10].l = 0;
+    }
+#else
+    {
+      clockid_t id = cpu->reg[10].l;
+      struct timespec* tp = cpu->reg[11].p;
+      long rv = syscall(sysnum, id, tp);
+      cpu->reg[10].l = rv;
+    }
+#endif
+    break;
+
   case __NR_times:
     {
-      long count = (perf.h && conf.mhz) ? cpu->perf.cycles_simulated : cpu->perf.insn_executed;
+      long count = (perf.h && conf.mhz) ? cpu->count.cycle : cpu->count.insn;
       long denominator = conf.mhz ? conf.mhz*1000000 : 1000000000;
       count = (double)count * sysconf(_SC_CLK_TCK) / denominator;
       struct tms tms;
@@ -180,14 +229,14 @@ int proxy_ecall( struct core_t* cpu )
     break;
 
   case __NR_gettimeofday:
-    { 
-      long count = (perf.h && conf.mhz) ? cpu->perf.cycles_simulated : cpu->perf.insn_executed;
+    {
+      long count = (perf.h && conf.mhz) ? cpu->count.cycle : cpu->count.insn;
       long denominator = conf.mhz ? conf.mhz*1000000 : 1000000000;
       struct timeval tv;
       tv.tv_sec  = count / denominator;
       tv.tv_usec = count % denominator;
-      tv.tv_sec  += cpu->perf.start_timeval.tv_sec;
-      tv.tv_usec += cpu->perf.start_timeval.tv_usec;
+      tv.tv_sec  += cpu->conf.start_tv.tv_sec;
+      tv.tv_usec += cpu->conf.start_tv.tv_usec;
       tv.tv_sec  += tv.tv_usec / 1000000;  // microseconds overflow
       tv.tv_usec %=              1000000;
       memcpy(cpu->reg[10].p, &tv, sizeof tv);
@@ -208,58 +257,51 @@ int proxy_ecall( struct core_t* cpu )
     break;
   }
   if (conf.ecalls) {
-    pid_t tid = syscall(SYS_gettid);
-    fprintf(stderr, " return %lx pid=%d, tid=%d\n", cpu->reg[10].l, getpid(), tid);
+    fprintf(stderr, "%s return %lx%s\n", ascii_color[cpu->tid%8], cpu->reg[10].l, nocolor);
   }
-  return 0;
+  cpu->running = 1;
+  syscall(SYS_futex, &cpu->running, FUTEX_WAKE, 1);
 }
 
 
 static void set_csr( struct core_t* cpu, int which, long val )
 {
   switch (which) {
-  case CSR_USTATUS:
-    cpu->state.ustatus = val;
-    return;
   case CSR_FFLAGS:
-    cpu->state.fcsr.flags = val;
-#ifdef SOFT_FP
-    softfloat_exceptionFlags = val;
-#else
-#endif
+    cpu->fcsr.f.flags = val;
     return;
   case CSR_FRM:
-    cpu->state.fcsr.rmode = val;
+    cpu->fcsr.f.rm = val;
     break;
   case CSR_FCSR:
-    cpu->state.fcsr_v = val;
+    cpu->fcsr.l = val;
     break;
   default:
     fprintf(stderr, "Unsupported set_csr(%d, val=%lx)\n", which, val);
     abort();
   }
 #ifdef SOFT_FP
-  softfloat_roundingMode = cpu->state.fcsr.rmode;
+  softfloat_roundingMode = val;
 #else
-  fesetround(riscv_to_c_rm(cpu->state.fcsr.rmode));
+  fesetround(riscv_to_c_rm(val));
 #endif
 }
 
 static long get_csr( struct core_t* cpu, int which )
 {
   switch (which) {
-    case CSR_USTATUS:
-    return cpu->state.ustatus;
   case CSR_FFLAGS:
 #ifdef SOFT_FP
-    cpu->state.fcsr.flags = softfloat_exceptionFlags;
-#else
+    cpu->fcsr.f.flags = softfloat_exceptionFlags;
 #endif
-    return cpu->state.fcsr.flags;
+    return cpu->fcsr.f.flags;
   case CSR_FRM:
-    return cpu->state.fcsr.rmode;
+#ifdef SOFT_FP
+    cpu->fcsr.f.rm = softfloat_exceptionFlags;
+#endif
+    return cpu->fcsr.f.rm;
   case CSR_FCSR:
-    return cpu->state.fcsr_v;
+    return cpu->fcsr.l;
   default:
     fprintf(stderr, "Unsupported get_csr(%d)\n", which);
     abort();
@@ -300,13 +342,10 @@ int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
 
 void parent_func(struct core_t* parent)
 {
-  dieif(active_cores >= conf.cores, "Too many clone system calls!");
-  struct core_t* child = core + active_cores++;
+  int n = __sync_fetch_and_add(&active_cores, 1);
+  struct core_t* child = &core[n];
   if (conf.simulate)
     perf.h->active = active_cores;
-  init_core(child, parent, parent->pc+4, parent->reg[11].l, parent->reg[13].l);
-#define STACK_SIZE (1L<<16)
-  char* caveat_stack = malloc(STACK_SIZE);
   /*
     RISC-V clone system call arguments not same as wrapper or X86_64:
     a0 = flags
@@ -315,10 +354,15 @@ void parent_func(struct core_t* parent)
     a3 = tls
     a4 = child_tidptr
   */
+  init_core(child, parent, parent->pc+4, parent->reg[11].l, parent->reg[13].l);
+  char* caveat_stack = malloc(CLONESTACKSZ);
+  unsigned long flags = parent->reg[10].ul;
+  flags &= ~CLONE_SETTLS;	/* host doesn't have tls for now */
+  flags |= SIGCHLD;		/* signal parent when finished */
   parent->reg[10].l =
     clone(child_func,			     /* fn */
-	  caveat_stack+STACK_SIZE,	     /* not stack of guest! */
-	  parent->reg[10].l & ~CLONE_SETTLS, /* flags, but no host tls for now */
+	  caveat_stack+CLONESTACKSZ,	     /* not stack of guest! */
+	  flags,			     /* modified flags */
 	  child,			     /* arg */
 	  parent->reg[12].p,		     /* parent_tidptr of guest */
 	  0,				     /* tls, but none for now */
@@ -332,9 +376,13 @@ int child_func(void* arg)
   /* child core is copy of parent core but with proper PC, SP and TP */
   cpu->tid = syscall(SYS_gettid);
   cpu->reg[10].l = 0;	       /* child a0==0 indicating I am child */
-  fast_sim(cpu);
-  fprintf(stderr, "child %d about to exit\n", cpu->tid);
-  return 0;
+  __sync_fetch_and_and(&cpu->exceptions, ~ECALL_INSTRUCTION);
+  int rc = interpreter(cpu);
+  fprintf(stderr, "child %d about to terminate\n", cpu->tid);
+  while (1) {
+    sleep(3600);
+  }
+  return 0;			/* never gets here */
 }
 
 

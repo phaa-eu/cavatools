@@ -132,11 +132,11 @@ for op in OriginalOrder:
         if t == '':
             break
         if t == 'immed' or t == 'constant':
-            format = format.replace(t, '%d')
+            format = format.replace(t, '%ld')
             if t == 'immed':
-                have_immed = ', p->op.immed'
+                have_immed = ', (long)p->op.immed'
             else:
-                have_immed = ', p->op_constant'
+                have_immed = ', (long)p->op_constant'
             params += have_immed
         elif t[0] == 'r' or t[0] == 'f':
             format = format.replace(t, '%s')
@@ -147,11 +147,11 @@ for op in OriginalOrder:
             t = t.replace('rs1', 'p->op_rs1')
             t = t.replace('rs2', 'p->op.rs2')
             t = t.replace('rs3', 'p->op.rs3')
-            t = t.replace('immed', 'p->op.immed')
-            t = t.replace('constant', 'p->op_constant')
+            t = t.replace('immed', '(long)p->op.immed')
+            t = t.replace('constant', '(long)p->op_constant')
             params += ', '+regs+'['+t+']'
     if have_immed:
-        format += ' [0x%x]'
+        format += ' [0x%lx]'
         params += have_immed
     af.write('        case {:s}: n += sprintf(buf, \"{:s}\"{:s}); break;\n'.format(op, format, params))
 
@@ -333,8 +333,8 @@ for op in InOrder:
     action = action.replace('rs1', 'p->op_rs1')
     action = action.replace('rs2', 'p->op.rs2')
     action = action.replace('rs3', 'p->op.rs3')
-    action = action.replace('immed', 'p->op.immed')
-    action = action.replace('constant', 'p->op_constant')
+    action = action.replace('immed', '(long)p->op.immed')
+    action = action.replace('constant', '(long)p->op_constant')
     ef.write('case {:>20s}: {:s};  INCPC({:d});  break;\n'.format(op, action, Opcode[op][3]))
 
 af.close()

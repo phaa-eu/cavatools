@@ -4,44 +4,9 @@
 
 #ifndef CAVEAT_H
 #define CAVEAT_H
-
-/*
-  Caveat trace records are 64 bits.  The fields are
-     4-bit opcode, described below
-     4-bit hart number when time multiplexed
-     8-bit delta cycles from last event
-    48-bit memory address
-  Timing event has 56-bit absolute cycle number and no delta field
-
-   6         5         4         3         2         1         0  bit pos
-3210987654321098765432109876543210987654321098765432109876543210  --------
-a.......a.......a.......a.......a.......a.......ddddddddhhhhcccc  Memory Event
-c.......c.......c.......c.......c.......c.......c.......hhhhcccc  Timing Event
-
-*/
-
-enum tr_opcode
-  { tr_eof,			/* end of file/fifo */
-    tr_time,			/* current simulation cycle number */
-    tr_fetch,			/* instruction cache read */
-    tr_remove,			/* instruction cache eviction */
-    tr_shared,			/* data cache read in shared mode */
-    tr_exclusive,		/* data cache read in exclusive mode */
-    tr_dirty,			/* data cache change clean to dirty mode */
-    tr_evict,			/* data cache clean line eviction */
-    tr_update,			/* data cache dirty line write-back with eviction */
-    tr_clean,			/* data cache dirty line write-back without eviction */
-    tr_lr,			/* load reserved */
-    tr_sc,			/* store conditional */
-    tr_amo,			/* atomic read-modify-write */
-  };
-
-#define tr_code(tr)   ((uint64_t)(tr) & 0x00000000000000fL)
-#define tr_hart(tr)  (((uint64_t)(tr) >>  4) & 0x0fL)
-#define tr_delta(tr) (((uint64_t)(tr) >>  8) & 0xffL)
-#define tr_addr(tr)   (( int64_t)(tr) >> 16)
-#define tr_cycle(tr)  ((uint64_t)(tr) >>  8)
-
+  
+typedef long Addr_t;
+#define GEN_SEGV  (*((char*)0) = 1)
 
 /*
   Utility stuff.
@@ -74,15 +39,17 @@ int parse_options( const char** argv );
   Simulation configuration.
 */
 struct conf_t {
+  long simulate;		/* do performance simulation */
+  const char* func;		/* name of function to analyze */
+  Addr_t breakpoint;		/* entrypoint of func */
+  long after;			/* countdown, negative=start pipeline simulation */
+  long every;			/* simulate every n-th calls */
+  long ecalls;			/* log system calls */
+  long visible;			/* show each instruction execution */
+  
   long report;			/* interval, in millions of instructions */
   long quiet;			/* no progress report */
-  long simulate;		/* do performance counting */
-  const char* func;		/* function to analyze */
   const char* perf;		/* name of shared segment with counters */
-  long breakpoint;		/* entrypoint of traced function */
-  long after;			/* countdown, negative=start pipeline simulation */
-  long every;			/* but only trace once per n-1 calls */
-  long skip;			/* skip until negative, reset to every */
   long cores;			/* number of cores in simulation */
   long mhz;			/* pretend clock MHz */
   long branch;			/* branch delay */
@@ -96,7 +63,6 @@ struct conf_t {
   long dways;			/* DC set associativity */
   long dline;			/* DC line size */
   long drows;			/* DC number of sets */
-  long ecalls;			/* log system calls */
 };
 
 extern struct conf_t conf;

@@ -84,7 +84,7 @@
 @ {-11:0}            rs1[5] 100         rd[5]        00000 11		LBU		rd,immed(rs1)		mlx	rd,rs1		IR(rd).ul = (unsigned long)LOAD_UB(IR(rs1).l+immed, 4)
 @ {-11:0}            rs1[5] 101         rd[5]        00000 11		LHU		rd,immed(rs1)		mlx	rd,rs1		IR(rd).ul = (unsigned long)LOAD_UH(IR(rs1).l+immed, 4)
 @ {-11:0}            rs1[5] 110         rd[5]        00000 11		LWU		rd,immed(rs1)		mlx	rd,rs1		IR(rd).ul =                LOAD_UW(IR(rs1).l+immed, 4)
-@ {-11:0}            rs1[5] 010         fd[5]        00001 11		FLW		fd,immed(rs1)		mlw	fd,rs1		FR(rd).f  =                LOAD_F( IR(rs1).l+immed, 4); box(rd)
+@ {-11:0}            rs1[5] 010         fd[5]        00001 11		FLW		fd,immed(rs1)		mlw	fd,rs1		FR(rd).f  =                LOAD_F( IR(rs1).l+immed, 4); boxnan(rd)
 @ {-11:0}            rs1[5] 011         fd[5]        00001 11		FLD		fd,immed(rs1)		mlw	fd,rs1		FR(rd).d  =                LOAD_D( IR(rs1).l+immed, 4)
 
 @ {-11:5}     rs2[5] rs1[5] 000         {4:0}        01000 11		SB		rs2,immed(rs1)		ms2	-,rs1,rs2	STORE_B(IR(rs1).l+immed, 4, IR(rs2).l)
@@ -114,7 +114,7 @@
 @ {-11:0}            rs1[5] 000         rd[5]        00100 11		ADDI		rd,rs1,immed		i	rd,rs1		IR(rd).l  =  IR(rs1).l  +  immed
 @ 000000       {5:0} rs1[5] 001         rd[5]        00100 11		SLLI		rd,rs1,immed		i	rd,rs1		IR(rd).ul =  IR(rs1).ul << immed
 @ {-11:0}            rs1[5] 010         rd[5]        00100 11		SLTI		rd,rs1,immed		i	rd,rs1		IR(rd).l  = (IR(rs1).l  <                 immed) ? 1:0
-@ {-11:0}            rs1[5] 011         rd[5]        00100 11		SLTIU		rd,rs1,immed		i	rd,rs1		IR(rd).ul = (IR(rs1).ul <  (unsigned long)immed) ? 1:0
+@ {-11:0}            rs1[5] 011         rd[5]        00100 11		SLTIU		rd,rs1,immed		i	rd,rs1		IR(rd).l  = (IR(rs1).ul <  (unsigned long)immed) ? 1:0
 @ {-11:0}            rs1[5] 100         rd[5]        00100 11		XORI		rd,rs1,immed		i	rd,rs1		IR(rd).l  =  IR(rs1).l  ^  immed
 @ 000000       {5:0} rs1[5] 101         rd[5]        00100 11		SRLI		rd,rs1,immed		i	rd,rs1		IR(rd).ul =  IR(rs1).ul >> immed
 @ 010000       {5:0} rs1[5] 101         rd[5]        00100 11		SRAI		rd,rs1,immed		i	rd,rs1		IR(rd).l  =  IR(rs1).l  >> immed
@@ -200,8 +200,8 @@
 @ 1101001      00010 rs1[5] 111         fd[5]        10100 11		FCVT_dyn.D.L	fd,rs1			f2	fd,rs1		  FCVTDL_dyn(rd, rs1)
 @ 1101001      00011 rs1[5] 111         fd[5]        10100 11		FCVT_dyn.D.LU	fd,rs1			f2	fd,rs1		 FCVTDLU_dyn(rd, rs1)
 
-@ 0100000      00001 fs1[5] 111         rd[5]        10100 11		FCVT_dyn.S.D	fd,fs1			f	rd,fs1		 FCVTSD_dyn(rd, rs1)
-@ 0100001      00000 fs1[5] 111         rd[5]        10100 11		FCVT_dyn.D.S	fd,fs1			f	rd,fs1		 FCVTDS_dyn(rd, rs1)
+@ 0100000      00001 fs1[5] 111         rd[5]        10100 11		FCVT_dyn.S.D	fd,fs1			f	fd,fs1		 FCVTSD_dyn(rd, rs1)
+@ 0100001      00000 fs1[5] 111         rd[5]        10100 11		FCVT_dyn.D.S	fd,fs1			f	fd,fs1		 FCVTDS_dyn(rd, rs1)
 
 
 
@@ -244,8 +244,8 @@
 @ 1101001      00010 rs1[5] {2:0}       fd[5]        10100 11		FCVT_rm.D.L	fd,rs1			f2	fd,rs1		  FCVTDL(immed, rd, rs1)
 @ 1101001      00011 rs1[5] {2:0}       fd[5]        10100 11		FCVT_rm.D.LU	fd,rs1			f2	fd,rs1		 FCVTDLU(immed, rd, rs1)
 
-@ 0100000      00001 fs1[5] {2:0}       rd[5]        10100 11		FCVT_rm.S.D	fd,fs1			f	rd,fs1		 FCVTSD(immed, rd, rs1)
-@ 0100001      00000 fs1[5] {2:0}       rd[5]        10100 11		FCVT_rm.D.S	fd,fs1			f	rd,fs1		 FCVTDS(immed, rd, rs1)
+@ 0100000      00001 fs1[5] {2:0}       rd[5]        10100 11		FCVT_rm.S.D	fd,fs1			f	fd,fs1		 FCVTSD(immed, rd, rs1)
+@ 0100001      00000 fs1[5] {2:0}       rd[5]        10100 11		FCVT_rm.D.S	fd,fs1			f	fd,fs1		 FCVTDS(immed, rd, rs1)
 
 
 @ 1010000     fs2[5] fs1[5] 010         rd[5]        10100 11		FEQ.S		rd,fs1,fs2		fx	rd,fs1,fs2	FEQS(rd, rs1, rs2)
@@ -260,19 +260,19 @@
 @ 0010101     fs2[5] fs1[5] 000         fd[5]        10100 11		FMIN.D		fd,fs1,fs2		f	fd,fs1,fs2	FMIND(rd, rs1, rs2)
 @ 0010101     fs2[5] fs1[5] 001         fd[5]        10100 11		FMAX.D		fd,fs1,fs2		f	fd,fs1,fs2	FMAXD(rd, rs1, rs2)
 
-@ 0010000     fs2[5] fs1[5] 000         fd[5]        10100 11		FSGNJ.S		fd,fs1,fs2		f	fd,fs1,fs2	FR(rd).ui = sgnj32(rs1, rs2, 0,0); box(rd)
-@ 0010000     fs2[5] fs1[5] 001         fd[5]        10100 11		FSGNJN.S	fd,fs1,fs2		f	fd,fs1,fs2	FR(rd).ui = sgnj32(rs1, rs2, 1,0); box(rd)
-@ 0010000     fs2[5] fs1[5] 010         fd[5]        10100 11		FSGNJX.S	fd,fs1,fs2		f	fd,fs1,fs2	FR(rd).ui = sgnj32(rs1, rs2, 0,1); box(rd)
+@ 0010000     fs2[5] fs1[5] 000         fd[5]        10100 11		FSGNJ.S		fd,fs1,fs2		f	fd,fs1,fs2	FR(rd).ui = sgnj32(rs1, rs2, 0,0); boxnan(rd)
+@ 0010000     fs2[5] fs1[5] 001         fd[5]        10100 11		FSGNJN.S	fd,fs1,fs2		f	fd,fs1,fs2	FR(rd).ui = sgnj32(rs1, rs2, 1,0); boxnan(rd)
+@ 0010000     fs2[5] fs1[5] 010         fd[5]        10100 11		FSGNJX.S	fd,fs1,fs2		f	fd,fs1,fs2	FR(rd).ui = sgnj32(rs1, rs2, 0,1); boxnan(rd)
 
 @ 0010001     fs2[5] fs1[5] 000         fd[5]        10100 11		FSGNJ.D		fd,fs1,fs2		f	fd,fs1,fs2	FR(rd).ul = sgnj64(rs1, rs2, 0,0)
 @ 0010001     fs2[5] fs1[5] 001         fd[5]        10100 11		FSGNJN.D	fd,fs1,fs2		f	fd,fs1,fs2	FR(rd).ul = sgnj64(rs1, rs2, 1,0)
 @ 0010001     fs2[5] fs1[5] 010         fd[5]        10100 11		FSGNJX.D	fd,fs1,fs2		f	fd,fs1,fs2	FR(rd).ul = sgnj64(rs1, rs2, 0,1)
 
-@ 1110000      00000 fs1[5] 000         rd[5]        10100 11		FMV.X.W		rd,fs1			x3	rd,fs1		IR(rd).ul = FR(rs1).ul
-@ 1111000      00000 rs1[5] 000         fd[5]        10100 11		FMV.W.X		fd,rs1			w2	fd,rs1		FR(rd).ul = IR(rs1).ul
+@ 1110000      00000 fs1[5] 000         rd[5]        10100 11		FMV.X.W		rd,fs1			x3	rd,fs1		IR(rd).l = FR(rs1).i
+@ 1111000      00000 rs1[5] 000         fd[5]        10100 11		FMV.W.X		fd,rs1			w2	fd,rs1		FR(rd).i = IR(rs1).i; boxnan(rd)
 
-@ 1110001      00000 fs1[5] 000         rd[5]        10100 11		FMV.X.D		rd,fs1			x3	rd,fs1		IR(rd).ul = FR(rs1).ul
-@ 1111001      00000 rs1[5] 000         fd[5]        10100 11		FMV.D.X		fd,rs1			w2	fd,rs1		FR(rd).ul = IR(rs1).ul
+@ 1110001      00000 fs1[5] 000         rd[5]        10100 11		FMV.X.D		rd,fs1			x3	rd,fs1		IR(rd).l = FR(rs1).l
+@ 1111001      00000 rs1[5] 000         fd[5]        10100 11		FMV.D.X		fd,rs1			w2	fd,rs1		FR(rd).l = IR(rs1).l
 
 
 # Special Instructions

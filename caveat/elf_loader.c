@@ -27,6 +27,7 @@
 
 
 
+
 #define MEM_END		0x60000000L
 #define STACK_SIZE	0x01000000L
 #define BRK_SIZE	0x01000000L
@@ -122,8 +123,10 @@ Addr_t load_elf_binary( const char* file_name, int include_data )
 
   info->entry = eh.e_entry + bias;
   for (int i = eh.e_phnum - 1; i >= 0; i--) {
+    //    fprintf(stderr, "section %d p_vaddr=0x%lx p_memsz=0x%lx\n", i, ph[i].p_vaddr, ph[i].p_memsz);
     quitif(ph[i].p_type==PT_INTERP, "Not a statically linked ELF program");
     if(ph[i].p_type == PT_LOAD && ph[i].p_memsz) {
+      //      fprintf(stderr, "  loaded");
       uintptr_t prepad = ph[i].p_vaddr % RISCV_PGSIZE;
       uintptr_t vaddr = ph[i].p_vaddr + bias;
       if (vaddr + ph[i].p_memsz > info->brk_min)

@@ -6,7 +6,7 @@ _dummy := $(shell mkdir -p $B)
 _dummy := $(shell mkdir -p $R/include/cava)
 
 # Object files for libcava.a
-aobj := elf_loader.o insn.o cache.o
+aobj := elf_loader.o insn.o cache.o perf.o
 aobj := $(addprefix $B/,$(aobj))
 
 # Object files for caveat not in libcava.a
@@ -21,8 +21,7 @@ incf := opcodes.h insn.h caveat.h core.h cache.h lru_fsm_1way.h lru_fsm_2way.h l
 libs := $R/lib/softfloat.a -lrt -lm
 
 # Compiler flags
-//CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O3 -pthread
-CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O0
+CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O3
 LDFLAGS	:= -Wl,-Ttext=70000000
 
 
@@ -42,6 +41,7 @@ install:  all
 clean:
 	rm -f decode_insn.h disasm_insn.h execute_insn.h ecall_nums.h opcodes.h opcodes_attr.h *.o *~ ./#*#
 	rm -rf build
+	rm -f $R/lib/libcava.a
 
 
 # Emulator and library
@@ -71,6 +71,9 @@ $B/slow_sim.o:  slow_sim.c
 	$(CC) $(CFLAGS) -Ofast -o $@ -c $<
 
 $B/core.o:  core.c core.h
+	$(CC) $(CFLAGS) -o $@ -c $<
+
+$B/perf.o:  perf.c core.h
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 $B/elf_loader.o : elf_loader.c

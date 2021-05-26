@@ -19,7 +19,8 @@
 #include "caveat.h"
 #include "opcodes.h"
 #include "insn.h"
-#include "perfctr.h"
+#include "cache.h"
+#include "core.h"
 
 
 #define FRAMERATE    60		/* frames per second */
@@ -30,11 +31,13 @@
 int global_width = COUNT_WIDTH;
 int local_width = COUNT_WIDTH;
 
-struct perfCounters_t perf;
+struct perf_t perf;
+int corenum;
 
 WINDOW *menu;
 struct histogram_t global, local;
 struct disasm_t disasm;
+WINDOW* summary;
 
 time_t start_tick;
 long insn_count =0;
@@ -89,7 +92,7 @@ void histo_delete(struct histogram_t* histo)
   memset(histo, 0, sizeof(struct histogram_t));
 }
 
-void histo_compute(struct histogram_t* histo, long base, long bound)
+void histo_compute(int corenum, struct histogram_t* histo, long base, long bound)
 {
   if (base == 0 || bound == 0)
     return;
@@ -99,7 +102,7 @@ void histo_compute(struct histogram_t* histo, long base, long bound)
   histo->range = range;
   long pc = base;
   struct insn_t* p = insn(pc);
-  struct count_t* c = count(pc);
+  struct count_t* c = &perf.count[corenum][(pc-perf.h->base)/2];
   long max_count = 0;
   for (int i=0; i<histo->bins; i++) {
     long mcount = 0;
@@ -185,56 +188,68 @@ int fmtpercent(char* b, long num, long over)
   return sprintf(b, " .%03u%%", (unsigned)((percent+0.005)*100));
 }
 
-void disasm_paint(struct disasm_t* disasm)
+void disasm_paint(int corenum, struct disasm_t* disasm)
 {
   long numcycles = 0;
   WINDOW* win = disasm->win;
   long pc = disasm->base;
+  struct core_t* cpu = &perf.core[corenum];
+  struct count_t* countA = perf.count[corenum];
+  long* icmissA = perf.icmiss[corenum];
+  long* dcmissA = perf.dcmiss[corenum];
+#define pcount(pc)  &countA[(pc-perf.h->base)/2]
+#define icmiss(pc) &icmissA[(pc-perf.h->base)/2]
+#define dcmiss(pc) &dcmissA[(pc-perf.h->base)/2]
   wmove(win, 0, 0);
   wprintw(win, "%16s %-5s %-4s %-5s %-5s", "Count", " CPI", "#ssi", "I$", "D$");
-  wprintw(win, "%7.1fB insns  CPI=%5.2f", perf.h->insns/1e9, (double)perf.h->cycles/perf.h->insns);
+  wprintw(win, "%7.1fB insns  CPI=%5.2f", cpu->count.insn/1e9, (double)cpu->count.cycle/cpu->count.insn);
   //  wprintw(win, "] %8s %8s %s\n", "PC", "Hex", "Assembly                q=quit");
   if (pc != 0) {
     const struct insn_t* p = insn(pc);
-    const struct count_t* c = count(pc);
+    struct count_t* c = pcount(pc);
     const long* icm = icmiss(pc);
     const long* dcm = dcmiss(pc);
     for (int y=1; y<getmaxy(win) && pc<perf.h->bound; y++) {    
-      wmove(win, y, 0);
       long total = c->count[0] + c->count[1] + c->count[2];
+      
+      wmove(win, y, 0);
       if (total != disasm->old[y])
 	disasm->decay[y] = HOT_COLOR*PERSISTENCE;
       disasm->old[y] = total;
       paint_count_color(win, 16, total, disasm->decay[y], 1);
       if (disasm->decay[y] > 0)
 	disasm->decay[y]--;
-
       double cpi = (double)c->cycles/total;
       int dim = cpi < 1.0+EPSILON || total == 0;
+
+      /* average superscalar bundle size */
+      long npc = pc;
+      struct count_t* d = c;
+      long bundle = d->count[0];
+      //      wprintw(win, "%7ld %7ld %7ld", d->count[0], d->count[1], d->count[2]);
+      for (int i=1; i<3; i++) {
+	d    += (shortOp(insn(npc)->op_code) ? 1 : 2);
+	npc  += (shortOp(insn(npc)->op_code) ? 2 : 4);
+	bundle += d->count[i];
+      }
+      double assb = (double)bundle/total;
       if (dim)  wattron(win, A_DIM);
       if (total == 0 || cpi < 0.01) wprintw(win, " %-5s", "");
       else if (c->cycles == total)  wprintw(win, " %-5s", " 1");
       else                          wprintw(win, " %5.2f", cpi);
-      /* average superscalar bundle size */
-      {
-	long npc = pc;
-	double assb = 0.0;
-	for (int i=0; i<3; i++) {
-	  //	  assb += (i+1) * (double)count(npc)->count[i];
-	  assb += count(npc)->count[i];
-	  npc  += (shortOp(insn(npc)->op_code) ? 2 : 4);
-	}
-	assb /= total;
-	if (total == 0 || assb < 0.01)
-	  wprintw(win, "     ");
-	else
-	  wprintw(win, " %4.2f", assb);
-      }      
+      if (total == 0 || assb < 0.01)
+	wprintw(win, "     ");
+      //    else if (total == bundle)
+      else if (0.99 < assb && assb < 1.01)
+	wprintw(win, " 1   ");
+      else
+	wprintw(win, " %4.2f", assb);
       char buf[1024];
       char* b = buf;
       b+=fmtpercent(b, *icm, total);
       b+=fmtpercent(b, *dcm, total);
-      //b+=sprintf(b, "%12ld %12ld", *dcm, total);
+      //      b+=sprintf(b , " %8ld", *icm);
+      //      b+=sprintf(b , " %8ld", *dcm);
       b+=sprintf(b, " ");
       b+=format_pc(b, 28, pc);
       b+=format_insn(b, p, pc, *((unsigned int*)pc));
@@ -251,16 +266,34 @@ void disasm_paint(struct disasm_t* disasm)
   wnoutrefresh(win);
 }
 
+void summary_paint()
+{
+  wmove(summary, 0, 0);
+  for (int i=0; i<perf.h->cores; i++) {
+    struct core_t* cpu = &perf.core[i];
+    double ipc = (double)cpu->count.insn / cpu->count.cycle;
+    if (i == corenum)
+      wattron(summary, A_REVERSE);
+    wprintw(summary,"Core[%ld]r=%d insn=%14ld(%5ld ecalls) cycle=%14ld IPC=%5.3f\n",
+	    i, cpu->running, cpu->count.insn, cpu->count.ecalls, cpu->count.cycle, ipc);
+    if (i == corenum)
+      wattroff(summary, A_REVERSE);
+  }
+  wclrtobot(summary);
+  wnoutrefresh(summary);
+}
+
 void resize_histos()
 {
   histo_delete(&global);
   histo_delete(&local);
   disasm_delete(&disasm);
   histo_create(&global, LINES, global_width, 0, 0);
-  histo_compute(&global, perf.h->base, perf.h->bound);
-  histo_create(&local, LINES, local_width, 0, global_width+1);
-  histo_compute(&local, 0, 0);
-  disasm_create(&disasm, LINES, COLS-global_width-local_width, 0, global_width+local_width);
+  histo_compute(corenum, &global, perf.h->base, perf.h->bound);
+  histo_create(&local, LINES, local_width, 0, global_width);
+  histo_compute(corenum, &local, 0, 0);
+  summary = newwin(perf.h->cores, COLS-global_width-local_width, 0, global_width+local_width);
+  disasm_create(&disasm, LINES-perf.h->cores, COLS-global_width-local_width, perf.h->cores, global_width+local_width);
   disasm.base = 0;
   doupdate();
 }
@@ -271,9 +304,10 @@ void interactive()
   for (;;) {
     gettimeofday(&t1, 0);
     //   histo_compute(&global, perf.h->base, perf.h->bound);
-    histo_compute(&global, insnSpace.base, insnSpace.bound);
-    histo_compute(&local, local.base, local.bound);
-    disasm_paint(&disasm);
+    histo_compute(corenum, &global, insnSpace.base, insnSpace.bound);
+    histo_compute(corenum, &local, local.base, local.bound);
+    summary_paint();
+    disasm_paint(corenum, &disasm);
     histo_paint(&global, "Global", local.base, local.bound);
     histo_paint(&local, "Local", disasm.base, disasm.bound);
     doupdate();
@@ -310,6 +344,11 @@ void interactive()
 	  long npc = disasm.base + (shortOp(insn(disasm.base)->op_code) ? 2 : 4);
 	  if (npc < perf.h->bound)
 	    disasm.base = npc;
+	}
+      }
+      else if (wenclose(summary, event.y, event.x)) {
+	if (event.bstate & BUTTON1_PRESSED) {
+	  corenum = event.y;
 	}
       }
       else if (wenclose(global.win, event.y, event.x)) {
@@ -375,7 +414,7 @@ static int list =0;
   
 const char* usage = "erised --count=name [erised-options]";
 const struct options_t opt[] =
-  {  { "--perf=s",	.s=&perf_path,	.ds=0,	.h="Shared memory counting structure =name" },
+  {  { "--perf=s",	.s=&perf_path,	.ds="caveat",	.h="Shared memory counting structure =name" },
      { 0 }
   };
 
@@ -386,8 +425,7 @@ int main(int argc, const char** argv)
   if (argc == numopts+1 || !perf_path)
     help_exit();
   long entry = load_elf_binary(argv[1+numopts], 0);
-  insnSpace_init();
-  perf_open(perf_path);
+  perf_init(perf_path, 0);
 
   initscr();			/* Start curses mode */
   start_color();		/* Start the color functionality */

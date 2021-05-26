@@ -13,9 +13,6 @@ extern "C" {
 #define ROUNDUP(a, b) ((((a)-1)/(b)+1)*(b))
 #define ROUNDDOWN(a, b) ((a)/(b)*(b))
 
-  
-typedef long Addr_t;
-#define GEN_SEGV  (*((char*)0) = 0)
 
 
 struct reg_t {
@@ -109,7 +106,7 @@ static inline int valid_pc(Addr_t pc)
 #ifdef DEBUG
 static inline struct insn_t* insn(long pc) {
   if (valid_pc(pc)) return &insnSpace.insn_array[(pc-insnSpace.base)/2];
-  else abort();
+  else GEN_SEGV; //abort();
 }
 #else
 #define insn(pc)  ( &insnSpace.insn_array[(pc-insnSpace.base)/2] )

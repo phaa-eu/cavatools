@@ -1,45 +1,82 @@
 /*
-  Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
+#define DEBUG
 
-extern unsigned long lrsc_set;  // globally shared location for atomic lock
+#define PCTRACEBUFSZ	(1<<5)
+#define MAXCALLDEPTH	(1<<6)
+
+#define CLONESTACKSZ	(1<<14)
+
+
+struct pctrace_t {
+  Addr_t pc;			/* instruction program counter */
+  struct reg_t regval;		/* value of rd (or rs2 for stores) */
+};
+
+struct callstack_t {		/* debuging call stack */
+  Addr_t tgt;			/* address of called function */
+  Addr_t ra;			/* return address */
+};
 
 /*
   HART definition
 */
+
+
 struct core_t {
   struct reg_t reg[64];		/* Register files, IR[0-31], FR[32-63] */
   Addr_t pc;			/* Next instruction to be executed */
-  int tid;			/* Linux thread id (not same as pthread) */
+    
+  union {			/* floating-point control and status register */
+    struct {
+      unsigned flags : 5;	/* accrued exceptions NV,DZ,OF,UF,NX */
+      unsigned rm    : 3;	/* rounding mode */
+    } f;
+    long l;
+  } fcsr;
 
-  struct {
-    long coreid;
-    long ustatus;
-    long mcause;
-    Addr_t mepc;
-    long mtval;
-    union {
-      struct {
-	unsigned flags	:  5;
-	unsigned rmode	:  3;
-      } fcsr;
-      unsigned long fcsr_v;
-    };
-  } state;
+  int tid;			/* Linux thread id (not same as pthread) */
+  int fast_mode;		/* simulate or not */
+  volatile int running;		/* main threads waits for zero */
+  volatile int exceptions;	/* bit mask of pending exceptions */
+#define BREAKPOINT		0b00000001
+#define EXIT_SYSCALL		0b00000010
+#define STOP_SIMULATION		0b00000100
+#define ILLEGAL_INSTRUCTION	0b00001000
+#define ECALL_INSTRUCTION	0b00010000
   
   struct cache_t icache;	/* instruction cache model */
   struct cache_t dcache;	/* data cache model */
+  long busy[256];		/* time when register available */
+  long cur_line;		/* current insn cache line set by ilookup() */
   
-  struct {
-    long insn_executed;
-    long cycles_simulated;
-    long ecalls;
-    long start_tick;
-    struct timeval start_timeval;
+  struct {			/* hardware performance monitor structure */
+    long cycle;			/* machine cycle counter */
+    long insn;			/* machine instruction retired counter */
+    long ecalls;		/* machine environment call counter */
+  } count;
+
+  struct {			/* configuration structure */
+    struct timeval start_tv;	/* when core was cloned */
+    long start_tick;		/* on host computer */
     long after;			/* countdown, negative=start pipeline simulation */
-    long skip;			/* skip until negative, reset to every */
-    long visible;
-  } perf;
+    long every;			/* simulate every n-th calls */
+    long ecalls;		/* log system calls */
+#ifndef DEBUG
+  } conf;
+#else
+    long visible;		/* show each instruction execution */
+  } conf;
+
+  struct {			/* debug structure */
+    struct pctrace_t trace[PCTRACEBUFSZ];
+    struct callstack_t stack[MAXCALLDEPTH];
+    int tb;			/* pc trace circular buffer pointer */
+    int cs;			/* call stack top */
+  } debug;
+#endif
+
 };
 
 /*
@@ -77,31 +114,33 @@ struct perf_t {
 
 
 extern struct core_t* core;	/* main thread in core[0] */
-extern int active_cores;	/* cores in use, maximum is conf.cores */
+extern volatile int active_cores; /* cores in use, maximum is conf.cores */
 extern struct perf_t perf;	/* shared segment for performance monitoring */
 
 
 void init_core(struct core_t* cpu, struct core_t* parent, Addr_t entry_pc, Addr_t stack_top, Addr_t thread_ptr);
-int run_program(struct core_t* cpu);
+int interpreter(struct core_t* cpu);
 int outer_loop(struct core_t* cpu);
-void fast_sim(struct core_t*);
-void slow_sim(struct core_t*);
+void fast_sim(struct core_t*, long);
+void slow_sim(struct core_t*, long);
 void single_step(struct core_t*);
-int proxy_ecall( struct core_t* cpu );
-void proxy_csr( struct core_t* cpu, const struct insn_t* p, int which );
+void proxy_ecall(struct core_t* cpu);
+void proxy_csr(struct core_t* cpu, const struct insn_t* p, int which);
 void status_report(struct core_t* cpu, FILE*);
 void final_status();
 void parent_func(struct core_t* cpu);
 int child_func(void* arg);
 void perf_init(const char* shm_name, int reader);
 void perf_close();
+void print_pctrace(struct core_t* cpu);
+void print_callstack(struct core_t* cpu);
 
 
 #define  IR(rn)  cpu->reg[rn]	/* integer registers in 0..31 */
 #define  FR(rn)  cpu->reg[rn]	/* floating point registers in 32..63 */
 #define sex(rd)  IR(rd).l  = IR(rd).l  << 32 >> 32 /* sign extend integer register */
 #define zex(rd)  IR(rd).ul = IR(rd).ul << 32 >> 32 /* zero extend integer register */
-#define box(rd)					   /* extend single precision float to 64 bits */
+#define boxnan(rd)  cpu->reg[rd].ul |= 0xffffffff00000000UL
 
 #ifdef SOFT_FP
 #define  F32(rn)  cpu->reg[rn].f32

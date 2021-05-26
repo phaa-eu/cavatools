@@ -15,6 +15,8 @@
 #include <fcntl.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
+#include <signal.h>
+#include <linux/futex.h>
 #include <sys/time.h>
 #include <sys/times.h>
 #include <math.h>
@@ -27,11 +29,7 @@
 #include "cache.h"
 #include "core.h"
 
-struct core_t* core;		/* array of pointers to cores */
-int active_cores = 1;		/* main thread */
-struct perf_t perf;
-
-unsigned long lrsc_set = 0;	/* global atomic lock */
+volatile int active_cores = 1;	/* main thread */
 
 
 void init_core(struct core_t* cpu, struct core_t* parent, Addr_t entry_pc, Addr_t stack_top, Addr_t thread_ptr)
@@ -43,151 +41,135 @@ void init_core(struct core_t* cpu, struct core_t* parent, Addr_t entry_pc, Addr_
     for (int i=32; i<64; i++)	/* initialize FP registers to boxed float 0 */
       cpu->reg[i].ul = 0xffffffff00000000UL;
   }
+  cpu->running = 1;
   cpu->pc = entry_pc;
   cpu->reg[SP].l = stack_top;
   cpu->reg[TP].l = thread_ptr;
   /* start with empty caches */
   init_cache(&cpu->icache, "Instruction", conf.ipenalty, conf.iways, conf.iline, conf.irows, 0);
   init_cache(&cpu->dcache, "Data",        conf.dpenalty, conf.dways, conf.dline, conf.drows, 1);
-  cpu->state.coreid = cpu - core;
-  cpu->perf.start_tick = clock();
-  gettimeofday(&cpu->perf.start_timeval, 0);
+  cpu->conf.start_tick = clock();
+  gettimeofday(&cpu->conf.start_tv, 0);
 }
 
-int run_program(struct core_t* cpu)
+int interpreter(struct core_t* cpu)
 {
-  if (conf.breakpoint)
-    insert_breakpoint(conf.breakpoint);
-  int fast_mode = 1;
   while (1) {	       /* terminated by program making exit() ecall */
-    if (fast_mode)
-      fast_sim(cpu);
+    if (cpu->fast_mode)
+      fast_sim(cpu, conf.report);
     else
-      slow_sim(cpu);
-    if (cpu->state.mcause != 3) /* Not breakpoint */
-      break;
-    if (fast_mode) {
-      if (--cpu->perf.after > 0 || /* not ready to trace yet */
-	  --cpu->perf.skip > 0) {  /* only trace every n call */
-	cpu->perf.skip = conf.every;
-	/* put instruction back */
+      slow_sim(cpu, conf.report);
+    if (!conf.quiet)
+      status_report(cpu, stderr);
+    /* process all pending exceptions */
+    while (cpu->exceptions) {
+      if (cpu->exceptions & ECALL_INSTRUCTION) {
+	if (insn(cpu->pc)->op_code != Op_ecall) {
+	  fprintf(stderr, "core[%ld] ecall not at ecall!\n", cpu-core);
+	  print_pc(cpu->pc, stderr);
+	  print_insn(cpu->pc, stderr);
+	  exit(-2);
+	}
+	proxy_ecall(cpu);
+	cpu->pc += 4;
+	__sync_fetch_and_and(&cpu->exceptions, ~ECALL_INSTRUCTION);
+      }
+      else if (cpu->exceptions & BREAKPOINT) {
+	if (cpu->fast_mode) {
+	  if (--cpu->conf.after > 0) { /* not ready to trace yet */
+	    /* put instruction back */
+	    decode_instruction(insn(cpu->pc), cpu->pc);
+	    fast_sim(cpu, 1);	/* single step */
+	    /* reinserting breakpoint at subroutine entry */
+	    insert_breakpoint(conf.breakpoint);
+	    /* simulate every nth call */
+	  }
+	  else { /* insert breakpoint at subroutine return */
+	    if (cpu->reg[RA].a)	/* _start called with RA==0 */
+	      insert_breakpoint(cpu->reg[RA].a);
+	    cpu->fast_mode = 0;		/* start simulation */
+	  }
+	}
+	else {  /* reinserting breakpoint at subroutine entry */
+	  insert_breakpoint(conf.breakpoint);
+	  cpu->fast_mode = 1;		/* stop tracing */
+	  cpu->conf.after = cpu->conf.every;
+	}
 	decode_instruction(insn(cpu->pc), cpu->pc);
-	cpu->state.mcause = 0;
-	single_step(cpu);
-	/* reinserting breakpoint at subroutine entry */
-	insert_breakpoint(conf.breakpoint);
+	__sync_fetch_and_and(&cpu->exceptions, ~BREAKPOINT);
       }
-      else { /* insert breakpoint at subroutine return */
-	if (cpu->reg[RA].a)	/* _start called with RA==0 */
-	  insert_breakpoint(cpu->reg[RA].a);
-	fast_mode = 0;		/* start tracing */
+      else if (cpu->exceptions & (EXIT_SYSCALL|STOP_SIMULATION)) {
+	cpu->running = 0;
+	syscall(SYS_futex, &cpu->running, FUTEX_WAKE, 1);
+	return cpu->reg[10].i;
       }
+      else if (cpu->exceptions & ILLEGAL_INSTRUCTION) {
+	fprintf(stderr, "core generated ILLEGAL_INSTRUCTION exception\n");
+	GEN_SEGV;
+      }
+      else
+	abort();
     }
-    else {  /* reinserting breakpoint at subroutine entry */
-      insert_breakpoint(conf.breakpoint);
-      fast_mode = 1;		/* stop tracing */
-    }
-    cpu->state.mcause = 0;
-    decode_instruction(insn(cpu->pc), cpu->pc);
-  }
-  if (cpu->state.mcause == 8) { /* only exit() ecall not handled */
-    //cpu->perf.insn_executed++;	/* don't forget to count last ecall */
-    return cpu->reg[10].i;
-  }
-  /* The following cases do not fall out */
-  switch (cpu->state.mcause) {
-  case 2:
-    fprintf(stderr, "Illegal instruction at 0x%08lx\n", cpu->pc);
-    GEN_SEGV;
-  case 10:
-    fprintf(stderr, "Unknown instruction at 0x%08lx\n", cpu->pc);
-    GEN_SEGV;
-  default:
-    abort();
-  }
+  } /* while (1) */
 }
 
-void perf_init(const char* shm_name, int reader)
+
+void status_report(struct core_t* cpu, FILE* f)
 {
-  int n;			/* number of instruction parcels */
-  long sz;			/* size of shared segment */
-  char* s;			/* working pointer */
-  if (!reader) {
-    n = (insnSpace.bound - insnSpace.base) / 2;
-    sz = sizeof(struct perf_header_t);
-    sz += n * sizeof(struct insn_t);
-    sz += conf.cores * sizeof(struct core_t);
-    sz += conf.cores * n * sizeof(struct count_t);
-    sz += conf.cores * n * sizeof(long) * 2;
-    int fd = shm_open(shm_name, O_CREAT|O_TRUNC|O_RDWR, S_IRWXU);
-    dieif(fd<0, "shm_open() failed in perf_create");
-    dieif(ftruncate(fd, sz)<0, "ftruncate() failed in perf_create");
-    perf.h = (struct perf_header_t*)mmap(0, sz, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-    dieif(perf.h==0, "mmap() failed in perf_create");
-    s = (char*)perf.h;
-    memset(s, 0, sz);
-    perf.h->size = sz;
-    perf.h->cores = conf.cores;
-    perf.h->base  = insnSpace.base;
-    perf.h->bound = insnSpace.bound;
-  }
-  else {
-    int fd = shm_open(shm_name, O_RDONLY, 0);
-    dieif(fd<0, "shm_open() failed in perf_open");
-    perf.h = (struct perf_header_t*)mmap(0, sizeof(struct perf_header_t), PROT_READ, MAP_SHARED, fd, 0);    
-    dieif(perf.h==0, "first mmap() failed in perf_open");
-    sz = perf.h->size;
-    dieif(munmap(perf.h, sizeof(struct perf_header_t))<0, "munmap() failed in perf_open");
-    perf.h = (struct perf_header_t*)mmap(0, sz, PROT_READ, MAP_SHARED, fd, 0);
-    dieif(perf.h==0, "second mmap() failed in perf_open");
-    n = (perf.h->bound - perf.h->base) / 2;
-    s = (char*)perf.h;
-    insnSpace.base = perf.h->base;
-    insnSpace.bound = perf.h->bound;
-  }
-  s += sizeof(struct perf_header_t);
-  perf.insn_array = (struct insn_t*)s;
-  s += n*sizeof(struct insn_t);
-  perf.core = (struct core_t*)s;
-  s += perf.h->cores * sizeof(struct core_t);
-  perf.count = (struct count_t**)malloc(perf.h->cores * sizeof(void*));
-  for (int i=0; i<perf.h->cores; i++) {
-    perf.count[i] = (struct count_t*)s;
-    s += n*sizeof(struct count_t);
-  }
-  perf.icmiss = (long**)malloc(perf.h->cores * sizeof(long*));
-  for (int i=0; i<perf.h->cores; i++) {
-    perf.icmiss[i] = (long*)s;
-    s += n*sizeof(long);
-  }
-  perf.dcmiss = (long**)malloc(perf.h->cores * sizeof(long*));
-  for (int i=0; i<perf.h->cores; i++) {
-    perf.dcmiss[i] = (long*)s;
-    s += n*sizeof(long);
-  }
-  assert(s == (char*)perf.h+sz);
+  struct timeval *t1=&cpu->conf.start_tv, t2;
+  gettimeofday(&t2, 0);
+  double msec = (t2.tv_sec - t1->tv_sec)*1000;
+  msec += (t2.tv_usec - t1->tv_usec)/1000.0;
+  double mips = cpu->count.insn / (1e3*msec);
+  double ipc = (double)cpu->count.insn / cpu->count.cycle;
+  fprintf(f, "%sCore[%ld]fs=%d insn=%ld(%ld ecalls) cycle=%ld IPC=%5.3f in %3.1fs for %3.1f MIPS%s\r",
+	  color(cpu->tid), cpu-core, cpu->fast_mode, cpu->count.insn, cpu->count.ecalls, cpu->count.cycle, ipc, msec/1e3, mips, nocolor);
 }
-
-void perf_close()
-{
-  dieif(munmap(perf.h, perf.h->size)<0, "munmap() failed in perf_close");
-}
-
 
 void final_status()
 {
-  clock_t end_tick = clock();
+  fprintf(stderr, "\nFinal Status\n");
+  for (int i=0; i<active_cores; i++)
+    if (core[i].tid) {
+      fprintf(stderr, "\n");
+      status_report(&core[i], stderr);
+      fprintf(stderr, "\n");
+      print_cache(&core[i].icache, stderr);
+      print_cache(&core[i].dcache, stderr);
+    }
   fprintf(stderr, "\n\n");
-  for (int i=0; i<active_cores; i++) {
-    struct core_t* cpu = &core[i];
-    if (cpu->tid == 0)
-      continue;
-    struct timeval *t1=&cpu->perf.start_timeval, t2;
-    gettimeofday(&t2, 0);
-    double msec = (t2.tv_sec - t1->tv_sec)*1000;
-    msec += (t2.tv_usec - t1->tv_usec)/1000.0;
-    double mips = cpu->perf.insn_executed / (1e3*msec);
-    fprintf(stderr, "%sCore[%d] executed %ld instructions (%ld system calls) in %3.1f seconds for %3.1f MIPS%s\n",
-	    color(cpu->tid), i, cpu->perf.insn_executed, cpu->perf.ecalls, msec/1e3, mips, nocolor);
+}
+
+void print_pctrace(struct core_t* cpu)
+{
+  fprintf(stderr, "%score[%ld] last instructions\n", color(cpu->tid), cpu-core);
+  for (int i=0; i<PCTRACEBUFSZ; i++) {
+    Addr_t pc = cpu->debug.trace[cpu->debug.tb].pc;
+    struct insn_t* p = insn(pc);
+    int rd = p->op_rd;
+    if (writeOp(p->op_code))
+      rd = p->op.rs2;
+    if (rd)
+      fprintf(stderr, "[%016lx] ", cpu->debug.trace[cpu->debug.tb].regval.l);
+    else
+      fprintf(stderr, "[%16s] ", "");
+    print_pc(pc, stderr);
+    print_insn(pc, stderr);
+    cpu->debug.tb = (cpu->debug.tb+1) & (PCTRACEBUFSZ-1);
   }
+  fprintf(stderr, "%s", nocolor);
+}
+
+void print_callstack(struct core_t* cpu)
+{
+  fprintf(stderr, "%score[%ld] call stack\n", color(cpu->tid), cpu-core);
+  for (int i=cpu->debug.cs-1; i>=0; i--) {
+    struct callstack_t* csp = &cpu->debug.stack[i];
+    fprintf(stderr, "%*s%08lx:", 2*i, "", csp->tgt);
+    print_pc(csp->tgt, stderr);
+    fprintf(stderr, " <- %08lx:", csp->ra);
+    print_pc(csp->ra, stderr);
+    fprintf(stderr, "\n");
+  }
+  fprintf(stderr, "%s", nocolor);
 }

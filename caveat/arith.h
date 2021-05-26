@@ -18,7 +18,7 @@
 #include "softfloat_types.h"
 #include "softfloat.h"
 
-#define RM  cpu->state.fcsr.rmode
+#define RM  cpu->fcsr.f.rm
 #define SRM(m)  softfloat_roundingMode=((m)==7?RM:(m))
 #define SET_FPX  /* set_fp_exceptions() */
 
