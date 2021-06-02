@@ -29,7 +29,7 @@
 #include "cache.h"
 #include "core.h"
 
-struct core_t* core;		/* array of pointers to cores */
+struct core_t* core;	/* array of pointers to cores */
 struct perf_t perf;
 
 /* maxcores=0 means get from shared memory */
@@ -37,7 +37,6 @@ void perf_init(const char* shm_name, int maxcores)
 {
   int n;			/* number of instruction parcels */
   long sz;			/* size of shared segment */
-  char* s;			/* working pointer */
   if (maxcores) {
     n = (insnSpace.bound - insnSpace.base) / 2;
     sz = sizeof(struct perf_header_t);
@@ -50,8 +49,7 @@ void perf_init(const char* shm_name, int maxcores)
     dieif(ftruncate(fd, sz)<0, "ftruncate() failed in perf_create");
     perf.h = (struct perf_header_t*)mmap(0, sz, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     dieif(perf.h==0, "mmap() failed in perf_create");
-    s = (char*)perf.h;
-    memset(s, 0, sz);
+    memset(perf.h, 0, sz);
     perf.h->size = sz;
     perf.h->cores = maxcores;
     perf.h->base  = insnSpace.base;
@@ -67,10 +65,10 @@ void perf_init(const char* shm_name, int maxcores)
     perf.h = (struct perf_header_t*)mmap(0, sz, PROT_READ, MAP_SHARED, fd, 0);
     dieif(perf.h==0, "second mmap() failed in perf_open");
     n = (perf.h->bound - perf.h->base) / 2;
-    s = (char*)perf.h;
     insnSpace.base = perf.h->base;
     insnSpace.bound = perf.h->bound;
   }
+  char* s = (char*)perf.h;
   s += sizeof(struct perf_header_t);
   perf.insn_array = (struct insn_t*)s;
   if (maxcores == 0)
@@ -78,22 +76,23 @@ void perf_init(const char* shm_name, int maxcores)
   s += n*sizeof(struct insn_t);
   perf.core = (struct core_t*)s;
   s += perf.h->cores * sizeof(struct core_t);
-  perf.count = (struct count_t**)malloc(perf.h->cores * sizeof(void*));
+  perf.count = (volatile struct count_t**)malloc(perf.h->cores * sizeof(void*));
   for (int i=0; i<perf.h->cores; i++) {
     perf.count[i] = (struct count_t*)s;
     s += n*sizeof(struct count_t);
   }
-  perf.icmiss = (long**)malloc(perf.h->cores * sizeof(long*));
+  perf.icmiss = (volatile long**)malloc(perf.h->cores * sizeof(long*));
   for (int i=0; i<perf.h->cores; i++) {
-    perf.icmiss[i] = (long*)s;
+    perf.icmiss[i] = (volatile long*)s;
     s += n*sizeof(long);
   }
-  perf.dcmiss = (long**)malloc(perf.h->cores * sizeof(long*));
+  perf.dcmiss = (volatile long**)malloc(perf.h->cores * sizeof(long*));
   for (int i=0; i<perf.h->cores; i++) {
-    perf.dcmiss[i] = (long*)s;
+    perf.dcmiss[i] = (volatile long*)s;
     s += n*sizeof(long);
   }
   assert(s == (char*)perf.h+sz);
+  assert(s == (char*)perf.h+perf.h->size);
 }
 
 void perf_close()

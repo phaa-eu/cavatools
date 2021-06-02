@@ -114,7 +114,10 @@ static inline struct insn_t* insn(long pc) {
 
 static inline void insert_breakpoint(Addr_t pc)
 {
-  assert(valid_pc(pc));
+  if (!valid_pc(pc)) {
+    fprintf(stderr, "insert_breakpoint: not valid pc %lx\n", pc);
+    exit(-1);
+  }
   struct insn_t* p = &insnSpace.insn_array[(pc-insnSpace.base)/2];
   if (shortOp(p->op_code))
     p->op_code = Op_c_ebreak;

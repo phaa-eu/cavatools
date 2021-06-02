@@ -39,7 +39,6 @@ struct histogram_t global, local;
 struct disasm_t disasm;
 WINDOW* summary;
 
-time_t start_tick;
 long insn_count =0;
 
 inline static int min(int x, int y) { return x < y ? x : y; }
@@ -102,7 +101,7 @@ void histo_compute(int corenum, struct histogram_t* histo, long base, long bound
   histo->range = range;
   long pc = base;
   struct insn_t* p = insn(pc);
-  struct count_t* c = &perf.count[corenum][(pc-perf.h->base)/2];
+  volatile struct count_t* c = &perf.count[corenum][(pc-perf.h->base)/2];
   long max_count = 0;
   for (int i=0; i<histo->bins; i++) {
     long mcount = 0;
@@ -193,10 +192,10 @@ void disasm_paint(int corenum, struct disasm_t* disasm)
   long numcycles = 0;
   WINDOW* win = disasm->win;
   long pc = disasm->base;
-  struct core_t* cpu = &perf.core[corenum];
-  struct count_t* countA = perf.count[corenum];
-  long* icmissA = perf.icmiss[corenum];
-  long* dcmissA = perf.dcmiss[corenum];
+  volatile struct core_t* cpu = &perf.core[corenum];
+  volatile struct count_t* countA = perf.count[corenum];
+  volatile long* icmissA = perf.icmiss[corenum];
+  volatile long* dcmissA = perf.dcmiss[corenum];
 #define pcount(pc)  &countA[(pc-perf.h->base)/2]
 #define icmiss(pc) &icmissA[(pc-perf.h->base)/2]
 #define dcmiss(pc) &dcmissA[(pc-perf.h->base)/2]
@@ -206,9 +205,9 @@ void disasm_paint(int corenum, struct disasm_t* disasm)
   //  wprintw(win, "] %8s %8s %s\n", "PC", "Hex", "Assembly                q=quit");
   if (pc != 0) {
     const struct insn_t* p = insn(pc);
-    struct count_t* c = pcount(pc);
-    const long* icm = icmiss(pc);
-    const long* dcm = dcmiss(pc);
+    volatile struct count_t* c = pcount(pc);
+    volatile const long* icm = icmiss(pc);
+    volatile const long* dcm = dcmiss(pc);
     for (int y=1; y<getmaxy(win) && pc<perf.h->bound; y++) {    
       long total = c->count[0] + c->count[1] + c->count[2];
       
@@ -224,7 +223,7 @@ void disasm_paint(int corenum, struct disasm_t* disasm)
 
       /* average superscalar bundle size */
       long npc = pc;
-      struct count_t* d = c;
+      volatile struct count_t* d = c;
       long bundle = d->count[0];
       //      wprintw(win, "%7ld %7ld %7ld", d->count[0], d->count[1], d->count[2]);
       for (int i=1; i<3; i++) {
@@ -266,16 +265,17 @@ void disasm_paint(int corenum, struct disasm_t* disasm)
   wnoutrefresh(win);
 }
 
-void summary_paint()
+void paint_summary()
 {
   wmove(summary, 0, 0);
   for (int i=0; i<perf.h->cores; i++) {
-    struct core_t* cpu = &perf.core[i];
+    volatile struct core_t* cpu = &perf.core[i];
     double ipc = (double)cpu->count.insn / cpu->count.cycle;
+    double pcti = cpu->count.insn / 100.0;
     if (i == corenum)
       wattron(summary, A_REVERSE);
-    wprintw(summary,"Core[%ld]r=%d insn=%14ld(%5ld ecalls) cycle=%14ld IPC=%5.3f\n",
-	    i, cpu->running, cpu->count.insn, cpu->count.ecalls, cpu->count.cycle, ipc);
+    wprintw(summary,"  Core[%ld]%c IPC=%4.2f I$=%6.3f%% D$=%6.3f%% insn=%14ld(%5ld ecalls) cycle=%14ld\n",
+	    i, cpu->running?'#':' ', ipc, cpu->icache.misses/pcti, cpu->dcache.misses/pcti, cpu->count.insn, cpu->count.ecalls, cpu->count.cycle, ipc);
     if (i == corenum)
       wattroff(summary, A_REVERSE);
   }
@@ -306,7 +306,7 @@ void interactive()
     //   histo_compute(&global, perf.h->base, perf.h->bound);
     histo_compute(corenum, &global, insnSpace.base, insnSpace.bound);
     histo_compute(corenum, &local, local.base, local.bound);
-    summary_paint();
+    paint_summary();
     disasm_paint(corenum, &disasm);
     histo_paint(&global, "Global", local.base, local.bound);
     histo_paint(&local, "Local", disasm.base, disasm.bound);

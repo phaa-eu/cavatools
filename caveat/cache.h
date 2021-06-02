@@ -32,14 +32,14 @@ struct cache_t {		/* cache descriptor */
   unsigned short* states;	/* LRU state vector [rows] */
   long* evicted;		/* tag of evicted line, 0 if clean, NULL if unwritable */
   long penalty;			/* cycles to refill line */
-  long refs, misses;		/* count number of */
-  long updates, evictions;	/* if writeable */
+  volatile long refs, misses;	/* count number of */
+  volatile long updates, evictions; /* if writeable */
 };
 
-void flush_cache(struct cache_t* c);
-void init_cache(struct cache_t* c, const char* name, int penalty, int ways, int lg_line, int lg_rows, int writeable);
-void show_cache(struct cache_t* c);
-void print_cache(struct cache_t* c, FILE* f);
+void flush_cache(volatile struct cache_t* c);
+void init_cache(volatile struct cache_t* c, const char* name, int penalty, int ways, int lg_line, int lg_rows, int writeable);
+void show_cache(volatile struct cache_t* c);
+void print_cache(volatile struct cache_t* c, FILE* f);
 
 
 /* returns cycle when line available (may be in past)

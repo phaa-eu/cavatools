@@ -26,41 +26,24 @@
 #include "caveat.h"
 #include "opcodes.h"
 #include "insn.h"
+#include "imacros.h"
 #include "cache.h"
 #include "core.h"
 
 volatile int active_cores = 1;	/* main thread */
-
-
-void init_core(struct core_t* cpu, struct core_t* parent, Addr_t entry_pc, Addr_t stack_top, Addr_t thread_ptr)
-{
-  if (parent)
-    memcpy(cpu, parent, sizeof(struct core_t));
-  else {
-    memset(cpu, 0, sizeof(struct core_t));
-    for (int i=32; i<64; i++)	/* initialize FP registers to boxed float 0 */
-      cpu->reg[i].ul = 0xffffffff00000000UL;
-  }
-  cpu->running = 1;
-  cpu->pc = entry_pc;
-  cpu->reg[SP].l = stack_top;
-  cpu->reg[TP].l = thread_ptr;
-  /* start with empty caches */
-  init_cache(&cpu->icache, "Instruction", conf.ipenalty, conf.iways, conf.iline, conf.irows, 0);
-  init_cache(&cpu->dcache, "Data",        conf.dpenalty, conf.dways, conf.dline, conf.drows, 1);
-  cpu->conf.start_tick = clock();
-  gettimeofday(&cpu->conf.start_tv, 0);
-}
+char** clone_stack;
+volatile int amosemi[AMOHASH]; /* 0=unlock, 1=lock with no waiters, 2=lock with waiters */
+volatile unsigned long lrscstate; /* current load reserve address */
 
 int interpreter(struct core_t* cpu)
 {
   while (1) {	       /* terminated by program making exit() ecall */
-    if (cpu->fast_mode)
+    if (conf.fast_mode)
       fast_sim(cpu, conf.report);
     else
       slow_sim(cpu, conf.report);
-    if (!conf.quiet)
-      status_report(cpu, stderr);
+    if (!cpu->exceptions && !conf.quiet)
+      status_report();
     /* process all pending exceptions */
     while (cpu->exceptions) {
       if (cpu->exceptions & ECALL_INSTRUCTION) {
@@ -75,8 +58,9 @@ int interpreter(struct core_t* cpu)
 	__sync_fetch_and_and(&cpu->exceptions, ~ECALL_INSTRUCTION);
       }
       else if (cpu->exceptions & BREAKPOINT) {
-	if (cpu->fast_mode) {
-	  if (--cpu->conf.after > 0) { /* not ready to trace yet */
+	if (conf.fast_mode) {
+	  if (--conf.after > 0) { /* not ready to trace yet */
+	    //fprintf(stderr, "interpreter breakpoint: not ready to trace\n");
 	    /* put instruction back */
 	    decode_instruction(insn(cpu->pc), cpu->pc);
 	    fast_sim(cpu, 1);	/* single step */
@@ -85,15 +69,17 @@ int interpreter(struct core_t* cpu)
 	    /* simulate every nth call */
 	  }
 	  else { /* insert breakpoint at subroutine return */
+	    //fprintf(stderr, "interpreter breakpoint: inserting breakpoint at return\n");
 	    if (cpu->reg[RA].a)	/* _start called with RA==0 */
 	      insert_breakpoint(cpu->reg[RA].a);
-	    cpu->fast_mode = 0;		/* start simulation */
+	    conf.fast_mode = 0;		/* start simulation */
 	  }
 	}
 	else {  /* reinserting breakpoint at subroutine entry */
+	  //fprintf(stderr, "interpreter breakpoint: at return, re-inserting breakpoint\n");
 	  insert_breakpoint(conf.breakpoint);
-	  cpu->fast_mode = 1;		/* stop tracing */
-	  cpu->conf.after = cpu->conf.every;
+	  conf.fast_mode = 1;		/* stop tracing */
+	  conf.after = conf.every;
 	}
 	decode_instruction(insn(cpu->pc), cpu->pc);
 	__sync_fetch_and_and(&cpu->exceptions, ~BREAKPOINT);
@@ -114,32 +100,39 @@ int interpreter(struct core_t* cpu)
 }
 
 
-void status_report(struct core_t* cpu, FILE* f)
+void status_report()
 {
-  struct timeval *t1=&cpu->conf.start_tv, t2;
+  struct timeval *t1=&conf.start_tv, t2;
   gettimeofday(&t2, 0);
-  double msec = (t2.tv_sec - t1->tv_sec)*1000;
-  msec += (t2.tv_usec - t1->tv_usec)/1000.0;
-  double mips = cpu->count.insn / (1e3*msec);
-  double ipc = (double)cpu->count.insn / cpu->count.cycle;
-  fprintf(f, "%sCore[%ld]fs=%d insn=%ld(%ld ecalls) cycle=%ld IPC=%5.3f in %3.1fs for %3.1f MIPS%s\r",
-	  color(cpu->tid), cpu-core, cpu->fast_mode, cpu->count.insn, cpu->count.ecalls, cpu->count.cycle, ipc, msec/1e3, mips, nocolor);
+  double seconds = t2.tv_sec - t1->tv_sec;
+  seconds += (t2.tv_usec - t1->tv_usec)/1e6;
+  double total = 0;
+  fprintf(stderr, "IPC");
+  char delimitor = '=';
+  for (int i=0; i<active_cores; i++) {
+    struct core_t* cpu = &core[i];
+    total += cpu->count.insn;
+    double ipc = (double)cpu->count.insn / cpu->count.cycle;
+    fprintf(stderr, "%c%5.3f", delimitor, ipc);
+    delimitor = ',';
+  }
+  fprintf(stderr, " in %3.1fs for %3.1f MIPS\r", seconds, total/1e6/seconds);
 }
 
 void final_status()
 {
   fprintf(stderr, "\nFinal Status\n");
+  status_report();
+  fprintf(stderr, "\n");
   for (int i=0; i<active_cores; i++)
-    if (core[i].tid) {
-      fprintf(stderr, "\n");
-      status_report(&core[i], stderr);
-      fprintf(stderr, "\n");
-      print_cache(&core[i].icache, stderr);
-      print_cache(&core[i].dcache, stderr);
-    }
+    if (core[i].tid && conf.simulate) {
+	print_cache(&core[i].icache, stderr);
+	print_cache(&core[i].dcache, stderr);
+      }
   fprintf(stderr, "\n\n");
 }
 
+#ifdef DEBUG
 void print_pctrace(struct core_t* cpu)
 {
   fprintf(stderr, "%score[%ld] last instructions\n", color(cpu->tid), cpu-core);
@@ -173,3 +166,5 @@ void print_callstack(struct core_t* cpu)
   }
   fprintf(stderr, "%s", nocolor);
 }
+#endif
+

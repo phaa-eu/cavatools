@@ -15,6 +15,7 @@
 #include <math.h>
 #include <sys/syscall.h>
 #include <linux/futex.h>
+#include <immintrin.h>
 
 #include "caveat.h"
 #include "caveat_fp.h"
@@ -53,12 +54,13 @@ static long last_event;		/* for delta in trace record */
 
 void slow_sim(struct core_t* cpu, long istop)
 {
-  struct cache_t* ic = &cpu->icache;
-  struct cache_t* dc = &cpu->dcache;
+  //  fprintf(stderr, "slow_sim\n");
+  volatile struct cache_t* ic = &cpu->icache;
+  volatile struct cache_t* dc = &cpu->dcache;
   int corenum = cpu - core;
-  struct count_t* countA = perf.count[corenum];
-  long* icmissA = perf.icmiss[corenum];
-  long* dcmissA = perf.dcmiss[corenum];
+  volatile struct count_t* countA = perf.count[corenum];
+  volatile long* icmissA = perf.icmiss[corenum];
+  volatile long* dcmissA = perf.dcmiss[corenum];
 #define count(pc)  &countA[(pc-perf.h->base)/2]
 #define icmiss(pc) &icmissA[(pc-perf.h->base)/2]
 #define dcmiss(pc) &dcmissA[(pc-perf.h->base)/2]
@@ -68,12 +70,9 @@ void slow_sim(struct core_t* cpu, long istop)
   Addr_t VA;	      /* load/store address set by "execute_insn.h" */
   long now = cpu->count.cycle;
   //#define now cpu->count.cycle
-
-#define MAXCYCLES 1000000
   
   long icount = 0;
   while (cpu->exceptions == 0 && icount < istop) {
-    //    assert(now < MAXCYCLES);
     /* calculate stall cycles before next bundle */
     long before_issue = now;
     /* model instruction cache with hot path */
@@ -103,15 +102,13 @@ void slow_sim(struct core_t* cpu, long istop)
       if (tag->ready > now)
 	now = tag->ready;
     }
-    //    assert(now < MAXCYCLES);
     /* scoreboarding: advance time until source registers not busy */
     const struct insn_t* p = insn(PC);
     if (                        cpu->busy[p->op_rs1] > now) now = cpu->busy[p->op_rs1];
     if (!konstOp(p->op_code) && cpu->busy[p->op.rs2] > now) now = cpu->busy[p->op.rs2];
     if ( threeOp(p->op_code) && cpu->busy[p->op.rs3] > now) now = cpu->busy[p->op.rs3];
-    //    assert(now < MAXCYCLES);
     /* stall charged to first instruction in bundle */
-    struct count_t* c = count(PC);
+    volatile struct count_t* c = count(PC);
     c->cycles += now - before_issue;
     /* issue superscalar bundle */
     int consumed = 0;		    /* resources already consumed */
@@ -142,7 +139,7 @@ void slow_sim(struct core_t* cpu, long istop)
 #ifdef DEBUG
       /* at this time p=just-executed instruction but PC=next */
       t->regval = cpu->reg[writeOp(p->op_code) ? p->op.rs2 : p->op_rd];
-      if (cpu->conf.visible) {
+      if (conf.visible) {
 	char buf[1024];
 	char* b = buf;
 	b += sprintf(b, "%sc%ld ", color(cpu->tid), now);
@@ -212,7 +209,7 @@ void slow_sim(struct core_t* cpu, long istop)
 	}
 	if (tag->ready > ready)
 	  ready = tag->ready;
-	//	assert(now < MAXCYCLES);
+#ifdef PREFETCH
 	/* prefetch next line */
 	if (tag->prefetch) {
 	  tag->prefetch = 0;	/* only once */
@@ -251,8 +248,8 @@ void slow_sim(struct core_t* cpu, long istop)
 	prefetch_hit:
 	  *state = w->next_state;	/* already multiplied by dc->ways */
 	}
+#endif
       }
-      //      assert(now < MAXCYCLES);
       /* model function unit latency for register scoreboarding */
       ready += insnAttr[p->op_code].latency;
       cpu->busy[p->op_rd] = ready;

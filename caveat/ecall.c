@@ -137,13 +137,17 @@ void proxy_ecall(struct core_t* cpu)
 #endif
 
   case __NR_exit:
-    fprintf(stderr, "core[%ld] exit(%d) called\n", cpu-core, cpu->reg[10].i);
+    //fprintf(stderr, "core[%ld] exit(%d) called\n", cpu-core, cpu->reg[10].i);
     __sync_fetch_and_or(&cpu->exceptions, EXIT_SYSCALL);
     break;
     
   case __NR_exit_group:
-    fprintf(stderr, "core[%ld] exit_group(%d) called\n", cpu-core, cpu->reg[10].i);
+    //fprintf(stderr, "core[%ld] exit_group(%d) called\n", cpu-core, cpu->reg[10].i);
     __sync_fetch_and_or(&cpu->exceptions, EXIT_SYSCALL);
+    break;
+
+  case __NR_futex:
+    cpu->reg[10].l = syscall(sysnum, cpu->reg[10].l, cpu->reg[11].l, cpu->reg[12].l, cpu->reg[13].l, cpu->reg[14].l, cpu->reg[15].l);
     break;
 
   case __NR_rt_sigaction:
@@ -191,28 +195,19 @@ void proxy_ecall(struct core_t* cpu)
     break;
 
   case __NR_clock_gettime:
-#if 1
     {
       long count = (perf.h && conf.mhz) ? cpu->count.cycle : cpu->count.insn;
       long denominator = conf.mhz ? conf.mhz*1000000 : 1000000000;
       struct timeval tv;
       tv.tv_sec  = count / denominator;
       tv.tv_usec = count % denominator;
-      tv.tv_sec  += cpu->conf.start_tv.tv_sec;
-      tv.tv_usec += cpu->conf.start_tv.tv_usec;
+      tv.tv_sec  += conf.start_tv.tv_sec;
+      tv.tv_usec += conf.start_tv.tv_usec;
       tv.tv_sec  += tv.tv_usec / 1000000;  // microseconds overflow
       tv.tv_usec %=              1000000;
       memcpy(cpu->reg[11].p, &tv, sizeof tv);
       cpu->reg[10].l = 0;
     }
-#else
-    {
-      clockid_t id = cpu->reg[10].l;
-      struct timespec* tp = cpu->reg[11].p;
-      long rv = syscall(sysnum, id, tp);
-      cpu->reg[10].l = rv;
-    }
-#endif
     break;
 
   case __NR_times:
@@ -235,8 +230,8 @@ void proxy_ecall(struct core_t* cpu)
       struct timeval tv;
       tv.tv_sec  = count / denominator;
       tv.tv_usec = count % denominator;
-      tv.tv_sec  += cpu->conf.start_tv.tv_sec;
-      tv.tv_usec += cpu->conf.start_tv.tv_usec;
+      tv.tv_sec  += conf.start_tv.tv_sec;
+      tv.tv_usec += conf.start_tv.tv_usec;
       tv.tv_sec  += tv.tv_usec / 1000000;  // microseconds overflow
       tv.tv_usec %=              1000000;
       memcpy(cpu->reg[10].p, &tv, sizeof tv);
@@ -354,14 +349,18 @@ void parent_func(struct core_t* parent)
     a3 = tls
     a4 = child_tidptr
   */
-  init_core(child, parent, parent->pc+4, parent->reg[11].l, parent->reg[13].l);
-  char* caveat_stack = malloc(CLONESTACKSZ);
+  //  memcpy(child, parent, sizeof(struct core_t));
+  memcpy(child->reg, parent->reg, 64*sizeof(struct reg_t));
+  child->pc = parent->pc;
+  child->fcsr = parent->fcsr;
+  child->reg[SP] = parent->reg[11];
+  child->reg[TP] = parent->reg[13];
   unsigned long flags = parent->reg[10].ul;
   flags &= ~CLONE_SETTLS;	/* host doesn't have tls for now */
   flags |= SIGCHLD;		/* signal parent when finished */
   parent->reg[10].l =
     clone(child_func,			     /* fn */
-	  caveat_stack+CLONESTACKSZ,	     /* not stack of guest! */
+	  clone_stack[n]+CLONESTACKSZ,	     /* not stack of guest! */
 	  flags,			     /* modified flags */
 	  child,			     /* arg */
 	  parent->reg[12].p,		     /* parent_tidptr of guest */
@@ -376,6 +375,7 @@ int child_func(void* arg)
   /* child core is copy of parent core but with proper PC, SP and TP */
   cpu->tid = syscall(SYS_gettid);
   cpu->reg[10].l = 0;	       /* child a0==0 indicating I am child */
+  cpu->pc += 4;
   __sync_fetch_and_and(&cpu->exceptions, ~ECALL_INSTRUCTION);
   int rc = interpreter(cpu);
   fprintf(stderr, "child %d about to terminate\n", cpu->tid);

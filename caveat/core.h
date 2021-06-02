@@ -6,7 +6,7 @@
 #define PCTRACEBUFSZ	(1<<5)
 #define MAXCALLDEPTH	(1<<6)
 
-#define CLONESTACKSZ	(1<<14)
+#define CLONESTACKSZ	(1<<16)
 
 
 struct pctrace_t {
@@ -37,7 +37,6 @@ struct core_t {
   } fcsr;
 
   int tid;			/* Linux thread id (not same as pthread) */
-  int fast_mode;		/* simulate or not */
   volatile int running;		/* main threads waits for zero */
   volatile int exceptions;	/* bit mask of pending exceptions */
 #define BREAKPOINT		0b00000001
@@ -46,29 +45,18 @@ struct core_t {
 #define ILLEGAL_INSTRUCTION	0b00001000
 #define ECALL_INSTRUCTION	0b00010000
   
-  struct cache_t icache;	/* instruction cache model */
-  struct cache_t dcache;	/* data cache model */
-  long busy[256];		/* time when register available */
-  long cur_line;		/* current insn cache line set by ilookup() */
+  struct cache_t icache; /* instruction cache model */
+  struct cache_t dcache; /* data cache model */
+  long busy[256];		  /* time when register available */
+  long cur_line;		  /* current insn cache line */
   
-  struct {			/* hardware performance monitor structure */
-    long cycle;			/* machine cycle counter */
-    long insn;			/* machine instruction retired counter */
-    long ecalls;		/* machine environment call counter */
+  volatile struct {	     /* performance monitor structure */
+    volatile long cycle;     /* machine cycle counter */
+    volatile long insn;	     /* machine instruction retired counter */
+    volatile long ecalls;    /* machine environment call counter */
   } count;
 
-  struct {			/* configuration structure */
-    struct timeval start_tv;	/* when core was cloned */
-    long start_tick;		/* on host computer */
-    long after;			/* countdown, negative=start pipeline simulation */
-    long every;			/* simulate every n-th calls */
-    long ecalls;		/* log system calls */
-#ifndef DEBUG
-  } conf;
-#else
-    long visible;		/* show each instruction execution */
-  } conf;
-
+#ifdef DEBUG
   struct {			/* debug structure */
     struct pctrace_t trace[PCTRACEBUFSZ];
     struct callstack_t stack[MAXCALLDEPTH];
@@ -85,7 +73,7 @@ struct core_t {
 	2.  Array of pre-decoded instructions
 	3.  Array of struct core_t [cores]
 	4.  Arrays of CPI counters
-	4.  Arrays of cache miss counters
+	5.  Arrays of cache miss counters
     All arrays of dimension (bound-base)/2 parcels
 */
 struct count_t {	      /* together for cache locality */
@@ -107,18 +95,21 @@ struct perf_t {
   struct perf_header_t* h;	/* shared memory header */
   struct insn_t* insn_array;	/* predecoded instructions */
   struct core_t* core;		/* core[0] is main thread */
-  struct count_t** count;	/* count[i] = count array core i */
-  long** icmiss;		/* icmiss[i][p] = core i address p */
-  long** dcmiss;		/* icmiss[i][p] = core i address p */
+  volatile struct count_t** count; /* count[i] = count array core i */
+  volatile long** icmiss;	/* icmiss[i][p] = core i address p */
+  volatile long** dcmiss;	/* 
+icmiss[i][p] = core i address p */
 };
 
 
-extern struct core_t* core;	/* main thread in core[0] */
+extern struct core_t* core; /* main thread in core[0] */
+extern char** clone_stack;	/* preallocated for cloning */
+
 extern volatile int active_cores; /* cores in use, maximum is conf.cores */
 extern struct perf_t perf;	/* shared segment for performance monitoring */
 
 
-void init_core(struct core_t* cpu, struct core_t* parent, Addr_t entry_pc, Addr_t stack_top, Addr_t thread_ptr);
+void init_core(struct core_t* cpu);
 int interpreter(struct core_t* cpu);
 int outer_loop(struct core_t* cpu);
 void fast_sim(struct core_t*, long);
@@ -126,7 +117,7 @@ void slow_sim(struct core_t*, long);
 void single_step(struct core_t*);
 void proxy_ecall(struct core_t* cpu);
 void proxy_csr(struct core_t* cpu, const struct insn_t* p, int which);
-void status_report(struct core_t* cpu, FILE*);
+void status_report();
 void final_status();
 void parent_func(struct core_t* cpu);
 int child_func(void* arg);

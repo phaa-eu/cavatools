@@ -45,7 +45,11 @@ struct conf_t {
   long after;			/* countdown, negative=start pipeline simulation */
   long every;			/* simulate every n-th calls */
   long ecalls;			/* log system calls */
+  long amo;			/* show AMO operations */
   long visible;			/* show each instruction execution */
+
+  volatile int fast_mode;	/* simulate or not */
+  struct timeval start_tv;	/* when core was cloned */
   
   long report;			/* interval, in millions of instructions */
   long quiet;			/* no progress report */

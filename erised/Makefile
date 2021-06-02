@@ -6,7 +6,7 @@ LIBS     = $R/lib/libcava.a -lrt -lpthread -lncurses
 LDFLAGS  = -Wl,-Ttext=70000000
 
 # Dependent headers
-hdrs := caveat.h opcodes.h insn.h
+hdrs := caveat.h opcodes.h insn.h core.h
 
 # Text substitutions
 hdrs := $(addprefix $R/include/cava/,$(hdrs))

@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/time.h>
+#include <linux/futex.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <sys/sysinfo.h>
@@ -28,10 +29,11 @@ const struct options_t opt[] =
    { "--sim",		.b=&conf.simulate,	.bv=1,		.h="Perform simulation" },
    { "--func=s",	.s=&conf.func,		.ds="_start",	.h="Function =name to simulate" },
    { "--cores=i",	.i=&conf.cores,		.di=0,		.h="Number of simulated cores" },
-   { "--report=i",	.i=&conf.report,	.di=1000,	.h="Progress report every =number million cycles" },
+   { "--report=i",	.i=&conf.report,	.di=100,	.h="Progress report every =number million cycles" },
    { "--perf=s",	.s=&conf.perf,		.ds="caveat",	.h="Performance counters in shared memory =name" },
    
    { "--ecalls",	.b=&conf.ecalls,	.bv=1,		.h="Log system calls" },
+   { "--amo",		.b=&conf.amo,		.bv=1,		.h="Show AMO operations" },
    { "--visible",	.b=&conf.visible,	.bv=1,		.h="Print all instructions" },
    
    { "--after=i",	.i=&conf.after,		.di=1,		.h="Start tracing function after =number calls" },
@@ -96,7 +98,6 @@ int main(int argc, const char* argv[], const char* envp[])
     else			/* is number of host cores */
       conf.cores = get_nprocs();
   }
-  fprintf(stderr, "Up to %ld cores\n", conf.cores);
   conf.report *= 1000000; /* unit is millions of instructions */
   for (int i=0; i<Number_of_opcodes; i++) {
     unsigned int a = insnAttr[i].flags;
@@ -128,15 +129,23 @@ int main(int argc, const char* argv[], const char* envp[])
   else {
     insnSpace_init(0);
     core = (struct core_t*)malloc(conf.cores * sizeof(struct core_t));
-    memset(core, 0, conf.cores * sizeof(struct core_t));
+    memset((void*)core, 0, conf.cores * sizeof(struct core_t));
   }
 
-  init_core(&core[0], 0, entry_pc, stack_top, 0);
+  clone_stack = malloc(conf.cores*sizeof(char*));
+  for (int i=0; i<conf.cores; i++) {
+    /* start with empty caches */
+    init_cache(&core[i].icache, "Instruction", conf.ipenalty, conf.iways, conf.iline, conf.irows, 0);
+    init_cache(&core[i].dcache, "Data",        conf.dpenalty, conf.dways, conf.dline, conf.drows, 1);
+    /* pre-allocate stacks for cloning */
+    clone_stack[i] = i ? malloc(CLONESTACKSZ) : 0;
+  }
   core->tid = syscall(SYS_gettid);
-  core->conf.after = conf.after;
-  core->conf.every = conf.every;
-  core->conf.ecalls = conf.ecalls;
-  core->conf.visible = conf.visible;
+  gettimeofday(&conf.start_tv, 0);
+  for (int i=32; i<64; i++)	/* initialize FP registers to boxed float 0 */
+    core->reg[i].ul = 0xffffffff00000000UL;
+  core->pc = entry_pc;
+  core->reg[SP].l = stack_top;
 
   static struct sigaction action;
   memset(&action, 0, sizeof(struct sigaction));
@@ -160,19 +169,19 @@ int main(int argc, const char* argv[], const char* envp[])
 	fprintf(stderr, "Cannot find TID in cores\n");
 	syscall(SYS_exit_group, -1);
       }
-      //      fprintf(stderr, "%sSegV core[%ld] tid[%d] pc=%lx at 0x%p\n", color(cpu->tid), cpu-core, cpu->tid, cpu->pc, si->si_addr);
-      {
-	print_callstack(cpu);
-	print_pctrace(cpu);
-	print_registers(cpu->reg, stderr);
-	syscall(SYS_exit_group, -1);
-      }
+      fprintf(stderr, "%sSegV core[%ld] tid[%d]\n", color(cpu->tid), cpu-core, cpu->tid);
+#ifdef DEBUG
+      print_callstack(cpu);
+      print_pctrace(cpu);
+      print_registers(cpu->reg, stderr);
+      syscall(SYS_exit_group, -1);
+#endif
     }
   }
   
-  if (conf.breakpoint)
+  if (conf.simulate)
     insert_breakpoint(conf.breakpoint);
-  core[0].fast_mode = 1;
+  conf.fast_mode = 1;
   int rc = interpreter(&core[0]);
   final_status();
   if (conf.simulate)

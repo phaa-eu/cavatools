@@ -14,6 +14,7 @@
 #include <math.h>
 #include <sys/syscall.h>
 #include <linux/futex.h>
+#include <immintrin.h>
 
 #include "caveat.h"
 #include "caveat_fp.h"
@@ -36,9 +37,6 @@
 //#define amoE(cpu, rd)            fprintf(stderr, "->%s=%ld\e[39m\n", regName[rd], IR(rd).l); amoEnd(cpu, rd)
 #define amoB(cpu, name, r1, r2)    amoBegin(cpu, name, r1, r2)
 #define amoE(cpu, rd)              amoEnd(cpu, rd)
-
-int amolock;		   /* 0=unlock, 1=lock with no waiters, 2=lock with waiters */
-unsigned long lrsc_set;  // globally shared location for atomic lock
 
 #define MEM_ACTION(a)  0
 #define JUMP_ACTION()
@@ -68,11 +66,13 @@ unsigned long lrsc_set;  // globally shared location for atomic lock
 
 void fast_sim(struct core_t* cpu, long istop)
 { 
+  //  fprintf(stderr, "fast_sim\n");
 #ifdef DEBUG
 #define PC cpu->pc
 #else
   Addr_t PC = cpu->pc;
 #endif
+  Addr_t VA;
   
   long icount = 0;
   while (cpu->exceptions == 0 && icount < istop) {
@@ -101,7 +101,7 @@ void fast_sim(struct core_t* cpu, long istop)
 #ifdef DEBUG
     /* at this time p=just-executed instruction but PC=next */
     t->regval = cpu->reg[writeOp(p->op_code) ? p->op.rs2 : p->op_rd];
-    if (cpu->conf.visible) {
+    if (conf.visible) {
       char buf[1024];
       char* b = buf;
       b += sprintf(b, "%s%ld ", color(cpu->tid), cpu->count.insn+icount);

@@ -21,7 +21,7 @@ incf := opcodes.h insn.h caveat.h core.h cache.h lru_fsm_1way.h lru_fsm_2way.h l
 libs := $R/lib/softfloat.a -lrt -lm
 
 # Compiler flags
-CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O3
+CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O3 -mrtm
 LDFLAGS	:= -Wl,-Ttext=70000000
 
 

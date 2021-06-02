@@ -17,7 +17,7 @@ import re
 SpecPattern = re.compile(r'^\s*([0-9]+)\s+(.*)')
 IterPattern = re.compile(r'^\?iter=(\w+)')
 LimitPattern = re.compile(r'^\?limit=(\w+)')
-VarPattern = re.compile(r'^(.+)([a-zA-Z_][a-zA-Z_0-9]*)\$')
+VarPattern = re.compile(r'^(.+)\s+([a-zA-Z_][a-zA-Z_0-9]*)\$')
 CmdPattern = re.compile(r'^\?([a-z]+)=([a-zA-Z_][a-zA-Z_0-9]*)')
 
 lines = []
@@ -53,7 +53,7 @@ def Substitute(src, dollar, at):
         at = str(dollar) + str(at)
     dst = []
     for e in src:
-        f = e.replace('$', str(dollar))
+        f = e.replace('$', '_'+str(dollar))
         f = f.replace('@', at)
         dst.append(f)
     return dst
@@ -102,8 +102,8 @@ def GenerateSoftwarePipeline():
         for i in range(depth):
             vec.append(var+str(i))
         comma = ', '
-        decl += comma.join(vec)
-        print(decl+';')
+        decl += ' ' + comma.join(vec)
+        print('  '+decl+';')
         
     print('  if ({:s} < {:d}) {{  /* Single Pass */'.format(limit, depth))
     # Generate special short tripcount cases
@@ -170,7 +170,7 @@ def GenerateSoftwarePipeline():
                 at = 0
             stages[(i+j)%depth] += Substitute(pipe[j], i, at)
     print('    /*   Body */')
-    print('    for ({:s}+={:d}; {:s}+{:d}<={:s}; {:s}+={:d}) {{'.format(lv, depth, lv, depth, limit, lv, depth))
+    print('    for ({:s}+={:d}; {:s}+{:d}<{:s}; {:s}+={:d}) {{'.format(lv, depth, lv, depth-1, limit, lv, depth))
     PrintPipe(stages)
     print('    }')
 
@@ -229,7 +229,7 @@ while lines:
             if not m:
                 error(line)
             (declaration, variable) = m.groups()
-            vectors.append( (variable, declaration) )
+            vectors.append( (variable+'_', declaration) )
             line = lines.pop()
     elif line == '?[':
         line = lines.pop()
