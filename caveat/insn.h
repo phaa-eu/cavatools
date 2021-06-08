@@ -60,11 +60,6 @@ struct insnAttr_t {
   int latency;			/* filled in by simulator */
 };  
 
-  
-struct insnSpace_t {
-  struct insn_t* insn_array;
-  Addr_t base, bound;
-};
 
 
 /*  Process information  */
@@ -81,15 +76,14 @@ struct pinfo_t {
 };
 
 extern struct pinfo_t current;
+extern unsigned long low_bound, high_bound;
   
 
-extern struct insnSpace_t insnSpace;
 extern struct insnAttr_t insnAttr[];	/* Attribute array indexed by Opcode_t */
 extern const char* regName[];
 
   
   
-void insnSpace_init();
 void decode_instruction( const struct insn_t* p, Addr_t PC );
 
 Addr_t load_elf_binary( const char* file_name, int include_data );
@@ -98,32 +92,9 @@ int find_symbol( const char* name, Addr_t* begin, Addr_t* end );
 int find_pc( long pc, const char** name, long* offset );
 
 
-static inline int valid_pc(Addr_t pc)
-{
-  return insnSpace.base <= pc && pc < insnSpace.bound;
-}
 
-#ifdef DEBUG
-static inline struct insn_t* insn(long pc) {
-  if (valid_pc(pc)) return &insnSpace.insn_array[(pc-insnSpace.base)/2];
-  else GEN_SEGV; //abort();
-}
-#else
-#define insn(pc)  ( &insnSpace.insn_array[(pc-insnSpace.base)/2] )
-#endif
-
-static inline void insert_breakpoint(Addr_t pc)
-{
-  if (!valid_pc(pc)) {
-    fprintf(stderr, "insert_breakpoint: not valid pc %lx\n", pc);
-    exit(-1);
-  }
-  struct insn_t* p = &insnSpace.insn_array[(pc-insnSpace.base)/2];
-  if (shortOp(p->op_code))
-    p->op_code = Op_c_ebreak;
-  else
-    p->op_code = Op_ebreak;
-}
+#define valid_pc(pc)  (perf.h->base <= pc && pc < perf.h->bound)
+#define insn(pc)  ( &perf.insn_array[(pc-perf.h->base)/2] )
 
 
 int find_symbol( const char* name, long* begin_addr, long* end_addr);

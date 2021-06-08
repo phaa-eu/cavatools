@@ -42,7 +42,7 @@ void proxy_sa_handler(int signum)
 {
   fprintf(stderr, "proxy_sa_handler(%d) called\n", signum);
   /* First figure out which core signal came from */
-  struct core_t* cpu = 0;
+  core_t* cpu = 0;
   pid_t my_tid = syscall(SYS_gettid);
   for (int i=0; i<conf.cores; i++)
     if (core[i].tid == my_tid) {
@@ -59,7 +59,7 @@ void proxy_sa_handler(int signum)
   *--sp = cpu->pc;
   *--sp = cpu->fcsr.l;
   sp -= 64;			/* registers */
-  memcpy(sp, cpu->reg, 64*sizeof(struct reg_t));
+  memcpy(sp, (void*)cpu->reg, 64*sizeof(struct reg_t));
   cpu->reg[SP].p = sp;
   cpu->reg[RA].p = guestsig[signum].sa_restorer;
   cpu->reg[10].l = signum;
@@ -105,7 +105,7 @@ static Addr_t emulate_brk(Addr_t addr, struct pinfo_t* info)
   return newbrk;
 }
 
-void proxy_ecall(struct core_t* cpu)
+void proxy_ecall(core_t* cpu)
 {
   cpu->count.ecalls++;
   long rvnum = cpu->reg[17].l;
@@ -259,7 +259,7 @@ void proxy_ecall(struct core_t* cpu)
 }
 
 
-static void set_csr( struct core_t* cpu, int which, long val )
+static void set_csr(core_t* cpu, int which, long val)
 {
   switch (which) {
   case CSR_FFLAGS:
@@ -282,7 +282,7 @@ static void set_csr( struct core_t* cpu, int which, long val )
 #endif
 }
 
-static long get_csr( struct core_t* cpu, int which )
+static long get_csr(core_t* cpu, int which)
 {
   switch (which) {
   case CSR_FFLAGS:
@@ -303,7 +303,7 @@ static long get_csr( struct core_t* cpu, int which )
   }
 }
 
-void proxy_csr( struct core_t* cpu, const struct insn_t* p, int which )
+void proxy_csr(core_t* cpu, const struct insn_t* p, int which)
 {
   enum Opcode_t op = p->op_code;
   int regop = op==Op_csrrw || op==Op_csrrs || op==Op_csrrc;
@@ -335,10 +335,12 @@ int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
 #define _GNU_SOURCE
 #include <linux/sched.h>
 
-void parent_func(struct core_t* parent)
+void parent_func(core_t* parent)
 {
-  int n = __sync_fetch_and_add(&active_cores, 1);
-  struct core_t* child = &core[n];
+  long n = __sync_fetch_and_add(&active_cores, 1);
+  //  int n = active_cores++;
+  dieif(n>=conf.cores, "too many clones");
+  core_t* child = &core[n];
   if (conf.simulate)
     perf.h->active = active_cores;
   /*
@@ -350,7 +352,7 @@ void parent_func(struct core_t* parent)
     a4 = child_tidptr
   */
   //  memcpy(child, parent, sizeof(struct core_t));
-  memcpy(child->reg, parent->reg, 64*sizeof(struct reg_t));
+  memcpy((void*)child->reg, (void*)parent->reg, 64*sizeof(struct reg_t));
   child->pc = parent->pc;
   child->fcsr = parent->fcsr;
   child->reg[SP] = parent->reg[11];
@@ -362,7 +364,7 @@ void parent_func(struct core_t* parent)
     clone(child_func,			     /* fn */
 	  clone_stack[n]+CLONESTACKSZ,	     /* not stack of guest! */
 	  flags,			     /* modified flags */
-	  child,			     /* arg */
+	  (void*)n,			     /* arg */
 	  parent->reg[12].p,		     /* parent_tidptr of guest */
 	  0,				     /* tls, but none for now */
 	  parent->reg[14].p);		     /* child_tidptr of guest */
@@ -371,7 +373,7 @@ void parent_func(struct core_t* parent)
     
 int child_func(void* arg)
 {
-  struct core_t* cpu = (struct core_t*)arg;
+  core_t* cpu = &core[(long)arg];
   /* child core is copy of parent core but with proper PC, SP and TP */
   cpu->tid = syscall(SYS_gettid);
   cpu->reg[10].l = 0;	       /* child a0==0 indicating I am child */

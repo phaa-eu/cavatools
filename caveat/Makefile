@@ -22,6 +22,8 @@ libs := $R/lib/softfloat.a -lrt -lm
 
 # Compiler flags
 CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O3 -mrtm
+//CFLAGS := -I../include -I$R/include -I$R/include/softfloat -g -O0 -mrtm
+F := -Ofast
 LDFLAGS	:= -Wl,-Ttext=70000000
 
 
@@ -65,10 +67,10 @@ $B/main.o:  lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
 $B/core.o $B/ecall.o $B/fast_sim.o $B/slow_sim.o:  arith.h
 
 $B/fast_sim.o:  fast_sim.c
-	$(CC) $(CFLAGS) -Ofast -o $@ -c $<
+	$(CC) $(CFLAGS) $F -o $@ -c $<
 
 $B/slow_sim.o:  slow_sim.c
-	$(CC) $(CFLAGS) -Ofast -o $@ -c $<
+	$(CC) $(CFLAGS) $F -o $@ -c $<
 
 $B/core.o:  core.c core.h
 	$(CC) $(CFLAGS) -o $@ -c $<

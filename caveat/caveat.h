@@ -48,7 +48,7 @@ struct conf_t {
   long amo;			/* show AMO operations */
   long visible;			/* show each instruction execution */
 
-  volatile int fast_mode;	/* simulate or not */
+  int fast_mode;	/* simulate or not */
   struct timeval start_tv;	/* when core was cloned */
   
   long report;			/* interval, in millions of instructions */

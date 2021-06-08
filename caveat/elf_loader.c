@@ -33,6 +33,7 @@
 #define BRK_SIZE	0x01000000L
 
 struct pinfo_t current;
+unsigned long low_bound, high_bound;
 
 
 static long phdrs[128];
@@ -157,8 +158,10 @@ Addr_t load_elf_binary( const char* file_name, int include_data )
    *  2.  zero out BSS and SBSS segments
    *  3.  find lower and upper bounds of executable instructions
    */
-  uintptr_t low_bound  = 0-1;
-  uintptr_t high_bound = 0;
+  //  uintptr_t low_bound  = 0-1;
+  //  uintptr_t high_bound = 0;
+  low_bound  = 0-1;
+  high_bound = 0;
   for (int i=0; i<eh.e_shnum; i++) {
     assert(lseek(file, eh.e_shoff + i * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
     assert(read(file, &header, sizeof header) >= 0);
@@ -183,8 +186,8 @@ Addr_t load_elf_binary( const char* file_name, int include_data )
 	high_bound = header.sh_addr+header.sh_size;
     }
   }
-  insnSpace.base = low_bound;
-  insnSpace.bound = high_bound;
+  //  insnSpace.base = low_bound;
+  //  insnSpace.bound = high_bound;
   //  fprintf(stderr, "Text segment [0x%lx, 0x%lx)\n", low_bound, high_bound);
   //insnSpace_init(low_bound, high_bound);
   close(file);

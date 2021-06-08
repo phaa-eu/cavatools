@@ -2,6 +2,7 @@
 R = $(HOME)
 
 CFLAGS   = -I$R/include/cava -g -O3
+//CFLAGS   = -I$R/include/cava -g -O0
 LIBS     = $R/lib/libcava.a -lrt -lpthread -lncurses
 LDFLAGS  = -Wl,-Ttext=70000000
 
@@ -18,11 +19,8 @@ erised:  erised.o $(LIBS)
 erised.o:  $(hdrs)
 
 install:  erised
-	-cp $^ $R/bin/
+	-cp $^ $R/bin/cavascope
 
 .PHONY:
 clean:
 	rm -f erised *.o *~ ./#*#
-
-
-

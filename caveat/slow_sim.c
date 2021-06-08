@@ -52,15 +52,15 @@ static long last_event;		/* for delta in trace record */
 #include "imacros.h"
 
 
-void slow_sim(struct core_t* cpu, long istop)
+void slow_sim(core_t* cpu, long istop)
 {
   //  fprintf(stderr, "slow_sim\n");
-  volatile struct cache_t* ic = &cpu->icache;
-  volatile struct cache_t* dc = &cpu->dcache;
+  cache_t* ic = &cpu->icache;
+  cache_t* dc = &cpu->dcache;
   int corenum = cpu - core;
-  volatile struct count_t* countA = perf.count[corenum];
-  volatile long* icmissA = perf.icmiss[corenum];
-  volatile long* dcmissA = perf.dcmiss[corenum];
+  struct count_t* countA = perf.count[corenum];
+  long* icmissA = perf.icmiss[corenum];
+  long* dcmissA = perf.dcmiss[corenum];
 #define count(pc)  &countA[(pc-perf.h->base)/2]
 #define icmiss(pc) &icmissA[(pc-perf.h->base)/2]
 #define dcmiss(pc) &dcmissA[(pc-perf.h->base)/2]
@@ -108,11 +108,11 @@ void slow_sim(struct core_t* cpu, long istop)
     if (!konstOp(p->op_code) && cpu->busy[p->op.rs2] > now) now = cpu->busy[p->op.rs2];
     if ( threeOp(p->op_code) && cpu->busy[p->op.rs3] > now) now = cpu->busy[p->op.rs3];
     /* stall charged to first instruction in bundle */
-    volatile struct count_t* c = count(PC);
+    struct count_t* c = count(PC);
     c->cycles += now - before_issue;
     /* issue superscalar bundle */
     int consumed = 0;		    /* resources already consumed */
-    for (int dispatched=0; ; dispatched++) {
+    for (int dispatched=0; dispatched<3; dispatched++) {
 #ifdef DEBUG
       struct pctrace_t* t = &cpu->debug.trace[cpu->debug.tb];
       cpu->debug.tb = (cpu->debug.tb+1) & (PCTRACEBUFSZ-1);

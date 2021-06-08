@@ -14,13 +14,13 @@
 #include "caveat.h"
 #include "opcodes.h"
 #include "insn.h"
+#include "cache.h"
+#include "core.h"
 
 
 struct insnAttr_t insnAttr[] = {
 #include "opcodes_attr.h"
 };
-
-struct insnSpace_t insnSpace;
 
 const char* regName[] = {
   "zero", "ra", "sp",  "gp",  "tp", "t0", "t1", "t2",
@@ -45,23 +45,6 @@ const char* ascii_color[] =
    [6] = "\e[97m",		/* Light Gray */
    [7] = "\e[90m",		/* Black */
   };
-
-
-void insnSpace_init(void* where)
-{
-  dieif(insnSpace.base==0, "insnSpace_init() base, bound not initialized");
-  assert(insnSpace.base < insnSpace.bound);
-  long nelts = (insnSpace.bound - insnSpace.base) / 2;
-  if (where)
-    insnSpace.insn_array = (struct insn_t*)where;
-  else {
-    insnSpace.insn_array = (struct insn_t*)mmap(0, nelts*sizeof(struct insn_t), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    assert(insnSpace.insn_array);
-  }
-  memset(insnSpace.insn_array, 0, nelts*sizeof(struct insn_t));
-  for (Addr_t pc=insnSpace.base; pc<insnSpace.bound; pc+=2)
-    decode_instruction(&insnSpace.insn_array[(pc-insnSpace.base)/2], pc);
-}
 
 
 static inline struct insn_t fmtC(enum Opcode_t op, signed char rd, signed char rs1, int constant)

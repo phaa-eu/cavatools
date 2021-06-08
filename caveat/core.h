@@ -1,7 +1,7 @@
 /*
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
-#define DEBUG
+//#define DEBUG
 
 #define PCTRACEBUFSZ	(1<<5)
 #define MAXCALLDEPTH	(1<<6)
@@ -24,7 +24,7 @@ struct callstack_t {		/* debuging call stack */
 */
 
 
-struct core_t {
+typedef volatile struct {
   struct reg_t reg[64];		/* Register files, IR[0-31], FR[32-63] */
   Addr_t pc;			/* Next instruction to be executed */
     
@@ -37,23 +37,23 @@ struct core_t {
   } fcsr;
 
   int tid;			/* Linux thread id (not same as pthread) */
-  volatile int running;		/* main threads waits for zero */
-  volatile int exceptions;	/* bit mask of pending exceptions */
+  int running;			/* main threads waits for zero */
+  int exceptions;		/* bit mask of pending exceptions */
 #define BREAKPOINT		0b00000001
 #define EXIT_SYSCALL		0b00000010
 #define STOP_SIMULATION		0b00000100
 #define ILLEGAL_INSTRUCTION	0b00001000
 #define ECALL_INSTRUCTION	0b00010000
   
-  struct cache_t icache; /* instruction cache model */
-  struct cache_t dcache; /* data cache model */
+  cache_t icache; /* instruction cache model */
+  cache_t dcache; /* data cache model */
   long busy[256];		  /* time when register available */
   long cur_line;		  /* current insn cache line */
   
-  volatile struct {	     /* performance monitor structure */
-    volatile long cycle;     /* machine cycle counter */
-    volatile long insn;	     /* machine instruction retired counter */
-    volatile long ecalls;    /* machine environment call counter */
+  struct {		     /* performance monitor structure */
+    long cycle;		     /* machine cycle counter */
+    long insn;		     /* machine instruction retired counter */
+    long ecalls;	     /* machine environment call counter */
   } count;
 
 #ifdef DEBUG
@@ -65,66 +65,66 @@ struct core_t {
   } debug;
 #endif
 
-};
+} core_t;
 
 /*
     The performance monitoring shared memory segment consists of:
 	1.  Header struct (128B, below)
-	2.  Array of pre-decoded instructions
-	3.  Array of struct core_t [cores]
+	2.  Array of struct core_t [cores]
+	3.  Array of pre-decoded instructions
 	4.  Arrays of CPI counters
 	5.  Arrays of cache miss counters
     All arrays of dimension (bound-base)/2 parcels
 */
 struct count_t {	      /* together for cache locality */
-  long cycles;		      /* total including stalls */
-  long count[3];	      /* #times superscalar bundle n+1 insn */
+  long cycles;	      /* total including stalls */
+  long count[3];     /* #times superscalar bundle n+1 insn */
 };			      /* CPI = cycles/count */
 
 struct perf_header_t {
-  long size;			/* of shared memory segment */
-  long cores;			/* maximum number of processor cores */
-  long active;			/* cores in use */
-  long base, bound;		/* text segment addresses  */
+  long size;		       /* of shared memory segment */
+  long base, bound;	       /* text segment addresses  */
+  int cores;		       /* maximum number of processor cores */
+  int active;		       /* cores in use */
 };
 
 /*
     Pointers into shared memory segment.
 */
-struct perf_t {
+typedef volatile struct {
   struct perf_header_t* h;	/* shared memory header */
   struct insn_t* insn_array;	/* predecoded instructions */
-  struct core_t* core;		/* core[0] is main thread */
-  volatile struct count_t** count; /* count[i] = count array core i */
-  volatile long** icmiss;	/* icmiss[i][p] = core i address p */
-  volatile long** dcmiss;	/* 
-icmiss[i][p] = core i address p */
-};
+  core_t* core;			/* core[0] is main thread */
+  struct count_t** count;	/* count[i] = count array core i */
+  long** icmiss;		/* icmiss[i][p] = core i address p */
+  long** dcmiss;		/* icmiss[i][p] = core i address p */
+} perf_t;
 
 
-extern struct core_t* core; /* main thread in core[0] */
+extern core_t* core;		/* main thread in core[0] */
 extern char** clone_stack;	/* preallocated for cloning */
 
-extern volatile int active_cores; /* cores in use, maximum is conf.cores */
-extern struct perf_t perf;	/* shared segment for performance monitoring */
+extern int active_cores; /* cores in use, maximum is conf.cores */
+extern perf_t perf;    /* shared segment for performance monitoring */
 
 
-void init_core(struct core_t* cpu);
-int interpreter(struct core_t* cpu);
-int outer_loop(struct core_t* cpu);
-void fast_sim(struct core_t*, long);
-void slow_sim(struct core_t*, long);
-void single_step(struct core_t*);
-void proxy_ecall(struct core_t* cpu);
-void proxy_csr(struct core_t* cpu, const struct insn_t* p, int which);
+void init_core(core_t* cpu);
+void insert_breakpoint(Addr_t pc);
+int interpreter(core_t* cpu);
+int outer_loop(core_t* cpu);
+void fast_sim(core_t*, long);
+void slow_sim(core_t*, long);
+void single_step(core_t*);
+void proxy_ecall(core_t* cpu);
+void proxy_csr(core_t* cpu, const struct insn_t* p, int which);
 void status_report();
 void final_status();
-void parent_func(struct core_t* cpu);
+void parent_func(core_t* cpu);
 int child_func(void* arg);
 void perf_init(const char* shm_name, int reader);
 void perf_close();
-void print_pctrace(struct core_t* cpu);
-void print_callstack(struct core_t* cpu);
+void print_pctrace(core_t* cpu);
+void print_callstack(core_t* cpu);
 
 
 #define  IR(rn)  cpu->reg[rn]	/* integer registers in 0..31 */

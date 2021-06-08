@@ -1,7 +1,7 @@
 /*
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
-#define DEBUG
+//#define DEBUG
 
 #include <stdlib.h>
 #define abort() { fprintf(stderr, "Aborting in %s line %d\n", __FILE__, __LINE__); exit(-1); }
@@ -41,7 +41,7 @@
 #define MEM_ACTION(a)  0
 #define JUMP_ACTION()
 
-#ifndef DEBUG
+#ifdef DEBUG
 #define indent(msg) fprintf(stderr, "%8ld%*s%s", num_insn, 2*(int)(cpu->csp-cpu->callstack+1), "", msg);
 //#define show_call(ra, tgt) { indent("Call"); print_pc(tgt, stderr); fprintf(stderr, "<-"); print_pc(ra, stderr); fprintf(stderr, "\n"); print_callstack(cpu); }
 //#define show_return(ra)    { indent("Return to"); print_pc(ra, stderr); fprintf(stderr, "\n"); }
@@ -64,7 +64,7 @@
 
 
 
-void fast_sim(struct core_t* cpu, long istop)
+void fast_sim(core_t* cpu, long istop)
 { 
   //  fprintf(stderr, "fast_sim\n");
 #ifdef DEBUG
@@ -77,7 +77,7 @@ void fast_sim(struct core_t* cpu, long istop)
   long icount = 0;
   while (cpu->exceptions == 0 && icount < istop) {
 #ifdef DEBUG
-    struct pctrace_t* t = &cpu->debug.trace[cpu->debug.tb];
+    volatile struct pctrace_t* t = &cpu->debug.trace[cpu->debug.tb];
     cpu->debug.tb = (cpu->debug.tb+1) & (PCTRACEBUFSZ-1);
     t->pc = PC;
 #endif

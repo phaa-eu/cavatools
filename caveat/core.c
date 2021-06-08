@@ -30,12 +30,21 @@
 #include "cache.h"
 #include "core.h"
 
-volatile int active_cores = 1;	/* main thread */
+int active_cores = 1;	/* main thread */
 char** clone_stack;
-volatile int amosemi[AMOHASH]; /* 0=unlock, 1=lock with no waiters, 2=lock with waiters */
-volatile unsigned long lrscstate; /* current load reserve address */
+int amosemi[AMOHASH]; /* 0=unlock, 1=lock with no waiters, 2=lock with waiters */
+unsigned long lrscstate; /* current load reserve address */
 
-int interpreter(struct core_t* cpu)
+void insert_breakpoint(Addr_t pc)
+{
+  struct insn_t* p = &perf.insn_array[(pc-perf.h->base)/2];
+  if (shortOp(p->op_code))
+    p->op_code = Op_c_ebreak;
+  else
+    p->op_code = Op_ebreak;
+}
+
+int interpreter(core_t* cpu)
 {
   while (1) {	       /* terminated by program making exit() ecall */
     if (conf.fast_mode)
@@ -99,24 +108,23 @@ int interpreter(struct core_t* cpu)
   } /* while (1) */
 }
 
-
 void status_report()
 {
   struct timeval *t1=&conf.start_tv, t2;
   gettimeofday(&t2, 0);
   double seconds = t2.tv_sec - t1->tv_sec;
   seconds += (t2.tv_usec - t1->tv_usec)/1e6;
-  double total = 0;
+  long total = 0;
   fprintf(stderr, "IPC");
   char delimitor = '=';
   for (int i=0; i<active_cores; i++) {
-    struct core_t* cpu = &core[i];
+    core_t* cpu = &core[i];
     total += cpu->count.insn;
     double ipc = (double)cpu->count.insn / cpu->count.cycle;
-    fprintf(stderr, "%c%5.3f", delimitor, ipc);
+    fprintf(stderr, "%c%5.3f(%ld)", delimitor, ipc, cpu->count.insn);
     delimitor = ',';
   }
-  fprintf(stderr, " in %3.1fs for %3.1f MIPS\r", seconds, total/1e6/seconds);
+  fprintf(stderr, " in %3.1fs for %3.1f MIPS (%ld insns)\r", seconds, total/1e6/seconds, total);
 }
 
 void final_status()

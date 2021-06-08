@@ -36,12 +36,12 @@
 #define AMOSHIFT	3
 #define MAXTRIES	1
 
-extern volatile int amosemi[AMOHASH]; /* 0=unlock, 1=lock with no waiters, 2=lock with waiters */
-extern volatile unsigned long lrscstate;  // globally shared location for atomic lock
+extern int amosemi[AMOHASH]; /* 0=unlock, 1=lock with no waiters, 2=lock with waiters */
+extern unsigned long lrscstate;  // globally shared location for atomic lock
 
 static inline void amoLock(Addr_t a)
 {
-  volatile int* lock = &amosemi[(a>>AMOSHIFT)%AMOHASH];
+  int* lock = &amosemi[(a>>AMOSHIFT)%AMOHASH];
   int c = __sync_val_compare_and_swap(lock, 0, 1);
   if (c != 0) {
     do {
@@ -53,7 +53,7 @@ static inline void amoLock(Addr_t a)
 
 static inline void amoUnlock(Addr_t a)
 {
-  volatile int* lock = &amosemi[(a>>AMOSHIFT)%AMOHASH];
+  int* lock = &amosemi[(a>>AMOSHIFT)%AMOHASH];
   if (__sync_fetch_and_sub(lock, 1) != 1) {
     *lock = 0;		/* should be atomic */
     syscall(SYS_futex, &lock, FUTEX_WAKE, 1, 0, 0, 0);

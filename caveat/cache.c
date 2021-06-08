@@ -10,16 +10,16 @@
 #include "lru_fsm_3way.h"
 #include "lru_fsm_4way.h"
 
-void flush_cache(volatile struct cache_t* c)
+void flush_cache(cache_t* c)
 {
   for (int k=0; k<c->ways; k++)
     memset((char*)c->tags[k], 0, c->ways*sizeof(struct tag_t));
   memset((char*)c->states, 0, c->rows*sizeof(unsigned short));
 }
 
-void init_cache(volatile struct cache_t* c, const char* name, int penalty, int ways, int lg_line, int lg_rows, int writeable)
+void init_cache(cache_t* c, const char* name, int penalty, int ways, int lg_line, int lg_rows, int writeable)
 {
-  memset((void*)c, 0, sizeof(struct cache_t));
+  memset((void*)c, 0, sizeof(cache_t));
   c->name = name;
   c->penalty = penalty;
   switch (ways) {
@@ -50,13 +50,13 @@ void init_cache(volatile struct cache_t* c, const char* name, int penalty, int w
 }
 
 
-void show_cache(volatile  struct cache_t* c )
+void show_cache(cache_t* c)
 {
   fprintf(stderr, "lg_line=%ld lg_rows=%ld line=%ld rows=%ld ways=%ld row_mask=0x%lx\n",
 	  c->lg_line, c->lg_rows, c->line, c->rows, c->ways, c->row_mask);
 }
 
-void print_cache(volatile struct cache_t* c, FILE* f)
+void print_cache(cache_t* c, FILE* f)
 {
   fprintf(f, "%s cache\n", c->name);
   long size = c->line * c->rows * c->ways;

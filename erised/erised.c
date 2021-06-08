@@ -14,7 +14,7 @@
 #include <fcntl.h>
 #include <curses.h>
 
-#define DEBUG
+//#define DEBUG
 
 #include "caveat.h"
 #include "opcodes.h"
@@ -31,7 +31,7 @@
 int global_width = COUNT_WIDTH;
 int local_width = COUNT_WIDTH;
 
-struct perf_t perf;
+perf_t perf;
 int corenum;
 
 WINDOW *menu;
@@ -101,7 +101,7 @@ void histo_compute(int corenum, struct histogram_t* histo, long base, long bound
   histo->range = range;
   long pc = base;
   struct insn_t* p = insn(pc);
-  volatile struct count_t* c = &perf.count[corenum][(pc-perf.h->base)/2];
+  struct count_t* c = &perf.count[corenum][(pc-perf.h->base)/2];
   long max_count = 0;
   for (int i=0; i<histo->bins; i++) {
     long mcount = 0;
@@ -192,10 +192,10 @@ void disasm_paint(int corenum, struct disasm_t* disasm)
   long numcycles = 0;
   WINDOW* win = disasm->win;
   long pc = disasm->base;
-  volatile struct core_t* cpu = &perf.core[corenum];
-  volatile struct count_t* countA = perf.count[corenum];
-  volatile long* icmissA = perf.icmiss[corenum];
-  volatile long* dcmissA = perf.dcmiss[corenum];
+  core_t* cpu = &perf.core[corenum];
+  struct count_t* countA = perf.count[corenum];
+  long* icmissA = perf.icmiss[corenum];
+  long* dcmissA = perf.dcmiss[corenum];
 #define pcount(pc)  &countA[(pc-perf.h->base)/2]
 #define icmiss(pc) &icmissA[(pc-perf.h->base)/2]
 #define dcmiss(pc) &dcmissA[(pc-perf.h->base)/2]
@@ -205,9 +205,9 @@ void disasm_paint(int corenum, struct disasm_t* disasm)
   //  wprintw(win, "] %8s %8s %s\n", "PC", "Hex", "Assembly                q=quit");
   if (pc != 0) {
     const struct insn_t* p = insn(pc);
-    volatile struct count_t* c = pcount(pc);
-    volatile const long* icm = icmiss(pc);
-    volatile const long* dcm = dcmiss(pc);
+    struct count_t* c = pcount(pc);
+    const long* icm = icmiss(pc);
+    const long* dcm = dcmiss(pc);
     for (int y=1; y<getmaxy(win) && pc<perf.h->bound; y++) {    
       long total = c->count[0] + c->count[1] + c->count[2];
       
@@ -223,7 +223,7 @@ void disasm_paint(int corenum, struct disasm_t* disasm)
 
       /* average superscalar bundle size */
       long npc = pc;
-      volatile struct count_t* d = c;
+      struct count_t* d = c;
       long bundle = d->count[0];
       //      wprintw(win, "%7ld %7ld %7ld", d->count[0], d->count[1], d->count[2]);
       for (int i=1; i<3; i++) {
@@ -267,19 +267,19 @@ void disasm_paint(int corenum, struct disasm_t* disasm)
 
 void paint_summary()
 {
-  wmove(summary, 0, 0);
-  for (int i=0; i<perf.h->cores; i++) {
-    volatile struct core_t* cpu = &perf.core[i];
+  wclrtobot(summary);
+  for (int i=0; i<perf.h->active; i++) {
+    wmove(summary, i, 0);
+    core_t* cpu = perf.core + i;
     double ipc = (double)cpu->count.insn / cpu->count.cycle;
     double pcti = cpu->count.insn / 100.0;
     if (i == corenum)
       wattron(summary, A_REVERSE);
-    wprintw(summary,"  Core[%ld]%c IPC=%4.2f I$=%6.3f%% D$=%6.3f%% insn=%14ld(%5ld ecalls) cycle=%14ld\n",
-	    i, cpu->running?'#':' ', ipc, cpu->icache.misses/pcti, cpu->dcache.misses/pcti, cpu->count.insn, cpu->count.ecalls, cpu->count.cycle, ipc);
+    wprintw(summary,"  Core[%ld]%c %d IPC=%4.2f I$=%6.3f%% D$=%6.3f%%(%ld) insn=%14ld(%5ld ecalls) cycle=%14ld\n",
+	    i, cpu->running?'#':' ', cpu->tid, ipc, cpu->icache.misses/pcti, cpu->dcache.misses/pcti, cpu->dcache.misses, cpu->count.insn, cpu->count.ecalls, cpu->count.cycle, ipc);
     if (i == corenum)
       wattroff(summary, A_REVERSE);
   }
-  wclrtobot(summary);
   wnoutrefresh(summary);
 }
 
@@ -304,7 +304,7 @@ void interactive()
   for (;;) {
     gettimeofday(&t1, 0);
     //   histo_compute(&global, perf.h->base, perf.h->bound);
-    histo_compute(corenum, &global, insnSpace.base, insnSpace.bound);
+    histo_compute(corenum, &global, perf.h->base, perf.h->bound);
     histo_compute(corenum, &local, local.base, local.bound);
     paint_summary();
     disasm_paint(corenum, &disasm);
@@ -380,13 +380,13 @@ void interactive()
 	  local.bound += scroll;
 	}
 	
-	if (local.base < insnSpace.base)
-	  local.base = insnSpace.base;
-	if (local.bound > insnSpace.bound)
-	  local.bound = insnSpace.bound;
+	if (local.base < perf.h->base)
+	  local.base = perf.h->base;
+	if (local.bound > perf.h->bound)
+	  local.bound = perf.h->bound;
 	local.range = (local.bound-local.base)/local.bins;
       }
-      break;
+      //break;
     }
   }
 }

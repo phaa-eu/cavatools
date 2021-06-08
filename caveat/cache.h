@@ -19,7 +19,7 @@ struct lru_fsm_t {
   unsigned short next_state;	/* number if hit */
 };
 
-struct cache_t {		/* cache descriptor */
+typedef volatile struct {    /* cache descriptor */
   const char* name;		/* for printing */
   struct lru_fsm_t* fsm;	/* LRU state transitions [ways!][ways] */
   long line;			/* line size in bytes */
@@ -32,19 +32,19 @@ struct cache_t {		/* cache descriptor */
   unsigned short* states;	/* LRU state vector [rows] */
   long* evicted;		/* tag of evicted line, 0 if clean, NULL if unwritable */
   long penalty;			/* cycles to refill line */
-  volatile long refs, misses;	/* count number of */
-  volatile long updates, evictions; /* if writeable */
-};
+  long refs, misses;	/* count number of */
+  long updates, evictions; /* if writeable */
+} cache_t;
 
-void flush_cache(volatile struct cache_t* c);
-void init_cache(volatile struct cache_t* c, const char* name, int penalty, int ways, int lg_line, int lg_rows, int writeable);
-void show_cache(volatile struct cache_t* c);
-void print_cache(volatile struct cache_t* c, FILE* f);
+void flush_cache(cache_t* c);
+void init_cache(cache_t* c, const char* name, int penalty, int ways, int lg_line, int lg_rows, int writeable);
+void show_cache(cache_t* c);
+void print_cache(cache_t* c, FILE* f);
 
 
 /* returns cycle when line available (may be in past)
      cache miss if return value == when_miss_arrive */
-static inline long lookup_cache( struct cache_t* c, long addr, int write, long when_miss_arrive )
+static inline long lookup_cache(cache_t* c, long addr, int write, long when_miss_arrive)
 {
   c->refs++;
   addr >>= c->lg_line;		/* make proper tag (ok to include index) */
