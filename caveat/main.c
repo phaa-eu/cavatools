@@ -29,7 +29,7 @@ const struct options_t opt[] =
    { "--sim",		.b=&conf.simulate,	.bv=1,		.h="Perform simulation" },
    { "--func=s",	.s=&conf.func,		.ds="_start",	.h="Function =name to simulate" },
    { "--cores=i",	.i=&conf.cores,		.di=0,		.h="Number of simulated cores" },
-   { "--report=i",	.i=&conf.report,	.di=10,		.h="Progress report every =number million cycles" },
+   { "--report=i",	.i=&conf.report,	.di=100,	.h="Progress report every =number million cycles" },
    { "--perf=s",	.s=&conf.perf,		.ds="caveat",	.h="Performance counters in shared memory =name" },
    
    { "--ecalls",	.b=&conf.ecalls,	.bv=1,		.h="Log system calls" },

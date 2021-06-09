@@ -19,7 +19,7 @@ erised:  erised.o $(LIBS)
 erised.o:  $(hdrs)
 
 install:  erised
-	-cp $^ $R/bin/cavascope
+	-cp $^ $R/bin/
 
 .PHONY:
 clean:

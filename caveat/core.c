@@ -46,13 +46,17 @@ void insert_breakpoint(Addr_t pc)
 
 int interpreter(core_t* cpu)
 {
+  //  long next_status = cpu->count.insn + conf.report;
   while (1) {	       /* terminated by program making exit() ecall */
     if (conf.fast_mode)
       fast_sim(cpu, conf.report);
     else
       slow_sim(cpu, conf.report);
-    if (!cpu->exceptions && !conf.quiet)
+    //    if (!cpu->exceptions && cpu->count.insn >= next_status && !conf.quiet) {
+    if (!cpu->exceptions && !conf.quiet) {
       status_report();
+      //      next_status = cpu->count.insn + conf.report;
+    }
     /* process all pending exceptions */
     while (cpu->exceptions) {
       if (cpu->exceptions & ECALL_INSTRUCTION) {
@@ -115,13 +119,13 @@ void status_report()
   double seconds = t2.tv_sec - t1->tv_sec;
   seconds += (t2.tv_usec - t1->tv_usec)/1e6;
   long total = 0;
-  fprintf(stderr, "IPC");
+  fprintf(stderr, "\33[2KIPC");
   char delimitor = '=';
   for (int i=0; i<active_cores; i++) {
     core_t* cpu = &core[i];
     total += cpu->count.insn;
     double ipc = (double)cpu->count.insn / cpu->count.cycle;
-    fprintf(stderr, "%c%5.3f(%ld)", delimitor, ipc, cpu->count.insn);
+    fprintf(stderr, "%c%4.2f", delimitor, ipc);
     delimitor = ',';
   }
   fprintf(stderr, " in %3.1fs for %3.1f MIPS (%ld insns)\r", seconds, total/1e6/seconds, total);
