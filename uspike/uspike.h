@@ -39,9 +39,9 @@ static_assert(sizeof(Insn_t) == 8);
 #define NOREG	0
 #define VMREG	1
 #define GPREG	VMREG+1
-#define FPREG	GPR+32
-#define VPREG	FPR+32
-#define NUMREGS	VPR+32
+#define FPREG	GPREG+32
+#define VPREG	FPREG+32
+#define NUMREGS	VPREG+32
 
 struct insnSpace_t {
   Addr_t base;

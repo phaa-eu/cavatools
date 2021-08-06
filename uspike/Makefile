@@ -39,6 +39,6 @@ RV_bits.tmp: parse_opcodes
 clean:
 	rm -f *.o *~ ./#*# *.tmp
 	rm -f insns/*.o insns/*.cc insns/*~ insns/#*#
-	rm -f uspike opcodes.h decoder.h  constants.cc
+	rm -f uspike opcodes.h decoder.h constants.cc libinsn.a
 
 

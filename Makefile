@@ -8,6 +8,7 @@ clean:
 	make -C caveat    clean
 #	make -C cachesim  clean
 	make -C erised    clean
+	make -C uspike    clean
 
 #	(cd $(HOME)/bin; rm -f caveat cachesim pipesim traceinfo )
 
