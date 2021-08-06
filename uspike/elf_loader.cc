@@ -1,0 +1,297 @@
+/*
+  Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+*/
+
+//#include "config.h"
+
+#include <unistd.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <elf.h>
+#include <sys/auxv.h>
+/*
+  Utility stuff.
+*/
+#define quitif(bad, fmt, ...) if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); exit(0); }
+#define dieif(bad, fmt, ...)  if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n");  abort(); }
+
+#define RISCV_PGSIZE  (1<<12)
+#define MEM_END		0x60000000L
+#define STACK_SIZE	0x08000000L
+#define BRK_SIZE	0x08000000L
+
+unsigned long low_bound, high_bound;
+
+static long phdrs[128];
+static char* strtbl;
+static Elf64_Sym* symtbl;
+static long num_syms;
+
+
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define CLAMP(a, lo, hi) MIN(MAX(a, lo), hi)
+#define ROUNDUP(a, b) ((((a)-1)/(b)+1)*(b))
+
+
+/**
+ * Get an annoymous memory segment using mmap() and load
+ * from file at offset.  Return 0 if fail.
+ */
+static void* load_elf_section(int file, ssize_t offset, ssize_t size)
+{
+  void* where = mmap(0, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  if (where == 0)
+    return 0;
+  ssize_t ret = lseek(file, offset, SEEK_SET);
+  if (ret < 0)
+    return 0;
+  ret = read(file, where, size);
+  if (ret < size)
+    return 0;
+  return where;
+}
+
+/**
+ * The protection flags are in the p_flags section of the program header.
+ * But rather annoyingly, they are the reverse of what mmap expects.
+ */
+static inline int get_prot(uint32_t p_flags)
+{
+  int prot_x = (p_flags & PF_X) ? PROT_EXEC  : PROT_NONE;
+  int prot_w = (p_flags & PF_W) ? PROT_WRITE : PROT_NONE;
+  int prot_r = (p_flags & PF_R) ? PROT_READ  : PROT_NONE;
+  return (prot_x | prot_w | prot_r);
+}
+
+static Elf64_Phdr* ph;
+ssize_t brk_min = 0;
+ssize_t brk_max = 0-1;
+
+static struct {
+  size_t phnum;
+  size_t phent;
+  size_t phdr;
+  size_t phdr_size;
+} current;
+
+void load_elf_binary(const char* file_name, long &entry, long &low_bound, long &high_bound, bool include_data)
+/* file_name	- name of ELF binary, must be statically linked for now
+   include_data	- 1=load DATA and BSS segments, 0=load TEXT only
+   returns entry point address */
+{
+  current.phdr = (uint64_t)phdrs;
+  current.phdr_size = sizeof phdrs;
+  int flags = MAP_FIXED | MAP_PRIVATE;
+  ssize_t ehdr_size;
+  size_t phdr_size;
+  long number_of_insn;
+  size_t tblsz;
+  char* shstrtbl;
+  ssize_t ret;
+
+  int file = open(file_name, O_RDONLY, 0);
+  quitif(file<0, "Unable to open binary file \"%s\"\n", file_name);
+
+  Elf64_Ehdr eh;
+  ehdr_size = read(file, &eh, sizeof(eh));
+  quitif(ehdr_size < (ssize_t)sizeof(eh) ||
+	 !(eh.e_ident[0] == '\177' && eh.e_ident[1] == 'E' &&
+	   eh.e_ident[2] == 'L'    && eh.e_ident[3] == 'F'),
+	 "Elf header not correct");
+  phdr_size = eh.e_phnum * sizeof(Elf64_Phdr);
+  quitif(phdr_size > current.phdr_size, "Phdr too big");
+
+  dieif(lseek(file, eh.e_shoff, SEEK_SET) < 0, "lseek failed");
+  dieif(read(file, (void*)phdrs, phdr_size) != (ssize_t)phdr_size, "read(phdr) failed");
+  current.phnum = eh.e_phnum;
+  current.phent = sizeof(Elf64_Phdr);
+  ph = (Elf64_Phdr*)load_elf_section(file, eh.e_phoff, phdr_size);
+  dieif(ph==0, "cannot load phdr");
+  current.phdr = (size_t)ph;
+
+  // don't load dynamic linker at 0, else we can't catch NULL pointer derefs
+  uintptr_t bias = 0;
+  //  if (eh.e_type == ET_DYN)
+  //    bias = RISCV_PGSIZE;
+  
+  for (int i = eh.e_phnum - 1; i >= 0; i--) {
+    fprintf(stderr, "section %d p_vaddr=0x%lx p_memsz=0x%lx\n", i, ph[i].p_vaddr, ph[i].p_memsz);
+    quitif(ph[i].p_type==PT_INTERP, "Not a statically linked ELF program");
+    if(ph[i].p_type == PT_LOAD && ph[i].p_memsz) {
+      //if(ph[i].p_type == PT_LOAD && ph[i].p_memsz && ph[i].p_vaddr >= 4096) {
+      fprintf(stderr, "  loaded\n");
+      uintptr_t prepad = ph[i].p_vaddr % RISCV_PGSIZE;
+      uintptr_t vaddr = ph[i].p_vaddr + bias;
+      if (vaddr + ph[i].p_memsz > brk_min)
+        brk_min = vaddr + ph[i].p_memsz;
+      int flags2 = flags | (prepad ? MAP_POPULATE : 0);
+      int prot = get_prot(ph[i].p_flags);
+      void* rc = mmap((void*)(vaddr-prepad), ph[i].p_filesz + prepad, prot | PROT_WRITE, flags2, file, ph[i].p_offset - prepad);
+      dieif(rc != (void*)(vaddr-prepad), "mmap(0x%ld) returned %p\n", (vaddr-prepad), rc);
+      memset((void*)(vaddr-prepad), 0, prepad);
+      if (!(prot & PROT_WRITE))
+        dieif(mprotect((void*)(vaddr-prepad), ph[i].p_filesz + prepad, prot), "Could not mprotect()\n");
+      size_t mapped = ROUNDUP(ph[i].p_filesz + prepad, RISCV_PGSIZE) - prepad;
+      if (ph[i].p_memsz > mapped)
+        dieif(mmap((void*)(vaddr+mapped), ph[i].p_memsz - mapped, prot, flags|MAP_ANONYMOUS, 0, 0) != (void*)(vaddr+mapped), "Could not mmap()\n");      
+    }
+    brk_max = brk_min + BRK_SIZE;
+  }
+
+  /* Read section header string table. */
+  Elf64_Shdr header;
+  assert(lseek(file, eh.e_shoff + eh.e_shstrndx * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
+  assert(read(file, &header, sizeof header) >= 0);
+  shstrtbl = (char*)load_elf_section(file, header.sh_offset, header.sh_size);
+  assert(shstrtbl);
+  /*
+   * Loop through section headers:
+   *  1.  load string table and symbol table
+   *  2.  zero out BSS and SBSS segments
+   *  3.  find lower and upper bounds of executable instructions
+   */
+  low_bound  = ~0L >> 1;
+  high_bound = 0L;
+  for (int i=0; i<eh.e_shnum; i++) {
+    assert(lseek(file, eh.e_shoff + i * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
+    assert(read(file, &header, sizeof header) >= 0);
+    if (strcmp(shstrtbl+header.sh_name, ".bss") == 0 ||
+	strcmp(shstrtbl+header.sh_name, ".sbss") == 0) {
+      memset((void*)header.sh_addr, 0, header.sh_size);
+    }
+    if (strcmp(shstrtbl+header.sh_name, ".strtab") == 0) {
+      strtbl = (char*)load_elf_section(file, header.sh_offset, header.sh_size);
+      dieif(strtbl==0, "could not load string table");
+    }
+    if (strcmp(shstrtbl+header.sh_name, ".symtab") == 0) {
+      symtbl = (Elf64_Sym*)load_elf_section(file, header.sh_offset, header.sh_size);
+      dieif(symtbl==0, "could not read symbol table");
+      num_syms = header.sh_size / sizeof(Elf64_Sym);
+    }
+    /* find bounds of instruction segment */
+    if (header.sh_flags & SHF_EXECINSTR) {
+      if (header.sh_addr < low_bound)
+	low_bound = header.sh_addr;
+      if (header.sh_addr+header.sh_size > high_bound)
+	high_bound = header.sh_addr+header.sh_size;
+    }
+  }
+  close(file);
+  
+  long stack_lowest = (long)mmap((void*)(MEM_END-STACK_SIZE), STACK_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  dieif(stack_lowest != MEM_END-STACK_SIZE, "Could not allocate stack\n");
+
+  entry = eh.e_entry + bias;
+}
+
+long initialize_stack(int argc, const char** argv, const char** envp, long entry)
+{
+//  fprintf(stderr, "current.stack_top=%lx, phdr_size=%lx\n", current.stack_top, current.phdr_size);
+
+  // copy phdrs to user stack
+  long stack_top = MEM_END;
+  stack_top -= sizeof(phdrs);
+  memcpy((void*)stack_top, (void*)ph, sizeof(phdrs));
+
+  // copy argv to user stack
+  for (size_t i=0; i<argc; i++) {
+    size_t len = strlen((char*)(uintptr_t)argv[i])+1;
+    stack_top -= len;
+    memcpy((void*)stack_top, (void*)(uintptr_t)argv[i], len);
+    argv[i] = (char*)stack_top;
+  }
+
+  // copy envp to user stack
+  size_t envc = 0;
+  size_t envlen = 0;
+  while (envp[envc])
+    envlen += strlen(envp[envc++]) + 1;
+  for (size_t i=0; i<envc; i++) {
+    size_t len = strlen(envp[i]) + 1;
+    stack_top -= len;
+    memcpy((void*)stack_top, envp[i], len);
+    envp[i] = (char*)stack_top;
+  }
+
+  // align stack
+  stack_top &= -sizeof(void*);
+
+  // place argc, argv, envp, auxp on stack
+  #define PUSH_ARG(type, value) do { \
+    *((type*)sp) = (type)value; \
+    sp += sizeof(type); \
+  } while (0)
+
+  struct AT_t {
+    long key;
+    size_t value;
+  } *auxp = (AT_t*)(envp+envc+1);
+  int auxc = 0;
+  while (auxp[auxc].key != AT_NULL)
+    auxc++;
+  stack_top -= (1 + argc + 1 + envc + 1 + 2*(auxc+1)) * sizeof(uintptr_t);
+  stack_top &= -16;
+  long sp = stack_top;
+  PUSH_ARG(uintptr_t, argc);
+  for (unsigned i = 0; i < argc; i++)
+    PUSH_ARG(uintptr_t, argv[i]);
+  PUSH_ARG(uintptr_t, 0); /* argv[argc] = NULL */
+  for (unsigned i = 0; i < envc; i++)
+    PUSH_ARG(uintptr_t, envp[i]);
+  PUSH_ARG(uintptr_t, 0); /* envp[envc] = NULL */
+  for (unsigned i = 0; i <= auxc; i++) {
+    long k = auxp[i].key;
+    size_t v = auxp[i].value;
+    if      (k == AT_ENTRY ) v = entry;
+    else if (k == AT_PHNUM ) v = (size_t)current.phnum;
+    else if (k == AT_PHENT ) v = (size_t)current.phent;
+    else if (k == AT_PHDR  ) v = current.phdr;
+    else if (k == AT_PAGESZ) v = RISCV_PGSIZE;
+    else if (k == AT_SECURE) v = 0;
+    else if (k == AT_RANDOM) v = stack_top;
+    PUSH_ARG(uintptr_t, k);
+    PUSH_ARG(uintptr_t, v);
+  }
+  return stack_top;
+}
+
+
+int find_symbol( const char* name, long* begin, long* end )
+{
+  if (strtbl) {
+    for (int i=0; i<num_syms; i++) {
+      int n = strlen(name);
+      if (strncmp(strtbl+symtbl[i].st_name, name, n) == 0) {
+	*begin = symtbl[i].st_value;
+	if (end)
+	  *end = *begin + symtbl[i].st_size;
+	return 1;
+      }
+    }
+  }
+  return 0;
+}
+
+
+int find_pc( long pc, const char** name, long* offset )
+{
+  if (symtbl) {
+    for (int i=0; i<num_syms; i++) {
+      if (symtbl[i].st_value <= pc && pc < symtbl[i].st_value+symtbl[i].st_size) {
+	*name = strtbl + symtbl[i].st_name;
+	*offset = pc - symtbl[i].st_value;
+	return 1;
+      }
+    }
+  }
+  return 0;
+}
+

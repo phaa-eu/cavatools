@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
-from __future__ import print_function
 from builtins import hex
 from builtins import range
 import math
 import sys
-import tokenize
 from collections import OrderedDict
+import re
+import os
+import json
 
 namelist = []
 match = OrderedDict()
@@ -20,22 +21,22 @@ arglut['rt'] = (19,15) # source+dest register address. Overlaps rs1.
 arglut['rs1'] = (19,15)
 arglut['rs2'] = (24,20)
 arglut['rs3'] = (31,27)
-arglut['aqrl'] = (26,25)
-arglut['fm'] = (31,28)
-arglut['pred'] = (27,24)
-arglut['succ'] = (23,20)
-arglut['rm'] = (14,12)
+arglut['aqrl'] = (26,25,'{1:0}')
+arglut['fm'] = (31,28,'{11:8}')
+arglut['pred'] = (27,24,'{7:4}')
+arglut['succ'] = (23,20,'{3:0}')
+arglut['rm'] = (14,12,'{2:0}')
 arglut['funct3'] = (14,12)
-arglut['imm20'] = (31,12)
-arglut['jimm20'] = (31,12)
-arglut['imm12'] = (31,20)
-arglut['imm12hi'] = (31,25)
-arglut['bimm12hi'] = (31,25)
-arglut['imm12lo'] = (11,7)
-arglut['bimm12lo'] = (11,7)
-arglut['zimm'] = (19,15)
-arglut['shamt'] = (25,20)
-arglut['shamtw'] = (24,20)
+arglut['imm20'] = (31,12,'{-31:12}')
+arglut['jimm20'] = (31,12,'{-20|10:1|11|19:12}')
+arglut['imm12'] = (31,20,'{-11:0}')
+arglut['imm12hi'] = (31,25,'{-11:5}')
+arglut['bimm12hi'] = (31,25,'{-12|10:5}')
+arglut['imm12lo'] = (11,7,'{4:0}')
+arglut['bimm12lo'] = (11,7,'{4:1|11}')
+arglut['zimm'] = (19,15,'{4:0}')
+arglut['shamt'] = (25,20,'{5:0}')
+arglut['shamtw'] = (24,20,'{4:0}')
 arglut['bs'] = (31,30) # byte select for RV32K AES
 arglut['rnum'] = (23,20) # round constant for RV64 AES
 
@@ -428,6 +429,8 @@ opcode_size = 7
 funct_base = 12
 funct_size = 3
 
+opcodes = {}
+
 def binary(n, digits=0):
   rep = bin(n)[2:]
   return rep if digits == 0 else ('0' * (digits - len(rep))) + rep
@@ -444,67 +447,75 @@ def str_arg(arg0,name,match,arguments):
     return binary(yank(match,start,len),len)
 
 def str_inst(name,arguments):
-  return name.replace('.rv32','').upper()
+#  return name.replace('.rv32','').upper()
+  v = name.replace('.rv32','')
+  v += '('+','.join(arguments)+')'
+  return v
 
-def dollar(name, tuple):
-  line = '$ {:22s}'.format(name)
-  for i in range(len(tuple)):
-    line += " {:s} ".format(tuple[i])
-  print(line)
+def opcode(name, type, fields):
+  tuple = []
+  for t in fields[:-1]:
+    if re.match('\w+', t) and t in arglut:
+      if len(arglut[t]) > 2:
+        t = arglut[t][2]
+    tuple.append(t)
+  opcodes[name] = {}
+  opcodes[name]['type'] = type
+  opcodes[name]['bits'] = ' '.join(tuple)
 
 def print_unimp_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'unimp', \
   ( \
     '0'*32, \
     'UNIMP' \
   ))
 
 def print_u_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'u', \
   ( \
-    str_arg('imm20','imm[31:12]',match,arguments), \
+    str_arg('imm20','',match,arguments), \
     str_arg('rd','',match,arguments), \
     binary(yank(match,opcode_base,opcode_size),opcode_size), \
     str_inst(name,arguments) \
   ))
 
 def print_uj_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'uj', \
   ( \
-    str_arg('jimm20','imm[20$\\vert$10:1$\\vert$11$\\vert$19:12]',match,arguments), \
+    str_arg('jimm20','',match,arguments), \
     str_arg('rd','',match,arguments), \
     binary(yank(match,opcode_base,opcode_size),opcode_size), \
     str_inst(name,arguments) \
   ))
 
 def print_s_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 's', \
   ( \
-    str_arg('imm12hi','imm[11:5]',match,arguments), \
+    str_arg('imm12hi','',match,arguments), \
     str_arg('rs2','',match,arguments), \
     str_arg('rs1','',match,arguments), \
     binary(yank(match,funct_base,funct_size),funct_size), \
-    str_arg('imm12lo','imm[4:0]',match,arguments), \
+    str_arg('imm12lo','',match,arguments), \
     binary(yank(match,opcode_base,opcode_size),opcode_size), \
     str_inst(name,arguments) \
   ))
 
 def print_sb_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'sb', \
   ( \
-    str_arg('bimm12hi','imm[12$\\vert$10:5]',match,arguments), \
+    str_arg('bimm12hi','',match,arguments), \
     str_arg('rs2','',match,arguments), \
     str_arg('rs1','',match,arguments), \
     binary(yank(match,funct_base,funct_size),funct_size), \
-    str_arg('bimm12lo','imm[4:1$\\vert$11]',match,arguments), \
+    str_arg('bimm12lo','',match,arguments), \
     binary(yank(match,opcode_base,opcode_size),opcode_size), \
     str_inst(name,arguments) \
   ))
 
 def print_i_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'i', \
   ( \
-    str_arg('imm12','imm[11:0]',match,arguments), \
+    str_arg('imm12','',match,arguments), \
     str_arg('rs1','',match,arguments), \
     binary(yank(match,funct_base,funct_size),funct_size), \
     str_arg('rd','',match,arguments), \
@@ -513,10 +524,10 @@ def print_i_type(name,match,arguments):
   ))
 
 def print_csr_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'csr', \
   ( \
-    str_arg('imm12','csr',match,arguments), \
-    ('uimm' if name[-1] == 'i' else 'rs1'), \
+    str_arg('imm12','{11:0}',match,arguments), \
+    name[-1]=='i' and str_arg('rs1','{16:12}',match,arguments) or str_arg('rs1','',match,arguments), \
     binary(yank(match,funct_base,funct_size),funct_size), \
     str_arg('rd','',match,arguments), \
     binary(yank(match,opcode_base,opcode_size),opcode_size), \
@@ -524,10 +535,10 @@ def print_csr_type(name,match,arguments):
   ))
 
 def print_ish_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'ish', \
   ( \
     binary(yank(match,26,6),6), \
-    str_arg('shamt','shamt',match,arguments), \
+    str_arg('shamt','',match,arguments), \
     str_arg('rs1','',match,arguments), \
     binary(yank(match,funct_base,funct_size),funct_size), \
     str_arg('rd','',match,arguments), \
@@ -536,10 +547,10 @@ def print_ish_type(name,match,arguments):
   ))
 
 def print_ishw_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'ishw', \
   ( \
     binary(yank(match,25,7),7), \
-    str_arg('shamtw','shamt',match,arguments), \
+    str_arg('shamtw','',match,arguments), \
     str_arg('rs1','',match,arguments), \
     binary(yank(match,funct_base,funct_size),funct_size), \
     str_arg('rd','',match,arguments), \
@@ -548,11 +559,11 @@ def print_ishw_type(name,match,arguments):
   ))
 
 def print_r_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'r', \
   ( \
     binary(yank(match,25,7),7), \
     str_arg('rs2','',match,arguments), \
-    'zimm' in arguments and str_arg('zimm','imm[4:0]',match,arguments) or str_arg('rs1','',match,arguments), \
+    'zimm' in arguments and str_arg('zimm','',match,arguments) or str_arg('rs1','',match,arguments), \
     str_arg('rm','',match,arguments), \
     str_arg('rd','',match,arguments), \
     binary(yank(match,opcode_base,opcode_size),opcode_size), \
@@ -560,7 +571,7 @@ def print_r_type(name,match,arguments):
   ))
 
 def print_r4_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'r4', \
   ( \
     str_arg('rs3','',match,arguments), \
     binary(yank(match,25,2),2), \
@@ -573,9 +584,10 @@ def print_r4_type(name,match,arguments):
   ))
 
 def print_amo_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'amo', \
   ( \
     binary(yank(match,27,5),5), \
+    str_arg('aqrl','',match,arguments), \
     str_arg('rs2','',match,arguments), \
     str_arg('rs1','',match,arguments), \
     binary(yank(match,funct_base,funct_size),funct_size), \
@@ -585,7 +597,7 @@ def print_amo_type(name,match,arguments):
   ))
 
 def print_fence_type(name,match,arguments):
-  dollar(name, \
+  opcode(name, 'fence', \
   ( \
     str_arg('fm','fm',match,arguments), \
     str_arg('pred','pred',match,arguments), \
@@ -593,6 +605,19 @@ def print_fence_type(name,match,arguments):
     str_arg('rs1','',match,arguments), \
     binary(yank(match,funct_base,funct_size),funct_size), \
     str_arg('rd','',match,arguments), \
+    binary(yank(match,opcode_base,opcode_size),opcode_size), \
+    str_inst(name,arguments) \
+  ))
+
+def print_v_type(name,match,arguments):
+  opcode(name, 'v', \
+  ( \
+    binary(yank(match,26,6),6), \
+    str_arg('vm','',match,arguments), \
+    str_arg('vs2' in arguments and 'vs2' or 'rs2', '', match, arguments), \
+    str_arg('vs1' in arguments and 'vs1' or 'rs1', '', match, arguments), \
+    binary(yank(match,funct_base,funct_size),funct_size), \
+    str_arg('vd' in arguments and 'vd' or ('vs3' in arguments and 'vs3' or 'rd'), '', match, arguments), \
     binary(yank(match,opcode_base,opcode_size),opcode_size), \
     str_inst(name,arguments) \
   ))
@@ -620,18 +645,21 @@ def print_inst(n):
     print_sb_type(n, match[n], arguments[n])
   elif 'rs3' in arguments[n]:
     print_r4_type(n, match[n], arguments[n])
+  #elif re.match('v.+\..*v', n):
+  elif re.match('v.+\.', n):
+    print_v_type(n, match[n], arguments[n])
   else:
     print_r_type(n, match[n], arguments[n])
 
 def parse_inputs(args):
   inputs = []
   for fn in args:
-      try:
-          inputs.append(open(fn))
-      except:
-          assert(0)
+    try:
+      inputs.append(open(fn))
+    except:
+      assert(0)
   if not inputs:
-      inputs.append(sys.stdin)
+    inputs.append(sys.stdin)
 
   for f in inputs:
     for line in f:
@@ -704,10 +732,11 @@ def parse_inputs(args):
       match[name] = mymatch
       namelist.append(name)
 
-    if f is not sys.stdin:
-        f.close()
+  if f is not sys.stdin:
+      f.close()
   return (namelist, pseudos, mask, match, arguments)
 
 parse_inputs(sys.argv[1:])
-for n in namelist:
-  print_inst(n)
+for name in namelist:
+  print_inst(name)
+json.dump(opcodes, sys.stdout, indent=4)
