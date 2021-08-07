@@ -63,18 +63,40 @@ void insnSpace_t::init(long lo, long hi)
 
 int main(int argc, const char* argv[], const char* envp[])
 {
+  fprintf(stderr, "isa=%s, vec=%s\n", isa.val(), vec.val());
   parse_arguments(argc, argv);
+  fprintf(stderr, "isa=%s, vec=%s\n", isa.val(), vec.val());
   processor_t* p = new processor_t(isa.val(), "mu", vec.val(), 0, 0, false, stdout);
+  STATE.prv = PRV_U;
+  STATE.mstatus |= (MSTATUS_FS|MSTATUS_VS);
+  STATE.vsstatus |= SSTATUS_FS;
   long entry = load_elf_binary(argv[0], 1);
   insn.init(low_bound, high_bound);
   WRITE_REG(2, initialize_stack(argc, argv, envp, entry));
   long pc = entry;
+  long insn_count = 0;
   while (1) {
-    fprintf(stderr, "%8lx %08x ", pc, insn.image(pc));
-    Insn_t i = insn.at(pc);
-    long oldpc = pc;
-    pc = emulate[i.op_code](pc, p);
-    disasm(oldpc);
+    try {
+      while (1) {
+	//fprintf(stderr, "%8ld ", insn_count);
+	Insn_t i = insn.at(pc);
+	long oldpc = pc;
+	pc = emulate[i.op_code](pc, p);
+	insn_count++;
+	//disasm(oldpc);
+      }
+    } catch(trap_user_ecall& e) {
+      WRITE_REG(10, proxy_ecall(READ_REG(17),
+				insn_count,
+				READ_REG(10),
+				READ_REG(11),
+				READ_REG(12),
+				READ_REG(13),
+				READ_REG(14),
+				READ_REG(15)));
+      pc += 4;
+      insn_count++;
+    }
   }
   return 0;
 }

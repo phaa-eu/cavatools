@@ -21,7 +21,7 @@ CFLAGS := -g -O0
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 
-bins := main.o constants.o decoder.o elf_loader.o
+bins := main.o constants.o decoder.o elf_loader.o proxy_ecall.o
 
 uspike: $(bins) insns
 	make -j 16 -C insns
@@ -32,6 +32,11 @@ uspike: $(bins) insns
 
 main.o constants.o decoder.o: uspike.h opcodes.h
 decoder.o: decoder.h
+elf_loader.o proxy_ecall.o: process.h
+proxy_ecall.o:  ecall_nums.h
+
+ecall_nums.h:
+	./syscall_mapping $R/riscv-pk/pk/syscall.h $B/fesvr/syscall.h
 
 opcodes.h decoder.h constants.cc insns: RV_isa.tmp ./crunch_isa
 	./crunch_isa RV_isa.tmp
@@ -46,6 +51,6 @@ RV_bits.tmp: parse_opcodes
 clean:
 	rm -f *.o *~ ./#*# *.tmp
 	rm -f insns/*.o insns/*.cc insns/*~ insns/#*#
-	rm -f uspike opcodes.h decoder.h constants.cc libinsn.a
+	rm -f uspike opcodes.h decoder.h constants.cc ecall_nums.h libinsn.a
 
 

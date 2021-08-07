@@ -12,9 +12,9 @@ using namespace std;
 #include "opcodes.h"
 
 struct Insn_t {
-  int op_4B		:  1;
-  int op_vm		:  1;
-  int op_longimmed	:  1;
+  unsigned op_4B	:  1;
+  unsigned op_vm	:  1;
+  unsigned op_longimmed	:  1;
   enum Opcode_t op_code	: 13;
   uint8_t op_rd;
   uint8_t op_r1;
@@ -61,6 +61,8 @@ inline void disasm(long pc, FILE* f =stderr) { disasm(pc, "\n", f); }
 extern long (*emulate[])(long pc, processor_t* p);
 #undef set_pc_and_serialize
 #define set_pc_and_serialize(x)
+#undef serialize
+#define serialize(x)
 #define xlen 64
 
 //typedef long (*emulate_t)(long pc, processor_t* p);
@@ -90,6 +92,8 @@ extern "C" {
   long load_elf_binary( const char* file_name, int include_data );
   long initialize_stack(int argc, const char** argv, const char** envp, long entry);
   extern unsigned long low_bound, high_bound;
+  void start_time(long mhz =1000000000);
+  long proxy_ecall(long rvnum, long cycles, long a0, long a1, long a2, long a3, long a4, long a5);
 };
 
 Insn_t decoder(long pc);
