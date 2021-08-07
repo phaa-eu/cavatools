@@ -10,7 +10,7 @@
     "c.addi"	: { "type":"c", "bits":"000  {-5}        rd        {4:0} 01" },
     "c.jal"	: { "type":"c", "bits":"001  {-5}        rd        {4:0} 01" },
     "c.li"	: { "type":"c", "bits":"010  {-5}        rd        {4:0} 01" },
-    "c.addi16sp": { "type":"c", "bits":"011 {-17}        rd      {16:12} 01" },
+    "c.lui"	: { "type":"c", "bits":"011 {-17}        rd      {16:12} 01" },
     "c.srli"	: { "type":"c", "bits":"100   {5} 00    cs1        {4:0} 01" },
     "c.srai"	: { "type":"c", "bits":"100   {5} 01    cs1        {4:0} 01" },
     "c.andi"	: { "type":"c", "bits":"100  {-5} 10    cs1        {4:0} 01" },

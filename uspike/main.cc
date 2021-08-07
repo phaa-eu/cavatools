@@ -70,7 +70,7 @@ int main(int argc, const char* argv[], const char* envp[])
   WRITE_REG(2, initialize_stack(argc, argv, envp, entry));
   long pc = entry;
   while (1) {
-    fprintf(stderr, "%8lx ", pc);
+    fprintf(stderr, "%8lx %08x ", pc, insn.image(pc));
     Insn_t i = insn.at(pc);
     long oldpc = pc;
     pc = emulate[i.op_code](pc, p);
