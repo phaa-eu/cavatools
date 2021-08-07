@@ -22,31 +22,31 @@ with open(sys.argv[1]) as f:
     opcodes = json.load(f, object_pairs_hook=OrderedDict)
 
 regs = {}
-regs['cfd']	= ( 2, 3, 'op_rd',  '+8+FPREG')
-regs['crd']	= ( 2, 3, 'op_rd',  '+8+GPREG')
-regs['cs2']	= ( 2, 3, 'op.rs2', '+8+GPREG')
-regs['ds2']	= ( 2, 3, 'op.rs2', '+8+FPREG')
-regs['fs4']	= ( 2, 5, 'op.rs2', '+FPREG')
-regs['rs4']	= ( 2, 5, 'op.rs2', '+GPREG')
-regs['cs1']	= ( 7, 3, 'op_rs1', '+8+GPREG')
+regs['cfd']	= ( 2, 3, 'op_rd', '+8+FPREG')
+regs['crd']	= ( 2, 3, 'op_rd', '+8+GPREG')
+regs['cs2']	= ( 2, 3, 'op.r2', '+8+GPREG')
+regs['ds2']	= ( 2, 3, 'op.r2', '+8+FPREG')
+regs['fs4']	= ( 2, 5, 'op.r2', '+FPREG')
+regs['rs4']	= ( 2, 5, 'op.r2', '+GPREG')
+regs['cs1']	= ( 7, 3, 'op_r1', '+8+GPREG')
 
-regs['rd']	= ( 7, 5, 'op_rd',  '+GPREG')
-regs['fd']	= ( 7, 5, 'op_rd',  '+FPREG')
-regs['vd']	= ( 7, 5, 'op_rd',  '+VPREG')
-regs['vs3']	= ( 7, 5, 'op.rs3', '+VPREG')
+regs['rd']	= ( 7, 5, 'op_rd', '+GPREG')
+regs['fd']	= ( 7, 5, 'op_rd', '+FPREG')
+regs['vd']	= ( 7, 5, 'op_rd', '+VPREG')
+regs['vs3']	= ( 7, 5, 'op.r3', '+VPREG')
 
-regs['rs1']	= (15, 5, 'op_rs1', '+GPREG')
-regs['fs1']	= (15, 5, 'op_rs1', '+FPREG')
-regs['vs1']	= (15, 5, 'op_rs1', '+VPREG')
+regs['rs1']	= (15, 5, 'op_r1', '+GPREG')
+regs['fs1']	= (15, 5, 'op_r1', '+FPREG')
+regs['vs1']	= (15, 5, 'op_r1', '+VPREG')
 
-regs['rs2']	= (20, 5, 'op.rs2', '+GPREG')
-regs['fs2']	= (20, 5, 'op.rs2', '+FPREG')
-regs['vs2']	= (20, 5, 'op.rs2', '+VPREG')
+regs['rs2']	= (20, 5, 'op.r2', '+GPREG')
+regs['fs2']	= (20, 5, 'op.r2', '+FPREG')
+regs['vs2']	= (20, 5, 'op.r2', '+VPREG')
 
-regs['rs3']	= (27, 5, 'op.rs3', '+GPREG')
-regs['fs3']	= (27, 5, 'op.rs3', '+FPREG')
+regs['rs3']	= (27, 5, 'op.r3', '+GPREG')
+regs['fs3']	= (27, 5, 'op.r3', '+FPREG')
 
-regs['vm']	= (25, 1, 'op_vm',  '+VMREG')
+regs['vm']	= (25, 1, 'op_vm', '+VMREG')
 
 errors = 0
 for name in opcodes:
@@ -76,7 +76,7 @@ with open('newcode.tmp', 'w') as f:
         mask = 0
         registers = []
         immed = []
-        imm_field = 'op.imm'
+        bigimm = 0
         for b in reversed(opcodes[name]['bits'].split()):
             if re.match('[01]+', b):
                 code |= int(b, 2) << pos
@@ -101,7 +101,7 @@ with open('newcode.tmp', 'w') as f:
                         lo = int(m.group(2)[1:])
                     tuple.append((hi, lo))
                     i += len(m.group(0))
-                    if hi >= 16:  imm_field = 'op_immed'
+                    if hi >= 16:  bigimm = 1
                 for (hi, lo) in reversed(tuple[1:]):
                     shift = lo and '<<{:d}'.format(lo) or ''
                     immed.append('x({:d},{:d}){:s}'.format(pos, hi-lo+1, shift))
@@ -116,31 +116,42 @@ with open('newcode.tmp', 'w') as f:
                 pos += width
         if pos == 16:
             opcodes[name]['len'] = 2
-            f.write('  if(b&0x{:04x}==0x{:04x}) {{ i.op_4B=0;'.format(mask, code))
+            biginsn = 0
+            f.write('  if((b&0x{:04x})==0x{:04x})'.format(mask, code))
         elif pos == 32:
             opcodes[name]['len'] = 4
-            f.write('  if(b&0x{:08x}==0x{:08x}) {{ i.op_4B=1;'.format(mask, code))
+            biginsn = 1
+            f.write('  if((b&0x{:08x})==0x{:08x})'.format(mask, code))
         else:
             eprint('Illegal length', name, pos, 'bits', opcodes[name]['bits'])
             eprint(immed)
             exit(-1)
-        f.write('i.op_code=Op_{:9s}\t{:s}'.format(name.replace('.','_')+';', '; '.join(registers)))
+        f.write(' {{ i=Insn_t(Op_{:s},{:d},{:d});\t'.format(name.replace('.','_'), biginsn, bigimm))
+        f.write('; '.join(registers))
         if immed:
-            f.write(';\ti.{:s}={:s}'.format(imm_field, '|'.join(immed)))
+            f.write(';\ti.{:s}={:s}'.format(bigimm and 'op_immed' or 'op.imm', '|'.join(immed)))
         f.write('; return i; }\n')
 diffcp('decoder.h')
 
 with open('newcode.tmp', 'w') as f:
     f.write('#include "uspike.h"\n')
-    for name in opcodes:
+    for name in ['ZERO'] + list(opcodes.keys()) + ['ILLEGAL', 'UNKNOWN']:
         f.write('long I_{:s}(long pc, processor_t* p);\n'.format(name.replace('.','_')))
     f.write('\n')
     f.write('long (*emulate[])(long pc, processor_t* p) = {')
     i = 0
-    for name in opcodes:
+    for name in ['ZERO'] + list(opcodes.keys()) + ['ILLEGAL', 'UNKNOWN']:
         if i % 4 == 0:
             f.write('\n  ')
-        f.write('&I_{:23s}'.format(name.replace('.','_')+','))
+        f.write('&I_{:21s}'.format(name.replace('.','_')+','))
+        i += 1
+    f.write('\n};\n')
+    f.write('const char* op_name[] = {')
+    i = 0
+    for name in ['ZERO'] + list(opcodes.keys()) + ['ILLEGAL', 'UNKNOWN']:
+        if i % 4 == 0:
+            f.write('\n  ')
+        f.write('{:24s}'.format('"'+name.replace('.','_')+'",'))
         i += 1
     f.write('\n};\n')
 diffcp('constants.cc')
@@ -157,13 +168,13 @@ for name in opcodes:
         if not 'flags' in opcode:
             eprint('No flags for', name)
         if 'pc' in opcode['flags']:
-            f.write('  long npc = pc + {:d};\n'.format(opcode['len']*8))
+            f.write('  long npc = pc + {:d};\n'.format(opcode['len']))
         for line in opcodes[name]["exec"].split('\n'):
             if line:
                 f.write('  {:s}\n'.format(line))
         if 'pc' in opcode['flags']:
             f.write('  return npc;\n')
         else:
-            f.write('  return pc + {:d};\n'.format(opcode['len']*8))
+            f.write('  return pc + {:d};\n'.format(opcode['len']))
         f.write('}\n')
     diffcp('./insns/{:s}.cc'.format(name.replace('.','_')))

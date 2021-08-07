@@ -43,6 +43,8 @@ void parse_arguments(int &argc, const char**& argv)
     exit(0);
   next_option: ;
   }
+  argc -= i;
+  argv += i;
 }
 
 static arg<const char*> isa("isa=", "rv64imafdcv", "RISC-V instruction set architecture string");
@@ -50,29 +52,29 @@ static arg<const char*> vec("vec=", "vlen:128,elen:64,slen:128", "Vector unit pa
 
 insnSpace_t insn;
 
-void insnSpace_t::predecode(long lo, long hi)
+void insnSpace_t::init(long lo, long hi)
 {
   base=lo;
   limit=hi;
-  predecoded=new Insn_t[(hi-lo)/2];
-  for (long pc=lo; pc<hi; ) {
-    predecoded[(pc-lo)/2] = decoder(pc);
-    pc += 2*(predecoded[(pc-lo)/2].op_4B+1);
-  }
+  int n = (hi-lo)/2;
+  predecoded=new Insn_t[n];
+  memset(predecoded, 0, n*sizeof(Insn_t));
 }
 
 int main(int argc, const char* argv[], const char* envp[])
 {
   parse_arguments(argc, argv);
   processor_t* p = new processor_t(isa.val(), "mu", vec.val(), 0, 0, false, stdout);
-  long pc;
-  long low_bound, high_bound;
-  load_elf_binary(argv[0], pc, low_bound, high_bound);
-  insn.predecode(low_bound, high_bound);
-  WRITE_REG(2, initialize_stack(argc, argv, envp, pc));
+  long entry = load_elf_binary(argv[0], 1);
+  insn.init(low_bound, high_bound);
+  WRITE_REG(2, initialize_stack(argc, argv, envp, entry));
+  long pc = entry;
   while (1) {
-    Insn_t i = decoder(pc);
+    fprintf(stderr, "%8lx ", pc);
+    Insn_t i = insn.at(pc);
+    long oldpc = pc;
     pc = emulate[i.op_code](pc, p);
+    disasm(oldpc);
   }
   return 0;
 }

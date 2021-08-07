@@ -11,30 +11,37 @@ ISAg := $(addprefix $(RVOPS)/opcodes-, $(ISAg))
 ISAv := $(addprefix $(RVOPS)/opcodes-, $(ISAv))
 ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
-B := /opt/BUILD/riscv-isa-sim
-I :=  -I$B/build -I$B/riscv -I$B/fesvr -I$B/softfloat -I$B/riscv/insns
+R := /opt/BUILD
+B := $R/riscv-isa-sim
+I := -I$B/build -I$B/riscv -I$B/fesvr -I$B/softfloat -I$B/riscv/insns
 L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 #CXXFLAGS := $I -I$R/include/cava -g -O0
 CXXFLAGS := $I -g -O0
-LDFLAGS := -Wl,-Ttext=70000000 $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
+CFLAGS := -g -O0
+LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
+LDFLAGS := -Wl,-Ttext=70000000
 
-uspike: main.o constants.o decoder.o elf_loader.o
+bins := main.o constants.o decoder.o elf_loader.o
+
+uspike: $(bins) insns
 	make -j 16 -C insns
-	$(CXX) $(CXXFLAGS) -o uspike $^ libinsn.a $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) libinsn.a $(LIBS)
 
-elf_loader.o:  elf_loader.cc
-	$(CXX) -g -c elf_loader.cc
+#elf_loader.o:  elf_loader.c
+#	$(CC) $(CFLAGS) -I$R/riscv-gnu-toolchain/linux-headers/include/linux/ -g -c elf_loader.c
 
-main.o constants.o decoder.o: opcodes.h uspike.h
+main.o constants.o decoder.o: uspike.h opcodes.h
+decoder.o: decoder.h
 
-opcodes.h decoder.h constants.cc insns: crunch_isa RV_isa.tmp
+opcodes.h decoder.h constants.cc insns: RV_isa.tmp ./crunch_isa
 	./crunch_isa RV_isa.tmp
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
 	./parse_spike $(RVINS) RV_bits.tmp RVC.bits > $@
 
 RV_bits.tmp: parse_opcodes
-	./parse_opcodes $(ISAg) $(ISAv) $(ISAp) > $@
+	./parse_opcodes $(ISAg) > $@
+#	./parse_opcodes $(ISAg) $(ISAv) $(ISAp) > $@
 
 clean:
 	rm -f *.o *~ ./#*# *.tmp
