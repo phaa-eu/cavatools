@@ -1,13 +1,22 @@
 #include <cassert>
 #include <cstdint>
-#include <iostream>
-using namespace std;
+#include <stdio.h>
 
-#include "encoding.h"
-#include "trap.h"
-#include "arith.h"
-#include "mmu.h"
-#include "processor.h"
+void init_cpu(long entry, long sp, const char* isa, const char* vec);
+void* clone_cpu(long sp, long tp);
+
+enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
+
+enum stop_reason single_step(long &executed);
+enum stop_reason run_insns(long number, long &executed);
+
+extern "C" {
+  long load_elf_binary(const char* file_name, int include_data);
+  long initialize_stack(int argc, const char** argv, const char** envp, long entry);
+  extern unsigned long low_bound, high_bound;
+  void start_time(int mhz);
+  int proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1, long a2, long a3, long a4, long a5);
+};
 
 #include "opcodes.h"
 
@@ -38,6 +47,8 @@ static_assert(sizeof(Insn_t) == 8);
 #define VPREG	FPREG+32
 #define NUMREGS	VPREG+32
 
+Insn_t decoder(long pc);
+
 class insnSpace_t {
   long base;
   long limit;
@@ -48,32 +59,22 @@ public:
   long index(long pc) { return (pc-base)/2; }
   Insn_t at(long pc) { return predecoded[index(pc)]; }
   uint32_t image(long pc) { assert(base<=pc && pc<limit); return *(uint32_t*)(pc); }
-  friend long I_ZERO(long pc, processor_t* p);
+  void set(long pc, Insn_t i) { predecoded[index(pc)] = i; }
 };
 
-extern insnSpace_t insn;
+extern insnSpace_t code;
 extern const char* op_name[];
 extern const char* reg_name[];
 
 void disasm(long pc, const char* end, FILE* f =stderr);
 inline void disasm(long pc, FILE* f =stderr) { disasm(pc, "\n", f); }
 
-extern long (*emulate[])(long pc, processor_t* p);
-#undef set_pc_and_serialize
-#define set_pc_and_serialize(x)
-#undef serialize
-#define serialize(x)
-#define xlen 64
-
-//typedef long (*emulate_t)(long pc, processor_t* p);
-//extern emulate_t emulate[];
-
 struct pctrace_t {
   long pc;
-  reg_t val;
+  long val;
   uint8_t rn;
   pctrace_t() { pc=0; val=0; rn=0; }
-  pctrace_t(long p, int n, reg_t v) { pc=p; val=v; rn=n; }
+  pctrace_t(long p, int n, long v) { pc=p; val=v; rn=n; }
 };
 
 #define PCTRACEBUFSZ  (1<<6)
@@ -82,24 +83,11 @@ struct Debug_t {
   int cursor;
   pctrace_t get() { pctrace_t pt=trace[cursor]; cursor=(cursor+1)%PCTRACEBUFSZ; return pt; }
   void insert(pctrace_t pt)    { trace[cursor]=pt; cursor=(cursor+1)%PCTRACEBUFSZ; }
-  void insert(long pc, int rn, reg_t val) { insert(pctrace_t(pc, rn, val)); }
+  void insert(long pc, int rn, long val) { insert(pctrace_t(pc, rn, val)); }
   void print(FILE* f =stderr);
 };
 
 extern Debug_t debug;
-
-extern "C" {
-  long load_elf_binary( const char* file_name, int include_data );
-  long initialize_stack(int argc, const char** argv, const char** envp, long entry);
-  extern unsigned long low_bound, high_bound;
-  void start_time(long mhz =1000000000);
-  long proxy_ecall(long rvnum, long cycles, long a0, long a1, long a2, long a3, long a4, long a5);
-};
-
-Insn_t decoder(long pc);
-void run_insns(processor_t* p, long count);
-
-extern processor_t* gdbCPU;
 
 void OpenTcpLink(const char* name);
 void ProcessGdbCommand();

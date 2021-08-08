@@ -21,24 +21,27 @@ CFLAGS := -g -O0
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 
-bins := main.o constants.o decoder.o elf_loader.o proxy_ecall.o
+bins := main.o decoder.o elf_loader.o proxy_syscall.o interpreter.o
 
-uspike: $(bins) insns
+uspike: $(bins) libcava.a
+	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) libcava.a $(LIBS)
+
+libcava.a:  opcodes.h
 	make -j 16 -C insns
-	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) libinsn.a $(LIBS)
+
 
 #elf_loader.o:  elf_loader.c
 #	$(CC) $(CFLAGS) -I$R/riscv-gnu-toolchain/linux-headers/include/linux/ -g -c elf_loader.c
 
-main.o constants.o decoder.o: uspike.h opcodes.h
-decoder.o: decoder.h
-elf_loader.o proxy_ecall.o: process.h
-proxy_ecall.o:  ecall_nums.h
+main.o decoder.o: uspike.h opcodes.h
+#decoder.o: decoder.h
+elf_loader.o proxy_syscall.o: processinfo.h
+interpreter.o:  ecall_nums.h dispatch_table.h
 
 ecall_nums.h:
 	./syscall_mapping $R/riscv-pk/pk/syscall.h $B/fesvr/syscall.h
 
-opcodes.h decoder.h constants.cc insns: RV_isa.tmp ./crunch_isa
+opcodes.h decoder.h constants.h dispatch_table.h insns: RV_isa.tmp ./crunch_isa
 	./crunch_isa RV_isa.tmp
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
@@ -51,6 +54,6 @@ RV_bits.tmp: parse_opcodes
 clean:
 	rm -f *.o *~ ./#*# *.tmp
 	rm -f insns/*.o insns/*.cc insns/*~ insns/#*#
-	rm -f uspike opcodes.h decoder.h constants.cc ecall_nums.h libinsn.a
+	rm -f uspike opcodes.h decoder.h dispatch_table.h constants.h ecall_nums.h libcava.a
 
 

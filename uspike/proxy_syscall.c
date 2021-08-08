@@ -21,16 +21,15 @@
 //#include <pthread.h>
 //#include <signal.h>
 
-#include "process.h"
-#include "ecall_nums.h"
+#include "processinfo.h"
 
-static long pretend_MHz;
+static long pretend_Hz;
 static struct timeval start_tv;
 
-void start_time(long mhz)
+void start_time(int mhz)
 {
   gettimeofday(&start_tv, 0);
-  pretend_MHz = mhz;
+  pretend_Hz = mhz * 1000000;
 }
 
 static long emulate_brk(long addr, struct pinfo_t* info)
@@ -54,22 +53,16 @@ static long emulate_brk(long addr, struct pinfo_t* info)
   return newbrk;
 }
 
-long proxy_ecall(long rvnum, long cycles, long a0, long a1, long a2, long a3, long a4, long a5)
+int proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1, long a2, long a3, long a4, long a5)
 {
-  if (rvnum < 0 || rvnum >= rv_syscall_entries) {
-  no_mapping:
-    fprintf(stderr, "RISC-V system call %ld has no mapping to host system\n", rvnum);
-    fprintf(stderr, "Arguments(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n", a0, a1, a2, a3, a4, a5);
-    abort();
-  }
-  long sysnum = rv_to_host[rvnum].sysnum;
-  fprintf(stderr, "ecall %s->%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
-	  rv_to_host[rvnum].name, sysnum, a0, a1, a2, a3, a4, a5);
+  fprintf(stderr, "ecall %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
+	  name, sysnum, a0, a1, a2, a3, a4, a5);
   switch (sysnum) {
   case -1:
-    goto no_mapping;
+    fprintf(stderr, "No mapping for system call %s to host system\n", name);
+    abort();
   case -2:
-    fprintf(stderr, "RISCV-V system call %s(#%ld) not supported on host system\n", rv_to_host[rvnum].name, sysnum);
+    fprintf(stderr, "RISCV-V system call %s not supported on host system\n", name);
     abort();
     
 #if 0
@@ -105,8 +98,8 @@ long proxy_ecall(long rvnum, long cycles, long a0, long a1, long a2, long a3, lo
   case __NR_gettimeofday:
     {
       struct timeval tv;
-      tv.tv_sec  = cycles / pretend_MHz;
-      tv.tv_usec = cycles % pretend_MHz;
+      tv.tv_sec  = cycles / pretend_Hz;
+      tv.tv_usec = cycles % pretend_Hz;
       tv.tv_sec  += start_tv.tv_sec;
       tv.tv_usec += start_tv.tv_usec;
       tv.tv_sec  += tv.tv_usec / 1000000;  // microseconds overflow
@@ -119,7 +112,7 @@ long proxy_ecall(long rvnum, long cycles, long a0, long a1, long a2, long a3, lo
     {
       struct tms tms_buf;
       memset(&tms_buf, 0, sizeof tms_buf);
-      tms_buf.tms_utime = (double)cycles * sysconf(_SC_CLK_TCK) / pretend_MHz;
+      tms_buf.tms_utime = (double)cycles * sysconf(_SC_CLK_TCK) / pretend_Hz;
       memcpy((void*)a0, &tms_buf, sizeof tms_buf);
     }
     return 0;

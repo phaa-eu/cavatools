@@ -43,18 +43,11 @@ with open('ecall_nums.h', 'w') as en:
         en.write('#ifndef __NR_{:s}\n'.format(name))
         en.write('#define __NR_{:s}  -2\n'.format(name))
         en.write('#endif\n')
-    en.write("""\n
-    static const struct {
-        int sysnum;
-        const char*name;
-    } rv_to_host[] = {
-    """)
     for n in range(0, highest+1):
         if n in ecall:
             name = ecall[n]
-            en.write('    /* {:5d} */ {{ __NR_{:s}, "{:s}" }},\n'.format(n, name, name))
+            en.write('/* {:5d} */ {{ __NR_{:s}, "{:s}" }},\n'.format(n, name, name))
         else:
-            en.write('    /* {:5d} */ {{ -1, 0 }},\n'.format(n))
-    en.write('};\n\n')
-    en.write('const int rv_syscall_entries = {:d};\n\n'.format(highest+1))
+            en.write('/* {:5d} */ {{ -1, 0 }},\n'.format(n))
+    en.write('\n#define rv_syscall_entries {:d}\n'.format(highest+1))
 

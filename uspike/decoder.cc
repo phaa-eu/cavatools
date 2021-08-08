@@ -3,7 +3,7 @@
 Insn_t decoder(long pc)
 {
   Insn_t i;
-  uint32_t b = insn.image(pc);
+  uint32_t b = code.image(pc);
 #define x( lo, len) ((b >> lo) & ((1 << len)-1))
 #define xs(lo, len) (b << (32-lo-len) >> (32-len))
   
@@ -15,8 +15,8 @@ Insn_t decoder(long pc)
 
 void disasm(long pc, const char* end, FILE* f)
 {
-  Insn_t i = insn.at(pc);
-  uint32_t b = insn.image(pc);
+  Insn_t i = code.at(pc);
+  uint32_t b = code.image(pc);
   fprintf(stderr, "%8lx: ", pc);
   if (i.op_4B) fprintf(stderr, "%08x  ",     b);
   else fprintf(stderr, "    %04x  ", b&0xFFFF);
@@ -48,20 +48,3 @@ const char* reg_name[] = {
   "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23",
   "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31",
 };
-			  
-long I_ZERO(long pc, processor_t* p)
-{
-  Insn_t i = decoder(pc);
-  insn.predecoded[insn.index(pc)] = i;
-  return emulate[i.op_code](pc, p);
-}
-
-long I_ILLEGAL(long pc, processor_t* p)
-{
-  dieif(1, "I_ILLEGAL at 0x%lx", pc);
-}
-
-long I_UNKNOWN(long pc, processor_t* p)
-{
-  dieif(1, "I_UNKNOWN at 0x%lx", pc);
-}

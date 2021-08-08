@@ -1,8 +1,6 @@
 /*
-  Copyright (c) 2020 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
-
-//#include "config.h"
 
 #include <unistd.h>
 #include <stdint.h>
@@ -16,7 +14,7 @@
 #include <fcntl.h>
 #include <elf.h>
 
-#include "process.h"
+#include "processinfo.h"
 
 /*
   Utility stuff.
@@ -37,12 +35,9 @@ static char* strtbl;
 static Elf64_Sym* symtbl;
 static long num_syms;
 
-
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define CLAMP(a, lo, hi) MIN(MAX(a, lo), hi)
-
-
 
 /**
  * Get an annoymous memory segment using mmap() and load
