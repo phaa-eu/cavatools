@@ -16,6 +16,7 @@ def diffcp(fname):
     if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
         os.system('rm newcode.tmp')
     else:
+        eprint(fname, 'updated')
         os.system('mv newcode.tmp '+fname)
 
 with open(sys.argv[1]) as f:
@@ -29,6 +30,7 @@ regs['ds2']	= ( 2, 3, 'op.r2', '+8+FPREG')
 regs['fs4']	= ( 2, 5, 'op.r2', '+FPREG')
 regs['rs4']	= ( 2, 5, 'op.r2', '+GPREG')
 regs['cs1']	= ( 7, 3, 'op_r1', '+8+GPREG')
+regs['cd1']	= ( 7, 3, 'op_rd', '+8+GPREG')
 
 regs['rd']	= ( 7, 5, 'op_rd', '+GPREG')
 regs['fd']	= ( 7, 5, 'op_rd', '+FPREG')

@@ -65,22 +65,15 @@ int proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1, 
     fprintf(stderr, "RISCV-V system call %s not supported on host system\n", name);
     abort();
     
-#if 0
+#if 1
   case __NR_brk:
-    return emulate_brk(cpu->reg[10].l, &current);
+    return emulate_brk(a0, &current);
 #endif
 
-#if 0
   case __NR_exit:
-    //fprintf(stderr, "core[%ld] exit(%d) called\n", cpu-core, cpu->reg[10].i);
-    __sync_fetch_and_or(&cpu->exceptions, EXIT_SYSCALL);
-    break;
-    
   case __NR_exit_group:
-    //fprintf(stderr, "core[%ld] exit_group(%d) called\n", cpu-core, cpu->reg[10].i);
-    __sync_fetch_and_or(&cpu->exceptions, EXIT_SYSCALL);
-    break;
-#endif
+    fprintf(stderr, "should never proxy exit and exit_group");
+    abort();
 
   case __NR_rt_sigaction:
     fprintf(stderr, "rt_sigaction called\n");

@@ -56,7 +56,7 @@ class insnSpace_t {
 public:  
   insnSpace_t() { base=limit=0; predecoded=0; }
   void init(long lo, long hi);
-  long index(long pc) { return (pc-base)/2; }
+  long index(long pc) { assert(base<=pc && pc<limit); return (pc-base)/2; }
   Insn_t at(long pc) { return predecoded[index(pc)]; }
   uint32_t image(long pc) { assert(base<=pc && pc<limit); return *(uint32_t*)(pc); }
   void set(long pc, Insn_t i) { predecoded[index(pc)] = i; }
@@ -69,32 +69,39 @@ extern const char* reg_name[];
 void disasm(long pc, const char* end, FILE* f =stderr);
 inline void disasm(long pc, FILE* f =stderr) { disasm(pc, "\n", f); }
 
-struct pctrace_t {
-  long pc;
-  long val;
-  uint8_t rn;
-  pctrace_t() { pc=0; val=0; rn=0; }
-  pctrace_t(long p, int n, long v) { pc=p; val=v; rn=n; }
-};
-
-#define PCTRACEBUFSZ  (1<<6)
-struct Debug_t {
-  pctrace_t trace[PCTRACEBUFSZ];
-  int cursor;
-  pctrace_t get() { pctrace_t pt=trace[cursor]; cursor=(cursor+1)%PCTRACEBUFSZ; return pt; }
-  void insert(pctrace_t pt)    { trace[cursor]=pt; cursor=(cursor+1)%PCTRACEBUFSZ; }
-  void insert(long pc, int rn, long val) { insert(pctrace_t(pc, rn, val)); }
-  void print(FILE* f =stderr);
-};
-
-extern Debug_t debug;
-
 void OpenTcpLink(const char* name);
 void ProcessGdbCommand(void* spike_state =0);
 
 /*
   Utility stuff.
 */
+#define die(fmt, ...)                  { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); abort(); }
+#define dieif(bad, fmt, ...)  if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); abort(); }
 #define quitif(bad, fmt, ...) if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); exit(0); }
-#define dieif(bad, fmt, ...)  if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n");  abort(); }
 
+
+#define DEBUG
+#ifdef DEBUG
+
+struct pctrace_t {
+  long count;
+  long pc;
+  long val;
+  uint8_t rn;
+};
+
+#define PCTRACEBUFSZ  (1<<5)
+struct Debug_t {
+  pctrace_t trace[PCTRACEBUFSZ];
+  int cursor;
+  Debug_t() { cursor=0; }
+  pctrace_t get();
+  void insert(pctrace_t pt);
+  void insert(long c, long pc);
+  void addval(int rn, long val);
+  void print(FILE* f =stderr);
+};
+
+extern Debug_t debug;
+
+#endif

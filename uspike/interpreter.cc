@@ -2,6 +2,8 @@
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
+#include <asm/unistd_64.h>
+
 #include "interpreter.h"
 #include "uspike.h"
 
@@ -22,7 +24,7 @@ static bool make_ecall(long executed)
   if (rvnum < 0 || rvnum >= rv_syscall_entries)
     throw trap_user_ecall();
   long sysnum = rv_to_host[rvnum].sysnum;
-  if (sysnum == __NR_exit || sysnum == __NR_exit_group) {
+  if (sysnum == 60 || sysnum == 231) { // X64 exit || exit_group
     STATE.pc += 4;
     return true;
   }
@@ -69,21 +71,27 @@ void* clone_cpu(long sp, long tp)
 
 enum stop_reason single_step(long &executed)
 {
+  enum stop_reason reason = stop_normal;
   try {
+#ifdef DEBUG
+    long oldpc = STATE.pc;
+    debug.insert(executed+1, STATE.pc);
+#endif
     STATE.pc = golden[code.at(STATE.pc).op_code](STATE.pc, p);
-    return stop_normal;
+    executed++;
+#ifdef DEBUG
+    Insn_t i = code.at(oldpc);
+    int rn = i.op_rd==NOREG ? i.op.r2 : i.op_rd;
+    debug.addval(rn, READ_REG(rn));
+#endif
   } catch(trap_user_ecall& e) {
-    if (make_ecall(executed)) {
-      executed++;
-      return stop_exited;
-    }
-    else {
-      executed++;
-      return stop_normal;
-    }
+    if (make_ecall(executed))
+      reason = stop_exited;
+    executed++;
   } catch(trap_breakpoint& e) {
-    return stop_breakpoint;
+    reason = stop_breakpoint;
   }
+  return stop_normal;
 }
 
 enum stop_reason run_insns(long number, long &executed)
@@ -92,19 +100,31 @@ enum stop_reason run_insns(long number, long &executed)
   long pc = STATE.pc;
   enum stop_reason reason = stop_normal;
   while (count < number) {
+#ifdef DEBUG
+      long oldpc = pc;
+      debug.insert(executed+count+1, pc);
+#endif
     try {
+      //disasm(pc);
       pc = golden[code.at(pc).op_code](pc, p);
     } catch(trap_user_ecall& e) {
       STATE.pc = pc;
-      count += 1;
       if (make_ecall(executed)) {
 	reason = stop_exited;
+	count++;
 	break;
       }
+      pc = STATE.pc;
     } catch(trap_breakpoint& e) {
       reason = stop_breakpoint;
       break;
     }
+#ifdef DEBUG
+    Insn_t i = code.at(oldpc);
+    int rn = i.op_rd==NOREG ? i.op.r2 : i.op_rd;
+    debug.addval(rn, READ_REG(rn));
+#endif
+    count++;
   }
   STATE.pc = pc;
   executed += count;

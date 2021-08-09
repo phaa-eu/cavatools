@@ -16,6 +16,8 @@ Insn_t decoder(long pc)
 void disasm(long pc, const char* end, FILE* f)
 {
   Insn_t i = code.at(pc);
+  if (i.op_code == Op_ZERO)
+    i = decoder(pc);
   uint32_t b = code.image(pc);
   fprintf(stderr, "%8lx: ", pc);
   if (i.op_4B) fprintf(stderr, "%08x  ",     b);

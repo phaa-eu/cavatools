@@ -35,7 +35,7 @@ libcava.a:  opcodes.h
 
 main.o decoder.o: uspike.h opcodes.h
 main.o options.o: options.h
-#decoder.o: decoder.h
+decoder.o: decoder.h
 elf_loader.o proxy_syscall.o gdblink.o: processinfo.h interpreter.h
 interpreter.o:  ecall_nums.h dispatch_table.h
 
