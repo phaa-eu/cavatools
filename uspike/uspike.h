@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <stdio.h>
 
-void init_cpu(long entry, long sp, const char* isa, const char* vec);
+void* init_cpu(long entry, long sp, const char* isa, const char* vec);
 void* clone_cpu(long sp, long tp);
 
 enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
@@ -90,7 +90,7 @@ struct Debug_t {
 extern Debug_t debug;
 
 void OpenTcpLink(const char* name);
-void ProcessGdbCommand();
+void ProcessGdbCommand(void* spike_state =0);
 
 /*
   Utility stuff.

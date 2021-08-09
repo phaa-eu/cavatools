@@ -21,7 +21,7 @@ CFLAGS := -g -O0
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 
-bins := main.o decoder.o elf_loader.o proxy_syscall.o interpreter.o
+bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o
 
 uspike: $(bins) libcava.a
 	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) libcava.a $(LIBS)
@@ -34,8 +34,9 @@ libcava.a:  opcodes.h
 #	$(CC) $(CFLAGS) -I$R/riscv-gnu-toolchain/linux-headers/include/linux/ -g -c elf_loader.c
 
 main.o decoder.o: uspike.h opcodes.h
+main.o options.o: options.h
 #decoder.o: decoder.h
-elf_loader.o proxy_syscall.o: processinfo.h
+elf_loader.o proxy_syscall.o gdblink.o: processinfo.h interpreter.h
 interpreter.o:  ecall_nums.h dispatch_table.h
 
 ecall_nums.h:

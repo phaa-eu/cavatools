@@ -48,13 +48,14 @@ static processor_t* create_cpu(const char* isa, const char* vec)
   return p;
 }
 
-void init_cpu(long entry, long sp, const char* isa, const char* vec)
+void* init_cpu(long entry, long sp, const char* isa, const char* vec)
 {
   isa_string = isa;
   vec_string = vec;
   p = create_cpu(isa_string, vec_string);
   STATE.pc = entry;
   WRITE_REG(2, sp);
+  return p;
 }
 
 void* clone_cpu(long sp, long tp)
