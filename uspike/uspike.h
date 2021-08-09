@@ -1,3 +1,7 @@
+/*
+  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+*/
+
 #include <cassert>
 #include <cstdint>
 #include <stdio.h>

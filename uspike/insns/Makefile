@@ -1,5 +1,10 @@
-B := /opt/BUILD/riscv-isa-sim
+#  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+
+# Paths to riscv-tools build directories on local system
+RVTOOLS := /opt/riscv-tools
+B := $(RVTOOLS)/riscv-isa-sim
 I :=  -I$B/build -I$B/riscv -I$B/fesvr -I$B/softfloat -I$B/riscv/insns
+
 CXXFLAGS := $I -g -O0
 
 insn_files := $(wildcard *.cc)
