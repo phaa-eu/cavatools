@@ -18,26 +18,37 @@ static const struct {
 #include "ecall_nums.h"
 };
 
+long get_pc()
+{
+  return STATE.pc;
+}
+
+long get_reg(int rn)
+{
+  return STATE.XPR[rn];
+}
+
 static bool make_ecall(long executed)
 {
+  static long ecall_count;
   long rvnum = READ_REG(17);
   if (rvnum < 0 || rvnum >= rv_syscall_entries)
     throw trap_user_ecall();
   long sysnum = rv_to_host[rvnum].sysnum;
+  long a0=READ_REG(10), a1=READ_REG(11), a2=READ_REG(12), a3=READ_REG(13), a4=READ_REG(14), a5=READ_REG(15);
+  const char* name = rv_to_host[rvnum].name;
+  ecall_count++;
+  if (report_ecalls && ecall_count % report_ecalls == 0)
+    fprintf(stderr, "\n%12ld %8lx: ecalls=%ld %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)",
+	    executed, STATE.pc, ecall_count, name, sysnum, a0, a1, a2, a3, a4, a5);
   if (sysnum == 60 || sysnum == 231) { // X64 exit || exit_group
     STATE.pc += 4;
     return true;
   }
-  WRITE_REG(10, proxy_syscall(sysnum,
-			      executed,
-			      rv_to_host[rvnum].name,
-			      READ_REG(10),
-			      READ_REG(11),
-			      READ_REG(12),
-			      READ_REG(13),
-			      READ_REG(14),
-			      READ_REG(15)));
+  WRITE_REG(10, proxy_syscall(sysnum, executed, name, a0, a1, a2, a3, a4, a5));
   STATE.pc += 4;		// increment after in case exception
+  if (report_ecalls && ecall_count % report_ecalls == 0)
+    fprintf(stderr, "->0x%lx", READ_REG(10));
   return false;
 }
 
@@ -78,6 +89,7 @@ enum stop_reason single_step(long &executed)
     debug.insert(executed+1, STATE.pc);
 #endif
     STATE.pc = golden[code.at(STATE.pc).op_code](STATE.pc, p);
+    WRITE_REG(0, 0);
     executed++;
 #ifdef DEBUG
     Insn_t i = code.at(oldpc);
@@ -100,32 +112,40 @@ enum stop_reason run_insns(long number, long &executed)
   long pc = STATE.pc;
   enum stop_reason reason = stop_normal;
   while (count < number) {
-#ifdef DEBUG
-      long oldpc = pc;
-      debug.insert(executed+count+1, pc);
-#endif
     try {
-      //disasm(pc);
-      pc = golden[code.at(pc).op_code](pc, p);
+      do {
+#ifdef DEBUG
+	long oldpc = pc;
+	debug.insert(executed+count+1, pc);
+#endif
+	if (!code.valid(pc))
+	  diesegv();
+	pc = golden[code.at(pc).op_code](pc, p);
+	WRITE_REG(0, 0);
+#ifdef DEBUG
+	Insn_t i = code.at(oldpc);
+	//int rn = i.op_rd==NOREG ? i.op.r2 : i.op_rd;
+	//debug.addval(rn, READ_REG(rn));
+	debug.addval(i.op_rd, get_reg(i.op_rd));
+#endif
+      } while (++count < number);
     } catch(trap_user_ecall& e) {
       STATE.pc = pc;
-      if (make_ecall(executed)) {
-	reason = stop_exited;
-	count++;
-	break;
+      count++;
+      if (!make_ecall(executed+count+1)) {
+	debug.addval(10, get_reg(10));
+	pc += 4;
+	continue;
       }
-      pc = STATE.pc;
+      STATE.pc += 4;
+      reason = stop_exited;
+      goto early_exit;
     } catch(trap_breakpoint& e) {
       reason = stop_breakpoint;
-      break;
+      goto early_exit;
     }
-#ifdef DEBUG
-    Insn_t i = code.at(oldpc);
-    int rn = i.op_rd==NOREG ? i.op.r2 : i.op_rd;
-    debug.addval(rn, READ_REG(rn));
-#endif
-    count++;
   }
+ early_exit:
   STATE.pc = pc;
   executed += count;
   return reason;
@@ -134,7 +154,7 @@ enum stop_reason run_insns(long number, long &executed)
 			  
 long I_ZERO(long pc, processor_t* p)
 {
-  Insn_t i = decoder(pc);
+  Insn_t i = decoder(code.image(pc), pc);
   code.set(pc, i);
   return golden[i.op_code](pc, p);
 }

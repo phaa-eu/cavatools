@@ -12,7 +12,16 @@
 #define set_pc_and_serialize(x) STATE.pc = (x) & p->pc_alignment_mask()
 
 #undef serialize
-#define serialize(x)
+#define serialize()
+
+#undef validate_csr
+#define validate_csr(which, write) ({ \
+  /* disallow writes to read-only CSRs */ \
+  unsigned csr_read_only = get_field((which), 0xC00) == 3; \
+  if ((write) && csr_read_only) \
+    throw trap_illegal_instruction(insn.bits()); \
+  /* other permissions checks occur in get_csr */ \
+  (which); })
 
 #define xlen 64
 

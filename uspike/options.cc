@@ -8,7 +8,7 @@
 #include "options.h"
 
 template <> void option<>     ::setval(const char* v) { if (!v) value=none; else value=v;       }
-template <> void option<>     ::printval() { fprintf(stderr, "%s", value); }
+template <> void option<>     ::printval() { fprintf(stderr, "%s", value?value:"0"); }
 
 template <> void option<int>  ::setval(const char* v) { if (!v) value=none; else value=atoi(v); }
 template <> void option<int>  ::printval() { fprintf(stderr, "%d", value); }
@@ -16,7 +16,10 @@ template <> void option<int>  ::printval() { fprintf(stderr, "%d", value); }
 template <> void option<long> ::setval(const char* v) { if (!v) value=none; else value=atoi(v); }
 template <> void option<long> ::printval() { fprintf(stderr, "%ld", value); }
 
-options_t* options_t::list;
+template <> void option<bool> ::setval(const char* v) { if (!v) value=none; else help_exit(); }
+template <> void option<bool> ::printval() { fprintf(stderr, "%s", value?"true":"false"); }
+
+options_t* options_t::list = 0;
 const char* options_t::title;
 
 void parse_options(int &argc, const char**& argv, const char* t)
@@ -26,12 +29,13 @@ void parse_options(int &argc, const char**& argv, const char* t)
   while (i < argc && strncmp(argv[i], "--", 2)==0) {
     if (strcmp(argv[i], "--help") == 0)
       options_t::help_exit();
-    for (options_t* p=options_t::list; p; p=p->next)
+    for (options_t* p=options_t::list; p; p=p->next) {
       if (p->matches(argv[i]+2))
 	goto next_option;
+    }
     fprintf(stderr, "Unknown option %s\n", argv[i]);
     exit(0);
-  next_option: ;
+  next_option:
     i += 1;
   }
   argc -= i;
@@ -48,8 +52,8 @@ bool options_t::matches(const char* opt)
       options_t::help_exit();
     setval(0);
   }
-  else if (opt[len+1] == '=')
-    setval(opt+len+2);
+  else if (opt[len] == '=')
+    setval(opt+len+1);
   else
     options_t::help_exit();
   return true;

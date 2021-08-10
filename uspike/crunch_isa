@@ -166,9 +166,9 @@ if not os.path.exists('./insns'):
 for name in opcodes:
     with open('newcode.tmp', 'w') as f:
         opcode = opcodes[name]
-        f.write('#include "../interpreter.h"\n')
+        f.write('#include "interpreter.h"\n')
         f.write('long I_{:s}(long pc, processor_t* p) {{\n'.format(name.replace('.','_')))
-        f.write('  insn_t insn = *(int{:d}_t*)pc;\n'.format(opcode['len']*8))
+        f.write('  insn_t insn = (long)(*(int{:d}_t*)pc);\n'.format(opcode['len']*8))
         if not 'flags' in opcode:
             eprint('No flags for', name)
         if 'pc' in opcode['flags']:

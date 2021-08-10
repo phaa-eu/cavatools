@@ -25,11 +25,28 @@
 
 static long pretend_Hz;
 static struct timeval start_tv;
+int report_ecalls;
 
 void start_time(int mhz)
 {
   gettimeofday(&start_tv, 0);
   pretend_Hz = mhz * 1000000;
+}
+
+double elapse_time()
+{
+  struct timeval now_tv;
+  gettimeofday(&now_tv, 0);
+  struct timeval *t0=&start_tv, *t1=&now_tv;
+  double seconds = t1->tv_sec + t1->tv_usec/1e6;
+  seconds       -= t0->tv_sec + t0->tv_usec/1e6;
+  return seconds;
+}
+
+double simulated_time(long cycles)
+{
+  double seconds = cycles / pretend_Hz;
+  seconds += (cycles % pretend_Hz) / 1e6;
 }
 
 static long emulate_brk(long addr, struct pinfo_t* info)
@@ -46,17 +63,20 @@ static long emulate_brk(long addr, struct pinfo_t* info)
   uintptr_t newbrk_page = ROUNDUP(newbrk, RISCV_PGSIZE);
   if (info->brk > newbrk_page)
     munmap((void*)newbrk_page, info->brk - newbrk_page);
-  else if (info->brk < newbrk_page)
-    assert(mmap((void*)info->brk, newbrk_page - info->brk, -1, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0) == (void*)info->brk);
+  else if (info->brk < newbrk_page) {
+    void* rc = mmap((void*)info->brk, newbrk_page - info->brk, -1, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
+    if(rc != (void*)info->brk) {
+      fprintf(stderr, "Unable to mmap() in emulate_brk()\n");
+      abort();
+    }
+  }
   info->brk = newbrk_page;
 
   return newbrk;
 }
 
-int proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1, long a2, long a3, long a4, long a5)
+long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1, long a2, long a3, long a4, long a5)
 {
-  fprintf(stderr, "ecall %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
-	  name, sysnum, a0, a1, a2, a3, a4, a5);
   switch (sysnum) {
   case -1:
     fprintf(stderr, "No mapping for system call %s to host system\n", name);

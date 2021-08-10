@@ -35,3 +35,4 @@ public:
 };
 
 void parse_options(int &argc, const char**& argv, const char* t);
+inline void help_exit() { options_t::help_exit(); }

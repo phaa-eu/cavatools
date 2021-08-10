@@ -23,8 +23,8 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o
 
-CXXFLAGS := $I -g -O0
-CFLAGS := -g -O0
+CXXFLAGS := $I -g -O3
+CFLAGS := -g -O3
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 
@@ -54,13 +54,16 @@ RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
 	./parse_spike $(RVINS) RV_bits.tmp RVC.bits > $@
 
 RV_bits.tmp: parse_opcodes
-	./parse_opcodes $(ISAg) $(ISAv) $(ISAp) > $@
+	./parse_opcodes $(ISAg) > $@
+#	./parse_opcodes $(ISAg) $(ISAv) $(ISAp) > $@
 
-# Cleanup
+# Cleanup & installation
 
 clean:
 	rm -f *.o *~ ./#*# *.tmp
 	rm -f insns/*.o insns/*.cc insns/*~ insns/#*#
 	rm -f uspike opcodes.h decoder.h dispatch_table.h constants.h ecall_nums.h libcava.a
 
+install: uspike
+	cp uspike $(HOME)/bin/.
 

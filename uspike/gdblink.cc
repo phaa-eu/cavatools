@@ -65,6 +65,7 @@ static void
 putDebugChar(int ch) {
   int rc;
   do {
+    //fprintf(stderr, "%c", ch);
     rc = write(tcpLink, &ch, 1);
     if (rc < 0) {
       perror("putDebugChar");
@@ -228,7 +229,6 @@ SendPacket() {
   } while (getDebugChar() != '+');
   outPtr = outBuf;
   *outPtr = '\0';
-
   //  fprintf(stderr, "SendPacket: `%s'\n", outBuf);
 }
 
@@ -241,8 +241,7 @@ Reply(const char* msg) {
 
 static void
 ReplyInHex(void* address, int bytes) {
-  //  fprintf(stderr, "address=%x, bytes=%d\n", address, bytes);
-
+  fprintf(stderr, "ReplyInHex(address=%p, bytes=%d)\n", address, bytes);
   char* p = (char*)address;
   char* tmpbuf = (char*)alloca(bytes);
   if (tmpbuf == NULL)
@@ -412,7 +411,10 @@ ProcessGdbCommand(void* spike_cpu)
 	long length;		// Number of bytes.
 	if (RcvHexInt(&addr) && *inPtr++ == ',' && RcvHexInt(&length)) {
 	  //ReplyInHex((char*) memory + addr, length);
-	  printf("Sending %ld bytes at %lx value 0x%016lx\n", length, addr, *(long*)addr);
+	  long val = *(long*)addr;
+	  //	  if (length < 8)
+	  //	    val &= (1<<(length*8))-1;
+	  printf("Sending %ld bytes at %lx value 0x%lx\n", length, addr, val);
 	  ReplyInHex((char*)addr, length);
 	}
 	else
@@ -426,10 +428,21 @@ ProcessGdbCommand(void* spike_cpu)
 	long length;		// Number of bytes.
 	if (RcvHexInt(&addr) && *inPtr++ == ',' && RcvHexInt(&length) && *inPtr++ == ':') {
 	  //if (RcvHexToMemory((char*) memory + addr, length))
-	  if (RcvHexToMemory((char*)addr, length))
-	    Reply("OK");
-	  else
-	    Reply("E02");
+	  if (code.valid(addr) && length <= 4) {
+	    int buf = 0;
+	    if (RcvHexToMemory(&buf, length)) {
+	      code.set(addr, decoder(buf, addr));
+	      Reply("OK");
+	    }
+	    else
+	      Reply("E02");
+	  }
+	  else {
+	    if (RcvHexToMemory((char*)addr, length))
+	      Reply("OK");
+	    else
+	      Reply("E02");
+	  }
 	}
 	else
 	  Reply("E01");
@@ -456,6 +469,7 @@ ProcessGdbCommand(void* spike_cpu)
     case 'c':			// cAA..AA - continue at address AA..AA
       printf("GDB_COMMAND: c\n");
       //theCPU->single_step = false;
+      theCPU->single_step = state_t::STEP_NONE;
       {
 	long addr;
 	if (*inPtr == '\0')
@@ -467,7 +481,6 @@ ProcessGdbCommand(void* spike_cpu)
 	}
 	else
 	  Reply("E01");
-	theCPU->single_step = state_t::STEP_NONE;
       }
       break;
 

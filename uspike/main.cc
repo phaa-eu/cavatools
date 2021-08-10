@@ -6,11 +6,13 @@
 
 insnSpace_t code;
 
-static option<>      isa("isa",  "rv64imafdcv",			"RISC-V ISA string");
-static option<>      vec("vec",  "vlen:128,elen:64,slen:128",	"Vector unit parameters");
-static option<int>   mhz("mhz",  1000,				"Pretend MHz");
-static option<long> stat("stat", 100,				"Status every M instructions");
-static option<>      gdb("gdb",	 0, "localhost:1234", 		"Remote GDB on socket");
+static option<>      isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
+static option<>      vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
+static option<int>   mhz("mhz",		1000,				"Pretend MHz");
+static option<int>  stat("stat",	100,				"Status every M instructions");
+static option<bool> show("show",	false, true,			"Show instructions executing");
+static option<>      gdb("gdb", 	0, "localhost:1234", 		"Remote GDB on socket");
+static option<int> ecall("ecall",	0, 1,				"Report every N ecalls");
 
 #ifdef DEBUG
 
@@ -18,31 +20,29 @@ Debug_t debug;
 
 pctrace_t Debug_t::get()
 {
-  pctrace_t pt = trace[cursor];
   cursor = (cursor+1) % PCTRACEBUFSZ;
-  return pt;
+  return trace[cursor];
 }
 
 void Debug_t::insert(pctrace_t pt)
 {
-  trace[cursor] = pt;
   cursor = (cursor+1) % PCTRACEBUFSZ;
+  trace[cursor] = pt;
 }
 
 void Debug_t::insert(long c, long pc)
 {
+  cursor = (cursor+1) % PCTRACEBUFSZ;
   trace[cursor].count = c;
   trace[cursor].pc    = pc;
   trace[cursor].val   = ~0l;
-  trace[cursor].rn    = 0;
-  cursor = (cursor+1) % PCTRACEBUFSZ;
+  trace[cursor].rn    = GPREG;
 }
 
 void Debug_t::addval(int rn, long val)
 {
-  int c = (cursor+PCTRACEBUFSZ-1) % PCTRACEBUFSZ;
-  trace[c].rn    = rn;
-  trace[c].val   = val;
+  trace[cursor].rn    = rn;
+  trace[cursor].val   = val;
 }
 
 void Debug_t::print(FILE* f)
@@ -53,7 +53,10 @@ void Debug_t::print(FILE* f)
       fprintf(stderr, "%15ld %4s[%016lx] ", t.count, reg_name[t.rn], t.val);
     else
       fprintf(stderr, "%15ld %4s[%16s] ", t.count, "", "");
-    disasm(t.pc);
+    labelpc(t.pc);
+    if (code.valid(t.pc))
+      disasm(t.pc, "");
+    fprintf(stderr, "\n");
   }
 }
 
@@ -74,9 +77,18 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 
 #endif
 
+static void status_report(long insn_count)
+{
+  double realtime = elapse_time();
+  fprintf(stderr, "\r%12ld instructions in %5.3f for %3.1f MIPS", insn_count, realtime, insn_count/1e6/realtime);
+}
+
 int main(int argc, const char* argv[], const char* envp[])
 {
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
+  if (argc == 0)
+    help_exit();
+  report_ecalls = ecall.val();
   start_time(mhz.val());
   long entry = load_elf_binary(argv[0], 1);
   code.init(low_bound, high_bound);
@@ -84,7 +96,17 @@ int main(int argc, const char* argv[], const char* envp[])
   void* mycpu = init_cpu(entry, sp, isa.val(), vec.val());
   if (gdb.val()) {
     OpenTcpLink(gdb.val());
-    ProcessGdbCommand(mycpu);
+    enum stop_reason reason;
+    long insn_count = 0;
+    do {
+      ProcessGdbCommand(mycpu);
+      do {
+	reason = run_insns(stat.val()*1000000, insn_count);
+	status_report(insn_count);
+      } while (reason == stop_normal);
+      status_report(insn_count);
+      fprintf(stderr, "\n");
+    } while (reason != stop_exited);
     exit(0);
   }
 
@@ -105,17 +127,21 @@ int main(int argc, const char* argv[], const char* envp[])
   
   enum stop_reason reason;
   long insn_count = 0;
-  do {
-    reason = run_insns(stat.val()*1000000, insn_count);
-    //reason = run_insns(1, insn_count);
-    //reason = single_step(insn_count);
-    fprintf(stderr, "\r%ld instructions", insn_count);
-  } while (reason == stop_normal);
+  if (show.val()) do {
+      fprintf(stderr, "%15ld ", insn_count);
+      labelpc(get_pc());
+      disasm(get_pc());
+      reason = single_step(insn_count);
+    } while (reason == stop_normal);
+  else do {
+      reason = run_insns(stat.val()*1000000, insn_count);
+      status_report(insn_count);
+    } while (reason == stop_normal);
+  status_report(insn_count);
+  fprintf(stderr, "\n");
   if (reason == stop_breakpoint)
     fprintf(stderr, "stop_breakpoint\n");
-  else if (reason == stop_exited)
-    fprintf(stderr, "stop_exited\n");
-  else
+  else if (reason != stop_exited)
     die("unknown reason %d", reason);
   return 0;
 }
