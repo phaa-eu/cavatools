@@ -70,7 +70,12 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
   //  ucontext_t* context = (ucontext_t*)vcontext;
   //  context->uc_mcontext.gregs[]
   fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
-  debug.print();
+  if (gdb.val()) {
+    HandleException(nSIGnum);
+    ProcessGdbCommand();
+  }
+  else
+    debug.print();
   exit(-1);
   //  longjmp(return_to_top_level, 1);
 }
@@ -94,21 +99,6 @@ int main(int argc, const char* argv[], const char* envp[])
   code.init(low_bound, high_bound);
   long sp = initialize_stack(argc, argv, envp, entry);
   void* mycpu = init_cpu(entry, sp, isa.val(), vec.val());
-  if (gdb.val()) {
-    OpenTcpLink(gdb.val());
-    enum stop_reason reason;
-    long insn_count = 0;
-    do {
-      ProcessGdbCommand(mycpu);
-      do {
-	reason = run_insns(stat.val()*1000000, insn_count);
-	status_report(insn_count);
-      } while (reason == stop_normal);
-      status_report(insn_count);
-      fprintf(stderr, "\n");
-    } while (reason != stop_exited);
-    exit(0);
-  }
 
 #ifdef DEBUG
   static struct sigaction action;
@@ -124,6 +114,26 @@ int main(int argc, const char* argv[], const char* envp[])
   //    exit(-1);
   //  }
 #endif
+
+  if (gdb.val()) {
+    OpenTcpLink(gdb.val());
+    enum stop_reason reason;
+    long insn_count = 0;
+    do {
+      ProcessGdbCommand(mycpu);
+      do {
+	reason = run_insns(stat.val()*1000000, insn_count);
+	status_report(insn_count);
+      } while (reason == stop_normal);
+      status_report(insn_count);
+      fprintf(stderr, "\n");
+      if (reason == stop_breakpoint)
+	HandleException(SIGTRAP);
+      else if (reason != stop_exited)
+	die("unknown reason %d", reason);
+    } while (reason != stop_exited);
+    exit(0);
+  }
   
   enum stop_reason reason;
   long insn_count = 0;

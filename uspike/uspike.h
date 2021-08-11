@@ -97,6 +97,7 @@ inline void disasm(long pc, FILE* f =stderr) { disasm(pc, "\n", f); }
 
 void OpenTcpLink(const char* name);
 void ProcessGdbCommand(void* spike_state =0);
+void HandleException(int signum);
 
 
 #define DEBUG

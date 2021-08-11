@@ -411,10 +411,6 @@ ProcessGdbCommand(void* spike_cpu)
 	long length;		// Number of bytes.
 	if (RcvHexInt(&addr) && *inPtr++ == ',' && RcvHexInt(&length)) {
 	  //ReplyInHex((char*) memory + addr, length);
-	  long val = *(long*)addr;
-	  //	  if (length < 8)
-	  //	    val &= (1<<(length*8))-1;
-	  printf("Sending %ld bytes at %lx value 0x%lx\n", length, addr, val);
 	  ReplyInHex((char*)addr, length);
 	}
 	else
@@ -497,13 +493,18 @@ HandleException(int signum) {
   fprintf(stderr, "Current pc = %lx\n", theCPU->pc);
   lastSignal = signum;
 
+  Reply("S");
+  ReplyInt(signum, 1);	// signal number
+  SendPacket();			// Resets outPtr.
+  return;
+
   Reply("T");
   ReplyInt(signum, 1);	// signal number
-  Reply("10:");			// PC=$16
+  Reply("20:");		// PC is register 32 (see riscv-tdep.c)
   ReplyInHex((void*)theCPU->pc, 8);
   Reply(";");
   SendPacket();			// Resets outPtr.
-  ProcessGdbCommand();
+  //  ProcessGdbCommand();
 }
 
 
