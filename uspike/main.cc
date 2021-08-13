@@ -4,15 +4,8 @@
 #include "options.h"
 #include "uspike.h"
 
+configuration_t conf;
 insnSpace_t code;
-
-static option<>      isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
-static option<>      vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
-static option<int>   mhz("mhz",		1000,				"Pretend MHz");
-static option<int>  stat("stat",	100,				"Status every M instructions");
-static option<bool> show("show",	false, true,			"Show instructions executing");
-static option<>      gdb("gdb", 	0, "localhost:1234", 		"Remote GDB on socket");
-static option<int> ecall("ecall",	0, 1,				"Report every N ecalls");
 
 #ifdef DEBUG
 
@@ -70,7 +63,7 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
   //  ucontext_t* context = (ucontext_t*)vcontext;
   //  context->uc_mcontext.gregs[]
   fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
-  if (gdb.val()) {
+  if (conf.gdb) {
     HandleException(nSIGnum);
     ProcessGdbCommand();
   }
@@ -85,20 +78,27 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 static void status_report(long insn_count)
 {
   double realtime = elapse_time();
-  fprintf(stderr, "\r%12ld instructions in %5.3f for %3.1f MIPS", insn_count, realtime, insn_count/1e6/realtime);
+  fprintf(stderr, "\r%12ld insns %3.1fs %3.1f MIPS", insn_count, realtime, insn_count/1e6/realtime);
 }
 
 int main(int argc, const char* argv[], const char* envp[])
 {
+  new option<>     (conf.isa,	"isa",		"rv64imafdcv",			"RISC-V ISA string");
+  new option<>     (conf.vec,	"vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
+  new option<int>  (conf.mhz,	"mhz",		1000,				"Pretend MHz");
+  new option<int>  (conf.stat,	"stat",	100,				"Status every M instructions");
+  new option<bool> (conf.show,	"show",	false, true,			"Show instructions executing");
+  new option<>     (conf.gdb,	"gdb", 	0, "localhost:1234", 		"Remote GDB on socket");
+  new option<int>  (conf.ecall,	"ecall",	0, 1,				"Report every N ecalls");
+  
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
   if (argc == 0)
     help_exit();
-  report_ecalls = ecall.val();
-  start_time(mhz.val());
+  start_time(conf.mhz);
   long entry = load_elf_binary(argv[0], 1);
   code.init(low_bound, high_bound);
   long sp = initialize_stack(argc, argv, envp, entry);
-  void* mycpu = init_cpu(entry, sp, isa.val(), vec.val());
+  void* mycpu = init_cpu(entry, sp);
 
 #ifdef DEBUG
   static struct sigaction action;
@@ -115,14 +115,15 @@ int main(int argc, const char* argv[], const char* envp[])
   //  }
 #endif
 
-  if (gdb.val()) {
-    OpenTcpLink(gdb.val());
+  if (conf.gdb) {
+    OpenTcpLink(conf.gdb);
     enum stop_reason reason;
     long insn_count = 0;
     do {
       ProcessGdbCommand(mycpu);
       do {
-	reason = run_insns(stat.val()*1000000, insn_count);
+	//	reason = run_insns(stat*1000000, insn_count);
+	reason = interpreter(conf.stat*1000000, insn_count);
 	status_report(insn_count);
       } while (reason == stop_normal);
       status_report(insn_count);
@@ -137,14 +138,16 @@ int main(int argc, const char* argv[], const char* envp[])
   
   enum stop_reason reason;
   long insn_count = 0;
-  if (show.val()) do {
+  if (conf.show) do {
       fprintf(stderr, "%15ld ", insn_count);
       labelpc(get_pc());
       disasm(get_pc());
-      reason = single_step(insn_count);
+      //      reason = single_step(insn_count);
+      reason = interpreter(1, insn_count);
     } while (reason == stop_normal);
   else do {
-      reason = run_insns(stat.val()*1000000, insn_count);
+      //      reason = run_insns(stat*1000000, insn_count);
+      reason = interpreter(conf.stat*1000000, insn_count);
       status_report(insn_count);
     } while (reason == stop_normal);
   status_report(insn_count);

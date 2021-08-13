@@ -36,12 +36,14 @@ libcava.a:  opcodes.h
 
 # Dependencies
 
-main.o decoder.o: uspike.h opcodes.h
+main.o decoder.o interpreter.o: uspike.h opcodes.h
 main.o options.o: options.h
 decoder.o: decoder.h
 elf_loader.o proxy_syscall.o gdblink.o: processinfo.h interpreter.h
-interpreter.o:  dispatch_table.h
+interpreter.o:  dispatch_table.h fastops.h
 constants.o:  ecall_nums.h
+
+decoder.h constants.h dispatch_table.h fastops.h: opcodes.h
 
 # Python scripts to create various files
 
@@ -51,8 +53,10 @@ ecall_nums.h: Makefile syscall_mapping
 #	./syscall_mapping $(RVTOOLS)/riscv-pk/pk/syscall.h $B/fesvr/syscall.h
 
 
-opcodes.h decoder.h constants.h dispatch_table.h insns: RV_isa.tmp ./crunch_isa
-	./crunch_isa RV_isa.tmp
+#opcodes.h decoder.h constants.h dispatch_table.h insns &: ./crunch_isa RV_isa.tmp MUST.amend
+opcodes.h: ./crunch_isa RV_isa.tmp MUST.amend
+	./crunch_isa RV_isa.tmp 
+#	./crunch_isa MUST.amend RV_isa.tmp 
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
 	./parse_spike $(RVINS) RV_bits.tmp RVC.bits > $@
@@ -66,7 +70,7 @@ RV_bits.tmp: parse_opcodes
 clean:
 	rm -f *.o *~ ./#*# *.tmp
 	rm -f insns/*.o insns/*.cc insns/*~ insns/#*#
-	rm -f uspike opcodes.h decoder.h dispatch_table.h constants.h ecall_nums.h libcava.a
+	rm -f uspike opcodes.h decoder.h dispatch_table.h constants.h ecall_nums.h fastops.h libcava.a
 
 install: uspike
 	cp uspike $(HOME)/bin/.

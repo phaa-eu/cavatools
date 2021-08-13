@@ -16,11 +16,19 @@ def diffcp(fname):
     if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
         os.system('rm newcode.tmp')
     else:
-        eprint(fname, 'updated')
+        #eprint(fname, 'updated')
         os.system('mv newcode.tmp '+fname)
 
-with open(sys.argv[1]) as f:
-    opcodes = json.load(f, object_pairs_hook=OrderedDict)
+opcodes = OrderedDict()
+for filename in sys.argv[1:]:
+    with open(filename) as f:
+        d = json.load(f)
+    for name, attrs in d.items():
+        if name in opcodes:
+            for a in attrs:
+                opcodes[name][a] = attrs[a]
+        else:
+            opcodes[name] = attrs
 
 regs = {}
 regs['cfd']	= ( 2, 3, 'op_rd', '+8+FPREG')
@@ -52,6 +60,9 @@ regs['vm']	= (25, 1, 'op_vm', '+VMREG')
 
 errors = 0
 for name in opcodes:
+    if 'bits' not in opcodes[name]:
+        print(name, opcodes[name]);
+        continue;
     for b in opcodes[name]['bits'].split():
         if re.match('[01]+|\{[^}]+\}', b):
             continue
@@ -155,30 +166,43 @@ with open('newcode.tmp', 'w') as f:
     for name in ['ZERO'] + list(opcodes.keys()) + ['ILLEGAL', 'UNKNOWN']:
         if i % 4 == 0:
             f.write('\n  ')
-        f.write('{:24s}'.format('"'+name.replace('.','_')+'",'))
+        name2 = name.replace('.','_')
+        f.write('{:24s}'.format('"'+name2+'",'))
         i += 1
     f.write('\n};\n')
 diffcp('constants.h')
 
 if not os.path.exists('./insns'):
     os.mkdir('./insns')
-    
+
+errors = 0
 for name in opcodes:
     with open('newcode.tmp', 'w') as f:
         opcode = opcodes[name]
+        if 'fast' in opcode:
+            continue;
         f.write('#include "interpreter.h"\n')
         f.write('long I_{:s}(long pc, processor_t* p) {{\n'.format(name.replace('.','_')))
         f.write('  insn_t insn = (long)(*(int{:d}_t*)pc);\n'.format(opcode['len']*8))
-        if not 'flags' in opcode:
-            eprint('No flags for', name)
-        if 'pc' in opcode['flags']:
-            f.write('  long npc = pc + {:d};\n'.format(opcode['len']))
-        for line in opcodes[name]["exec"].split('\n'):
-            if line:
-                f.write('  {:s}\n'.format(line))
-        if 'pc' in opcode['flags']:
-            f.write('  return npc;\n')
+        if 'flags' in opcode:
+            if 'pc' in opcode['flags']:
+                f.write('  long npc = pc + {:d};\n'.format(opcode['len']))
+            for line in opcode["exec"].split('\n'):
+                if line:
+                    f.write('  {:s}\n'.format(line))
+            if 'pc' in opcode['flags']:
+                f.write('  return npc;\n')
+            else:
+                f.write('  return pc + {:d};\n'.format(opcode['len']))
         else:
             f.write('  return pc + {:d};\n'.format(opcode['len']))
         f.write('}\n')
     diffcp('./insns/{:s}.cc'.format(name.replace('.','_')))
+
+with open('newcode.tmp', 'w') as f:
+    for name in opcodes:
+        opcode = opcodes[name]
+        if 'fast' not in opcode:
+            continue;
+        f.write('case Op_{:s}:  {:s} pc+={:d}; break;\n'.format(name.replace('.','_'), opcode['fast'], opcode['len']))
+diffcp('fastops.h')

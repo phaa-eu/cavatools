@@ -200,63 +200,48 @@ long initialize_stack(int argc, const char** argv, const char** envp)
   memcpy((void*)stack_top, (void*)current.phdr, current.phdr_size);
   current.phdr = stack_top;
 
-  // copy argv to user stack
+  // copy argv strings to user stack
   for (size_t i=0; i<argc; i++) {
     size_t len = strlen((char*)(uintptr_t)argv[i])+1;
     stack_top -= len;
     memcpy((void*)stack_top, (void*)(uintptr_t)argv[i], len);
     argv[i] = (char*)stack_top;
   }
-
-  // copy envp to user stack
-#if 0
-  size_t envc = sizeof(envp) / sizeof(envp[0]);
-  for (size_t i = 0; i < envc; i++) {
-    size_t len = strlen(envp[i]) + 1;
-    stack_top -= len;
-    memcpy((void*)stack_top, envp[i], len);
-    envp[i] = (char*)stack_top;
-  }
-#endif
+  // copy envp strings to user stack
   size_t envc = 0;
   size_t envlen = 0;
-  while (envp[envc])
-    envlen += strlen(envp[envc++]) + 1;
+  while (envp[envc]) {
+    envlen += strlen(envp[envc]) + 1;
+    envc++;
+  }
   for (size_t i=0; i<envc; i++) {
     size_t len = strlen(envp[i]) + 1;
     stack_top -= len;
     memcpy((void*)stack_top, envp[i], len);
     envp[i] = (char*)stack_top;
   }
-
-  // align stack
-  stack_top &= -sizeof(void*);
-
-//  fprintf(stderr, "AT_RANDOM = stack_top = 0x%016lx\n", stack_top);
-
-  struct {
+  // compute size of auxv area
+  struct aux_t {
     long key;
     size_t value;
-  } aux[] = {
-    {AT_ENTRY, current.entry},
-    {AT_PHNUM, (size_t)current.phnum},
-    {AT_PHENT, (size_t)current.phent},
-    {AT_PHDR, current.phdr},
-    {AT_PAGESZ, RISCV_PGSIZE},
-    {AT_SECURE, 0},
-    {AT_RANDOM, stack_top},
-    {AT_NULL, 0}
   };
+  struct aux_t* auxv = (struct aux_t*)(&envp[envc+1]);
+  size_t auxc = 0;
+  do {
+    auxc++;
+  } while (auxv[auxc-1].key != AT_NULL);
+  stack_top -= auxc*sizeof(struct aux_t);
+  // align stack
+  stack_top &= -sizeof(void*);
 
   // place argc, argv, envp, auxp on stack
   #define PUSH_ARG(type, value) do { \
     *((type*)sp) = (type)value; \
     sp += sizeof(type); \
   } while (0)
-
-  unsigned naux = sizeof(aux)/sizeof(aux[0]);
-  stack_top -= (1 + argc + 1 + envc + 1 + 2*naux) * sizeof(uintptr_t);
-  stack_top &= -16;
+  
+  stack_top -= (1 + argc + 1 + envc + 1 + 2*auxc) * sizeof(uintptr_t);
+  stack_top &= -16;		/* align */
   long sp = stack_top;
   PUSH_ARG(uintptr_t, argc);
   for (unsigned i = 0; i < argc; i++)
@@ -265,10 +250,26 @@ long initialize_stack(int argc, const char** argv, const char** envp)
   for (unsigned i = 0; i < envc; i++)
     PUSH_ARG(uintptr_t, envp[i]);
   PUSH_ARG(uintptr_t, 0); /* envp[envc] = NULL */
-  for (unsigned i = 0; i < naux; i++) {
-    PUSH_ARG(uintptr_t, aux[i].key);
-    PUSH_ARG(uintptr_t, aux[i].value);
-  }
+  for (unsigned i = 0; i < auxc; i++) {
+    size_t value = auxv[i].value;
+    switch (auxv[i].key) {
+    case AT_SYSINFO_EHDR:  continue; /* No vDSO */
+    case AT_HWCAP:	value = 0; break;
+    case AT_PAGESZ:	value = RISCV_PGSIZE; break;
+    case AT_PHDR:	value = current.phdr; break;
+    case AT_PHENT:	value = (size_t)current.phent; break;
+    case AT_PHNUM:	value = (size_t)current.phnum; break;
+    case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
+    case AT_ENTRY:	value = current.entry; break;
+    case AT_SECURE:	value = 0; break;
+    case AT_RANDOM:	value = stack_top; break;
+    case AT_HWCAP2:	value = 0; break;
+    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
+    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
+    }
+    PUSH_ARG(uintptr_t, auxv[i].key);
+    PUSH_ARG(uintptr_t, value);
+  } /* last entry was AT_NULL */
 
   current.stack_top = stack_top;
   return stack_top;

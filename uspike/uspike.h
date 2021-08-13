@@ -27,18 +27,28 @@ extern "C" {
   double elapse_time();
   double simulated_time(long cycles);
   long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1, long a2, long a3, long a4, long a5);
-  extern int report_ecalls;
+
+  struct configuration_t {
+    const char* isa;
+    const char* vec;
+    int mhz;
+    int stat;
+    bool show;
+    const char* gdb;
+    int ecall;
+  };
+  extern configuration_t conf;
 };
 
-void* init_cpu(long entry, long sp, const char* isa, const char* vec);
+void* init_cpu(long entry, long sp);
 void* clone_cpu(long sp, long tp);
 
 enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
 
-enum stop_reason single_step(long &executed);
-enum stop_reason run_insns(long number, long &executed);
+enum stop_reason interpreter(long number, long &executed);
 long get_pc();
 long get_reg(int rn);
+bool proxy_ecall(long executed);
 
 static inline bool find_symbol(const char* name, long &begin, long &end) { return elf_find_symbol(name, &begin, &end) != 0; }
 static inline const char* find_pc(long pc, long &offset) { return elf_find_pc(pc, &offset); }

@@ -7,6 +7,19 @@
 
 #include "options.h"
 
+template <> void option<>     ::setval(const char* v) { if (!v) *arg=none; else *arg=v;       }
+template <> void option<>     ::printval() { fprintf(stderr, "%s", *arg?*arg:"0"); }
+
+template <> void option<int>  ::setval(const char* v) { if (!v) *arg=none; else *arg=atoi(v); }
+template <> void option<int>  ::printval() { fprintf(stderr, "%d", *arg); }
+
+template <> void option<long> ::setval(const char* v) { if (!v) *arg=none; else *arg=atoi(v); }
+template <> void option<long> ::printval() { fprintf(stderr, "%ld", *arg); }
+
+template <> void option<bool> ::setval(const char* v) { if (!v) *arg=none; else help_exit(); }
+template <> void option<bool> ::printval() { fprintf(stderr, "%s", *arg?"true":"false"); }
+
+/*
 template <> void option<>     ::setval(const char* v) { if (!v) value=none; else value=v;       }
 template <> void option<>     ::printval() { fprintf(stderr, "%s", value?value:"0"); }
 
@@ -18,6 +31,7 @@ template <> void option<long> ::printval() { fprintf(stderr, "%ld", value); }
 
 template <> void option<bool> ::setval(const char* v) { if (!v) value=none; else help_exit(); }
 template <> void option<bool> ::printval() { fprintf(stderr, "%s", value?"true":"false"); }
+*/
 
 options_t* options_t::list = 0;
 const char* options_t::title;

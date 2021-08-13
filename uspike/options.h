@@ -24,12 +24,15 @@ class options_t {
 
 template <class T =const char*>
 class option : public options_t {
-  T value;			// --option=value
+  //  T value;			// --option=value
+  T* arg;
   T none;			// --option with no value
 public:
-  option(const char* n, T ini,        const char* e) : options_t(n, e, false) { value=ini;           }
-  option(const char* n, T ini, T def, const char* e) : options_t(n, e, true ) { value=ini; none=def; }
-  T val() { return value; }
+  //  option(const char* n, T ini,        const char* e) : options_t(n, e, false) { value=ini;           }
+  //  option(const char* n, T ini, T def, const char* e) : options_t(n, e, true ) { value=ini; none=def; }
+  option(T& a, const char* n, T ini,        const char* e) : options_t(n, e, false) { arg=&a; *arg=ini;           }
+  option(T& a, const char* n, T ini, T def, const char* e) : options_t(n, e, true ) { arg=&a; *arg=ini; none=def; }
+  //  T val() { return value; }
   void setval(const char* v);
   void printval();
 };
