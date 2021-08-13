@@ -2,6 +2,8 @@
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
+#ifndef NOSPIKE
+
 #include "encoding.h"
 #include "trap.h"
 #include "arith.h"
@@ -27,4 +29,25 @@
 
 extern long (*golden[])(long pc, processor_t* p);
 
+#define NOISA
 
+#ifdef NOISA
+#undef require
+#undef require_extension
+#undef require_align
+#undef require_fp
+#define require(x)
+#define require_extension(x)
+#define require_align(x,y)
+#define require_fp
+#endif
+
+#endif
+
+struct syscall_map_t {
+  int sysnum;
+  const char*name;
+};
+
+extern struct syscall_map_t rv_to_host[];
+extern const int highest_ecall_num;

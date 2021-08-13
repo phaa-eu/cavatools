@@ -21,10 +21,10 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 # Compiling options
 
-bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o
+bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o
 
 CXXFLAGS := $I -g -O3
-CFLAGS := -g -O3
+CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O3
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 
@@ -40,12 +40,16 @@ main.o decoder.o: uspike.h opcodes.h
 main.o options.o: options.h
 decoder.o: decoder.h
 elf_loader.o proxy_syscall.o gdblink.o: processinfo.h interpreter.h
-interpreter.o:  ecall_nums.h dispatch_table.h
+interpreter.o:  dispatch_table.h
+constants.o:  ecall_nums.h
 
 # Python scripts to create various files
 
-ecall_nums.h:
-	./syscall_mapping $(RVTOOLS)/riscv-pk/pk/syscall.h $B/fesvr/syscall.h
+ecall_nums.h: Makefile syscall_mapping
+	./syscall_mapping < syscalls-riscv64 > $@
+#	./syscall_mapping $(RVTOOLS)/riscv-gnu-toolchain/linux-headers/include/asm-generic/unistd.h
+#	./syscall_mapping $(RVTOOLS)/riscv-pk/pk/syscall.h $B/fesvr/syscall.h
+
 
 opcodes.h decoder.h constants.h dispatch_table.h insns: RV_isa.tmp ./crunch_isa
 	./crunch_isa RV_isa.tmp

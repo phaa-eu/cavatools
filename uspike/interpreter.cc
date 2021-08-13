@@ -1,22 +1,12 @@
 /*
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
-
-#include <asm/unistd_64.h>
-
 #include "interpreter.h"
 #include "uspike.h"
 
 thread_local processor_t* p;	// many Spike macros assume pointer is named p
 const char* isa_string;
 const char* vec_string;
-
-static const struct {
-  int sysnum;
-  const char*name;
-} rv_to_host[] = {
-#include "ecall_nums.h"
-};
 
 long get_pc()
 {
@@ -32,8 +22,11 @@ static bool make_ecall(long executed)
 {
   static long ecall_count;
   long rvnum = READ_REG(17);
-  if (rvnum < 0 || rvnum >= rv_syscall_entries)
+  if (rvnum<0 || rvnum>highest_ecall_num || !rv_to_host[rvnum].name) {
+    fprintf(stderr, "Illegal ecall number %ld\n", rvnum);
+    abort();
     throw trap_user_ecall();
+  }
   long sysnum = rv_to_host[rvnum].sysnum;
   long a0=READ_REG(10), a1=READ_REG(11), a2=READ_REG(12), a3=READ_REG(13), a4=READ_REG(14), a5=READ_REG(15);
   const char* name = rv_to_host[rvnum].name;
