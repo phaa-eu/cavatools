@@ -40,15 +40,15 @@ extern "C" {
   extern configuration_t conf;
 };
 
-void* init_cpu(long entry, long sp);
-void* clone_cpu(long sp, long tp);
-
 enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
 
-enum stop_reason interpreter(long number, long &executed);
-long get_pc();
-long get_reg(int rn);
-bool proxy_ecall(long executed);
+enum stop_reason interpreter(void* mycpu, long number, long &executed);
+long get_pc(void* mycpu);
+long get_reg(void* mycpu, int rn);
+void status_report(long insn_count);
+void* init_cpu(long entry, long sp);
+void* clone_cpu(void* mycpu, long sp, long tp);
+void show_insn(long pc);
 
 static inline bool find_symbol(const char* name, long &begin, long &end) { return elf_find_symbol(name, &begin, &end) != 0; }
 static inline const char* find_pc(long pc, long &offset) { return elf_find_pc(pc, &offset); }

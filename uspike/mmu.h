@@ -1,5 +1,6 @@
 
 class mmu_t {
+  long reserve_addr;
   
 #define load_func(type, prefix, xlate_flags)				\
   inline type##_t prefix##_##type(reg_t addr, bool require_alignment = false) { \
@@ -63,9 +64,10 @@ class mmu_t {
   amo_func(uint32);
   amo_func(uint64);
 
-  void acquire_load_reservation(reg_t) { }
-  bool check_load_reservation(reg_t, int) { return 1; }
-  void yield_load_reservation() { }
+  mmu_t() { reserve_addr = ~0L; }
+  void acquire_load_reservation(reg_t a) { reserve_addr = a; }
+  void yield_load_reservation() { reserve_addr = ~0L; }
+  bool check_load_reservation(reg_t a, int) { return a == reserve_addr; }
   void flush_icache() { }
   void flush_tlb() { }
 };

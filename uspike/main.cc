@@ -75,12 +75,6 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 
 #endif
 
-static void status_report(long insn_count)
-{
-  double realtime = elapse_time();
-  fprintf(stderr, "\r%12ld insns %3.1fs %3.1f MIPS", insn_count, realtime, insn_count/1e6/realtime);
-}
-
 int main(int argc, const char* argv[], const char* envp[])
 {
   new option<>     (conf.isa,	"isa",		"rv64imafdcv",			"RISC-V ISA string");
@@ -123,7 +117,7 @@ int main(int argc, const char* argv[], const char* envp[])
       ProcessGdbCommand(mycpu);
       do {
 	//	reason = run_insns(stat*1000000, insn_count);
-	reason = interpreter(conf.stat*1000000, insn_count);
+	reason = interpreter(mycpu, conf.stat*1000000, insn_count);
 	status_report(insn_count);
       } while (reason == stop_normal);
       status_report(insn_count);
@@ -138,18 +132,11 @@ int main(int argc, const char* argv[], const char* envp[])
   
   enum stop_reason reason;
   long insn_count = 0;
-  if (conf.show) do {
-      fprintf(stderr, "%15ld ", insn_count);
-      labelpc(get_pc());
-      disasm(get_pc());
-      //      reason = single_step(insn_count);
-      reason = interpreter(1, insn_count);
-    } while (reason == stop_normal);
-  else do {
-      //      reason = run_insns(stat*1000000, insn_count);
-      reason = interpreter(conf.stat*1000000, insn_count);
-      status_report(insn_count);
-    } while (reason == stop_normal);
+  do {
+    reason = interpreter(mycpu, conf.stat*1000000, insn_count);
+    status_report(insn_count);
+  } while (reason == stop_normal);
+  fprintf(stderr, "\n");
   status_report(insn_count);
   fprintf(stderr, "\n");
   if (reason == stop_breakpoint)

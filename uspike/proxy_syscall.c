@@ -85,7 +85,7 @@ long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1,
     fprintf(stderr, "RISCV-V system call %s not supported on host system\n", name);
     abort();
     
-#if 1
+#if 0
   case __NR_brk:
     return emulate_brk(a0, &current);
 #endif
