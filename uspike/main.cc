@@ -92,7 +92,7 @@ int main(int argc, const char* argv[], const char* envp[])
   long entry = load_elf_binary(argv[0], 1);
   code.init(low_bound, high_bound);
   long sp = initialize_stack(argc, argv, envp, entry);
-  void* mycpu = init_cpu(entry, sp);
+  void* mycpu = initial_cpu(entry, sp);
 
 #ifdef DEBUG
   static struct sigaction action;

@@ -34,7 +34,10 @@ for fn in sys.argv[2:]:
     opcodes = {**opcodes, **d}
 
 for name in opcodes.copy():
-    fname = insns + name.replace('.','_') + '.h'
+    if 'spike' in opcodes[name]:
+        fname = insns + opcodes[name]['spike'].replace('.','_') + '.h'
+    else:
+        fname = insns + name.replace('.','_') + '.h'
     opcode = opcodes[name]
     action = 'BAD BAD BAD'
     if os.path.exists(fname):

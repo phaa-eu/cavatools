@@ -23,8 +23,8 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o
 
-CXXFLAGS := $I -g -O0
-CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O0
+CXXFLAGS := $I -g -O3
+CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O3
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 

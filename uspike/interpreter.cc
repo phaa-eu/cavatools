@@ -33,13 +33,21 @@ void status_report(long insn_count)
   fprintf(stderr, "\r%12ld insns %3.1fs %3.1f MIPS", insn_count, realtime, insn_count/1e6/realtime);
 }
 
-static int new_interpreter(void* newcpu)
+static int thread_interpreter(void* arg)
 {
-  //sleep(100);
-  fprintf(stderr, "in new_interpreter(), tid=%d\n", gettid());
-  processor_t* p = (processor_t*)newcpu;
+  processor_t* p = (processor_t*)arg;
+  fprintf(stderr, "in thread_interpreter(), tid=%d\n", gettid());
+  processor_t* newcpu = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
+  memcpy(newcpu, p, sizeof(processor_t));
+  long child_stack = READ_REG(11); // from parent p
+  long tls	   = READ_REG(13); // arguments to ecall clone()
+  newcpu->get_state()->XPR.write(2, child_stack);
+  newcpu->get_state()->XPR.write(4, tls);
+  
+  //sleep(2);
+  p = newcpu;			// forget parent forever
   STATE.pc += 4;		// skip over ecall pc
-  WRITE_REG(10, 0);		// indicating we are child
+  WRITE_REG(10, 0);		// indicating we are child thread
   enum stop_reason reason;
   long insn_count = 0;
   conf.show = true;
@@ -80,15 +88,15 @@ static bool proxy_ecall(processor_t* p, long executed)
     fprintf(stderr, "\nclone() called, tid=%d\n", gettid());
     { // RISCV-V clone() system call arguments not same as X86_64:
       long flags	= READ_REG(10);
-      long child_stack	= READ_REG(11);
+      //long child_stack= READ_REG(11);
       long parent_tidptr= READ_REG(12);
-      long tls		= READ_REG(13);
+      //long tls	= READ_REG(13);
       long child_tidptr	= READ_REG(14);
       char* newcpu_sp = new char[THREAD_STACK_SIZE] + THREAD_STACK_SIZE;
-      void* newcpu = clone_cpu(p, child_stack, tls);
+      //      void* newcpu = clone_cpu(p, child_stack, tls);
       flags &= ~CLONE_SETTLS;	// not implementing TLS in interpreter yet
-      WRITE_REG(10, clone(new_interpreter, newcpu_sp, flags, newcpu,
-			  parent_tidptr, tls, child_tidptr));
+      WRITE_REG(10, clone(thread_interpreter, newcpu_sp, flags, p,
+			  parent_tidptr, 0, child_tidptr));
       sleep(100);
       fprintf(stderr, "returning from ecall, a0=%ld\n", READ_REG(10));
       conf.show = true;
@@ -101,31 +109,15 @@ static bool proxy_ecall(processor_t* p, long executed)
   return false;
 }
 
-static processor_t* create_cpu(const char* isa, const char* vec)
+void* initial_cpu(long entry, long sp)
 {
-  processor_t* p = new processor_t(isa, "mu", vec, 0, 0, false, stdout);
+  processor_t* p = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
   STATE.prv = PRV_U;
   STATE.mstatus |= (MSTATUS_FS|MSTATUS_VS);
   STATE.vsstatus |= SSTATUS_FS;
-  return p;
-}
-
-void* init_cpu(long entry, long sp)
-{
-  processor_t* p = create_cpu(conf.isa, conf.vec);
   STATE.pc = entry;
   WRITE_REG(2, sp);
   return p;
-}
-
-void* clone_cpu(void* mycpu, long sp, long tp)
-{
-  processor_t* p = (processor_t*)mycpu;
-  processor_t* q = create_cpu(conf.isa, conf.vec);
-  memcpy(q->get_state(), p->get_state(), sizeof(state_t));
-  q->get_state()->XPR.write(2, sp);
-  q->get_state()->XPR.write(4, tp);
-  return q;
 }
 
 enum stop_reason interpreter(void* mycpu, long number, long &executed)

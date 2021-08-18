@@ -46,8 +46,7 @@ enum stop_reason interpreter(void* mycpu, long number, long &executed);
 long get_pc(void* mycpu);
 long get_reg(void* mycpu, int rn);
 void status_report(long insn_count);
-void* init_cpu(long entry, long sp);
-void* clone_cpu(void* mycpu, long sp, long tp);
+void* initial_cpu(long entry, long sp);
 void show_insn(long pc);
 
 static inline bool find_symbol(const char* name, long &begin, long &end) { return elf_find_symbol(name, &begin, &end) != 0; }
