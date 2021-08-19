@@ -38,12 +38,12 @@ void disasm(long pc, const char* end, FILE* f)
   else fprintf(stderr, "    %04x  ", b&0xFFFF);
   fprintf(f, "%-23s", op_name[i.op_code]);
   char sep = ' ';
-  if (i.op_rd != NOREG) { fprintf(f, "%c%s", sep, reg_name[i.op_rd]); sep=','; }
-  if (i.op_r1 != NOREG) { fprintf(f, "%c%s", sep, reg_name[i.op_r1]); sep=','; }
-  if (i.op_longimmed)   { fprintf(f, "%c%d", sep, i.op_immed); }
+  if (i.op_rd  != NOREG) { fprintf(f, "%c%s", sep, reg_name[i.op_rd ]); sep=','; }
+  if (i.op_rs1 != NOREG) { fprintf(f, "%c%s", sep, reg_name[i.op_rs1]); sep=','; }
+  if (i.op_longimmed)    { fprintf(f, "%c%d", sep, i.op_immed); }
   else {
-    if (i.op.r2 != NOREG) { fprintf(f, "%c%s", sep, reg_name[i.op.r2]); sep=','; }
-    if (i.op.r3 != NOREG) { fprintf(f, "%c%s", sep, reg_name[i.op.r3]); sep=','; }
+    if (i.op.rs2 != NOREG) { fprintf(f, "%c%s", sep, reg_name[i.op.rs2]); sep=','; }
+    if (i.op.rs3 != NOREG) { fprintf(f, "%c%s", sep, reg_name[i.op.rs3]); sep=','; }
     fprintf(f, "%c%d", sep, i.op.imm);
   }
   fprintf(f, "%s", end);

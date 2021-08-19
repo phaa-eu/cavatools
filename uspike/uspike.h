@@ -60,11 +60,11 @@ struct Insn_t {
   unsigned op_longimmed	:  1;
   enum Opcode_t op_code	: 13;
   uint8_t op_rd;		// note unsigned byte
-  uint8_t op_r1;		// so NOREG==0xFF
+  uint8_t op_rs1;		// so NOREG==0xFF
   union {
     struct {
-      uint8_t r2;
-      uint8_t r3;
+      uint8_t rs2;
+      uint8_t rs3;
       int16_t imm;
     } op;
     int32_t op_immed;
@@ -109,7 +109,7 @@ void ProcessGdbCommand(void* spike_state =0);
 void HandleException(int signum);
 
 
-#define DEBUG
+//#define DEBUG
 #ifdef DEBUG
 
 struct pctrace_t {

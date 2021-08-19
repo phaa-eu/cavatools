@@ -45,19 +45,17 @@ constants.o:  ecall_nums.h
 
 decoder.h constants.h dispatch_table.h fastops.h: opcodes.h
 
+interpreter.o: interpreter.cc
+	$(CXX) $(CXXFLAGS) -Ofast -c -o $@ interpreter.cc
+
 # Python scripts to create various files
 
 ecall_nums.h: Makefile syscall_mapping
 	./syscall_mapping < syscalls-riscv64 > $@
-#	./syscall_mapping $(RVTOOLS)/riscv-gnu-toolchain/linux-headers/include/asm-generic/unistd.h
-#	./syscall_mapping $(RVTOOLS)/riscv-pk/pk/syscall.h $B/fesvr/syscall.h
 
+opcodes.h: ./crunch_isa RV_isa.tmp RV.fast
+	./crunch_isa RV_isa.tmp RV.fast
 
-#opcodes.h decoder.h constants.h dispatch_table.h insns &: ./crunch_isa RV_isa.tmp MUST.amend
-opcodes.h: ./crunch_isa RV_isa.tmp
-	./crunch_isa RV_isa.tmp 
-#opcodes.h: ./crunch_isa RV_isa.tmp MUST.amend
-#	./crunch_isa MUST.amend RV_isa.tmp 
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
 	./parse_spike $(RVINS) RV_bits.tmp RVC.bits > $@

@@ -143,22 +143,6 @@ enum stop_reason interpreter(void* mycpu, long number, long &executed)
 	
 #include "fastops.h"
 	
-	/*
-      case Op_lr_w:
-	{
-	  insn_t insn = (long)(*(int16_t*)pc);
-#if 1
-	  WRITE_REG(i.op_rd, *(int*)((long)READ_REG(i.op_r1)));
-#else
-	  auto res = MMU.load_int32(RS1, true);
-	  MMU.acquire_load_reservation(RS1);
-	  WRITE_RD(res);
-#endif
-	  pc += 4;
-	  break;
-	}
-	*/
-	
       case Op_ecall:
 	STATE.pc=pc;
 	if (proxy_ecall(p, executed)) {
@@ -197,10 +181,11 @@ enum stop_reason interpreter(void* mycpu, long number, long &executed)
       }
 #ifdef DEBUG
       i = code.at(oldpc);
-      int rn = i.op_rd==NOREG ? i.op.r2 : i.op_rd;
+      int rn = i.op_rd==NOREG ? i.op.rs2 : i.op_rd;
       debug.addval(i.op_rd, get_reg(mycpu, rn));
 #endif
-      WRITE_REG(0, 0);
+      //p->get_state()->XPR[0]=0
+      
     } while (++count < number);
   }
  early_stop:

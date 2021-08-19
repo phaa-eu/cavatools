@@ -1,6 +1,8 @@
 /*
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
+#include <signal.h>
+
 #include "options.h"
 #include "uspike.h"
 
@@ -53,7 +55,6 @@ void Debug_t::print(FILE* f)
   }
 }
 
-#include <signal.h>
 //#include <setjmp.h>
 
 //jmp_buf return_to_top_level;
