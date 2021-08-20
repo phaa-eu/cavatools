@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <string.h>
 
+using namespace std;
+void* operator new(size_t size);
+void operator delete(void *p);
+
 #define DEBUG
 
 /*
@@ -28,6 +32,7 @@ extern "C" {
   void start_time(int mhz);
   double elapse_time();
   double simulated_time(long cycles);
+  long emulate_brk(long addr);
   long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1, long a2, long a3, long a4, long a5);
   int proxy_clone(int (*fn)(void*), void *interp_stack, int flags, void *arg, void *parent_tidptr, void *child_tidptr);
 

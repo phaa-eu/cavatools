@@ -47,8 +47,9 @@ double simulated_time(long cycles)
   seconds += (cycles % pretend_Hz) / 1e6;
 }
 
-static long emulate_brk(long addr, struct pinfo_t* info)
+long emulate_brk(long addr)
 {
+  struct pinfo_t* info = &current;
   long newbrk = addr;
   if (addr < info->brk_min)
     newbrk = info->brk_min;
@@ -82,10 +83,10 @@ long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1,
   case -2:
     fprintf(stderr, "RISCV-V system call %s not supported on host system\n", name);
     abort();
-    
-#if 1
+
+#if 0
   case __NR_brk:
-    return emulate_brk(a0, &current);
+    return emulate_brk(a0);
 #endif
 
   case __NR_exit:

@@ -3,11 +3,13 @@
 */
 #include <unistd.h>
 #include <stdint.h>
+#include <sys/syscall.h>
 
 #include "interpreter.h"
 #include "uspike.h"
 
 mmu_t MMU;
+Mutex_t brk_lock;
 
 #define THREAD_STACK_SIZE  (1<<14)
 
@@ -78,10 +80,19 @@ static bool proxy_ecall(processor_t* p, long executed)
     fprintf(stderr, "\n%12ld %8lx: ecalls=%ld %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)",
 	    executed, STATE.pc, ecall_count, name, sysnum, a0, a1, a2, a3, a4, a5);
   switch (sysnum) {
-  case 60:			// X86_64 SYS_exit
-  case 231:			// X86_64 SYS_exit_group
+  case SYS_exit:
+  case SYS_exit_group:
     return true;
-  case 56: 			// X86_64 SYS_clone
+#if 0
+  case SYS_brk:
+    {
+      brk_lock.lock();
+      long rv = emulate_brk(a0);
+      brk_lock.unlock();
+      return rv;
+    }
+#endif
+  case SYS_clone:
     {
       fprintf(stderr, "\nclone() called, tid=%d\n", gettid());
       processor_t* q = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);

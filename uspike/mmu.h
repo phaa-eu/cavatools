@@ -1,3 +1,4 @@
+#include <atomic>
 
 class mmu_t {
   static long reserve_addr;
@@ -72,4 +73,16 @@ class mmu_t {
   bool check_load_reservation(long a, size_t size);
   void flush_icache() { }
   void flush_tlb() { }
+};
+
+class Mutex_t {
+public:
+  Mutex_t() : atom_(0) {}
+  void lock();
+  void unlock();
+private:
+  // 0 means unlocked
+  // 1 means locked, no waiters
+  // 2 means locked, there are waiters in lock()
+  std::atomic<int> atom_;
 };

@@ -21,7 +21,7 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 # Compiling options
 
-bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o mmu.o
+bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o mmu.o memory.o
 
 CXXFLAGS := $I -g -O0
 CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O0

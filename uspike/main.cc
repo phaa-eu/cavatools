@@ -11,6 +11,17 @@ configuration_t conf;
 insnSpace_t code;
 cpu_t* cpu_t::cpu_list =0;
 
+void* operator new(size_t size)
+{
+  fprintf(stderr, "operator new(%ld)\n", size);
+  extern void* malloc(size_t);
+  return malloc(size);
+}
+void operator delete(void *p)
+{
+}
+
+
 #ifdef DEBUG
 
 pctrace_t Debug_t::get()
