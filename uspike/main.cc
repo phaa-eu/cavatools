@@ -1,6 +1,7 @@
 /*
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
+#include <unistd.h>
 #include <signal.h>
 
 #include "options.h"
@@ -8,10 +9,9 @@
 
 configuration_t conf;
 insnSpace_t code;
+cpu_t* cpu_t::cpu_list =0;
 
 #ifdef DEBUG
-
-Debug_t debug;
 
 pctrace_t Debug_t::get()
 {
@@ -69,7 +69,7 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
     ProcessGdbCommand();
   }
   else
-    debug.print();
+    cpu_t::find(gettid())->debug.print();
   exit(-1);
   //  longjmp(return_to_top_level, 1);
 }
@@ -93,7 +93,7 @@ int main(int argc, const char* argv[], const char* envp[])
   long entry = load_elf_binary(argv[0], 1);
   code.init(low_bound, high_bound);
   long sp = initialize_stack(argc, argv, envp, entry);
-  void* mycpu = initial_cpu(entry, sp);
+  cpu_t* mycpu = initial_cpu(entry, sp);
 
 #ifdef DEBUG
   static struct sigaction action;

@@ -7,7 +7,6 @@
 #include "encoding.h"
 #include "trap.h"
 #include "arith.h"
-#include "mmu.h"
 #include "processor.h"
 
 #undef set_pc_and_serialize
@@ -44,10 +43,9 @@ extern long (*golden[])(long pc, processor_t* p);
 
 #endif
 
-struct syscall_map_t {
-  int sysnum;
-  const char*name;
-};
+#undef MMU
+#include "mmu.h"
+extern mmu_t MMU;
 
 extern struct syscall_map_t rv_to_host[];
 extern const int highest_ecall_num;

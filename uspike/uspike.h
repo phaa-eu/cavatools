@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define DEBUG
+
 /*
   Utility stuff.
 */
@@ -27,6 +29,7 @@ extern "C" {
   double elapse_time();
   double simulated_time(long cycles);
   long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1, long a2, long a3, long a4, long a5);
+  int proxy_clone(int (*fn)(void*), void *interp_stack, int flags, void *arg, void *parent_tidptr, void *child_tidptr);
 
   struct configuration_t {
     const char* isa;
@@ -40,14 +43,46 @@ extern "C" {
   extern configuration_t conf;
 };
 
+struct pctrace_t {
+  long count;
+  long pc;
+  long val;
+  uint8_t rn;
+};
+
+#define PCTRACEBUFSZ  (1<<5)
+struct Debug_t {
+  pctrace_t trace[PCTRACEBUFSZ];
+  int cursor;
+  Debug_t() { cursor=0; }
+  pctrace_t get();
+  void insert(pctrace_t pt);
+  void insert(long c, long pc);
+  void addval(int rn, long val);
+  void print(FILE* f =stderr);
+};
+
+class cpu_t {
+  static cpu_t* cpu_list;
+public:
+  class processor_t* spike_cpu;
+  Debug_t debug;
+  cpu_t* next;			// for finding using tid
+  int tid;			// my Linux thread number
+  cpu_t(processor_t* p);
+  long get_pc();
+  long get_reg(int rn);
+  void show(long pc, FILE* f =stderr);
+  static cpu_t* find(int tid);
+};
+
 enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
 
-enum stop_reason interpreter(void* mycpu, long number, long &executed);
-long get_pc(void* mycpu);
-long get_reg(void* mycpu, int rn);
+enum stop_reason interpreter(cpu_t* mycpu, long number, long &executed);
 void status_report(long insn_count);
-void* initial_cpu(long entry, long sp);
-void show_insn(long pc);
+cpu_t* initial_cpu(long entry, long sp);
+cpu_t* find_cpu(int tid);
+void show_insn(long pc, int tid);
 
 static inline bool find_symbol(const char* name, long &begin, long &end) { return elf_find_symbol(name, &begin, &end) != 0; }
 static inline const char* find_pc(long pc, long &offset) { return elf_find_pc(pc, &offset); }
@@ -107,30 +142,3 @@ inline void disasm(long pc, FILE* f =stderr) { disasm(pc, "\n", f); }
 void OpenTcpLink(const char* name);
 void ProcessGdbCommand(void* spike_state =0);
 void HandleException(int signum);
-
-
-//#define DEBUG
-#ifdef DEBUG
-
-struct pctrace_t {
-  long count;
-  long pc;
-  long val;
-  uint8_t rn;
-};
-
-#define PCTRACEBUFSZ  (1<<5)
-struct Debug_t {
-  pctrace_t trace[PCTRACEBUFSZ];
-  int cursor;
-  Debug_t() { cursor=0; }
-  pctrace_t get();
-  void insert(pctrace_t pt);
-  void insert(long c, long pc);
-  void addval(int rn, long val);
-  void print(FILE* f =stderr);
-};
-
-extern Debug_t debug;
-
-#endif

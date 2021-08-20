@@ -18,14 +18,12 @@
 #include <sys/times.h>
 #include <math.h>
 #include <string.h>
-//#include <pthread.h>
-//#include <signal.h>
+#include <signal.h>
 
 #include "processinfo.h"
 
 static long pretend_Hz;
 static struct timeval start_tv;
-int report_ecalls;
 
 void start_time(int mhz)
 {
@@ -85,7 +83,7 @@ long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1,
     fprintf(stderr, "RISCV-V system call %s not supported on host system\n", name);
     abort();
     
-#if 0
+#if 1
   case __NR_brk:
     return emulate_brk(a0, &current);
 #endif
@@ -140,4 +138,17 @@ long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1,
     return syscall(sysnum, a0, a1, a2, a3, a4, a5);
   }
   abort(); // should never get here
+}
+
+int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
+          void *parent_tidptr, void *tls, void *child_tidptr);
+
+#define _GNU_SOURCE
+#include <linux/sched.h>
+
+int proxy_clone(int (*fn)(void*), void *interp_stack, int flags, void *arg, void *parent_tidptr, void *child_tidptr)
+{
+  flags &= ~CLONE_SETTLS;	// not implementing TLS in interpreter yet
+  flags |= SIGCHLD;		// signal parent when finished
+  return clone(fn, interp_stack, flags, arg, parent_tidptr, 0, child_tidptr);
 }

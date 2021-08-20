@@ -4,14 +4,8 @@
 //#include <asm/unistd_64.h>
 #include "linux-headers/include/asm-generic/unistd.h"
 
-#define NOSPIKE
-#include "interpreter.h"
-
-struct syscall_map_t rv_to_host[] = {
-#include "ecall_nums.h"  
-};
-
-const int highest_ecall_num = HIGHEST_ECALL_NUM;
+//#define NOSPIKE
+//#include "interpreter.h"
 
 const char* reg_name[256] = {
   "zero","ra",  "sp",  "gp",  "tp",  "t0",  "t1",  "t2",

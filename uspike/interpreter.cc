@@ -2,30 +2,24 @@
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 #include <unistd.h>
+#include <stdint.h>
 
 #include "interpreter.h"
 #include "uspike.h"
 
+mmu_t MMU;
+
 #define THREAD_STACK_SIZE  (1<<14)
 
-long get_pc(void* mycpu)
-{
-  processor_t* p = (processor_t*)mycpu;
-  return STATE.pc;
-}
+struct syscall_map_t {
+  int sysnum;
+  const char* name;
+};
 
-long get_reg(void* mycpu, int rn)
-{
-  processor_t* p = (processor_t*)mycpu;
-  return STATE.XPR[rn];
-}
-
-void show_insn(long pc)
-{
-  fprintf(stderr, "\r");
-  labelpc(pc);
-  disasm(pc);
-}
+struct syscall_map_t rv_to_host[] = {
+#include "ecall_nums.h"  
+};
+const int highest_ecall_num = HIGHEST_ECALL_NUM;
 
 void status_report(long insn_count)
 {
@@ -33,24 +27,27 @@ void status_report(long insn_count)
   fprintf(stderr, "\r%12ld insns %3.1fs %3.1f MIPS", insn_count, realtime, insn_count/1e6/realtime);
 }
 
+/* RISCV-V clone() system call arguments not same as X86_64:
+   a0 = flags
+   a1 = child_stack
+   a2 = parent_tidptr
+   a3 = tls
+   a4 = child_tidptr
+*/
+
 static int thread_interpreter(void* arg)
 {
   processor_t* p = (processor_t*)arg;
-  fprintf(stderr, "in thread_interpreter(), tid=%d\n", gettid());
-  processor_t* newcpu = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
-  memcpy(newcpu, p, sizeof(processor_t));
-  long child_stack = READ_REG(11); // from parent p
-  long tls	   = READ_REG(13); // arguments to ecall clone()
-  newcpu->get_state()->XPR.write(2, child_stack);
-  newcpu->get_state()->XPR.write(4, tls);
-  
-  //sleep(2);
-  p = newcpu;			// forget parent forever
-  STATE.pc += 4;		// skip over ecall pc
+  WRITE_REG(2, READ_REG(11));	// a1 = child_stack
+  WRITE_REG(4, READ_REG(13));	// a3 = tls
   WRITE_REG(10, 0);		// indicating we are child thread
+  STATE.pc += 4;		// skip over ecall pc
+  cpu_t* newcpu = new cpu_t(p);
   enum stop_reason reason;
   long insn_count = 0;
-  conf.show = true;
+  //conf.show = true;
+  //  sleep(100);
+  fprintf(stderr, "starting thread interpreter, tid=%d, tp=%lx\n", gettid(), READ_REG(4));
   do {
     reason = interpreter(newcpu, conf.stat*1000000, insn_count);
     status_report(insn_count);
@@ -85,21 +82,18 @@ static bool proxy_ecall(processor_t* p, long executed)
   case 231:			// X86_64 SYS_exit_group
     return true;
   case 56: 			// X86_64 SYS_clone
-    fprintf(stderr, "\nclone() called, tid=%d\n", gettid());
-    { // RISCV-V clone() system call arguments not same as X86_64:
-      long flags	= READ_REG(10);
-      //long child_stack= READ_REG(11);
-      long parent_tidptr= READ_REG(12);
-      //long tls	= READ_REG(13);
-      long child_tidptr	= READ_REG(14);
-      char* newcpu_sp = new char[THREAD_STACK_SIZE] + THREAD_STACK_SIZE;
-      //      void* newcpu = clone_cpu(p, child_stack, tls);
-      flags &= ~CLONE_SETTLS;	// not implementing TLS in interpreter yet
-      WRITE_REG(10, clone(thread_interpreter, newcpu_sp, flags, p,
-			  parent_tidptr, 0, child_tidptr));
-      sleep(100);
+    {
+      fprintf(stderr, "\nclone() called, tid=%d\n", gettid());
+      processor_t* q = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
+      memcpy(q->get_state(), p->get_state(), sizeof(state_t));
+      //memcpy(q, p, sizeof(processor_t));
+      char* interp_stack = new char[THREAD_STACK_SIZE];
+      interp_stack += THREAD_STACK_SIZE; // grows down
+      long child_tid = proxy_clone(thread_interpreter, interp_stack, a0, q, (void*)a2, (void*)a4);
+      WRITE_REG(10, (long)child_tid);
+      //sleep(3);
       fprintf(stderr, "returning from ecall, a0=%ld\n", READ_REG(10));
-      conf.show = true;
+      //conf.show = true;
       return false;
     }
   }
@@ -109,7 +103,15 @@ static bool proxy_ecall(processor_t* p, long executed)
   return false;
 }
 
-void* initial_cpu(long entry, long sp)
+cpu_t::cpu_t(processor_t* p)
+{
+  spike_cpu = p;
+  tid = gettid();
+  next = cpu_list;
+  cpu_list = this;
+}
+
+cpu_t* initial_cpu(long entry, long sp)
 {
   processor_t* p = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
   STATE.prv = PRV_U;
@@ -117,12 +119,47 @@ void* initial_cpu(long entry, long sp)
   STATE.vsstatus |= SSTATUS_FS;
   STATE.pc = entry;
   WRITE_REG(2, sp);
-  return p;
+  cpu_t* mycpu = new cpu_t(p);
+  return mycpu;
 }
 
-enum stop_reason interpreter(void* mycpu, long number, long &executed)
+long cpu_t::get_pc()
 {
-  processor_t* p = (processor_t*)mycpu;
+  processor_t* p = spike_cpu;
+  return STATE.pc;
+}
+
+long cpu_t::get_reg(int rn)
+{
+  processor_t* p = spike_cpu;
+  return STATE.XPR[rn];
+}
+
+cpu_t* cpu_t::find(int tid)
+{
+  for (cpu_t* p=cpu_t::cpu_list; p; p=p->next)
+    if (p->tid == tid)
+      return p;
+  return 0;
+}
+
+void cpu_t::show(long pc, FILE* f)
+{
+  Insn_t i = code.at(pc);
+  int rn = i.op_rd==NOREG ? i.op.rs2 : i.op_rd;
+  long rv = get_reg(rn);
+  if (rn != NOREG)
+    fprintf(stderr, "%6d: %4s[%16lx] ", tid, reg_name[rn], rv);
+  else
+    fprintf(stderr, "%6d: %4s[%16s] ", tid, "", "");
+  labelpc(pc);
+  disasm(pc);
+}
+
+enum stop_reason interpreter(cpu_t* mycpu, long number, long &executed)
+{
+  fprintf(stderr, "interpreter()\n");
+  processor_t* p = mycpu->spike_cpu;
   enum stop_reason reason = stop_normal;
   long count = 0;
   long pc = STATE.pc;
@@ -130,7 +167,7 @@ enum stop_reason interpreter(void* mycpu, long number, long &executed)
     do {
 #ifdef DEBUG
       long oldpc = pc;
-      debug.insert(executed+count+1, pc);
+      mycpu->debug.insert(executed+count+1, pc);
 #endif
       if (!code.valid(pc))
 	diesegv();
@@ -150,8 +187,10 @@ enum stop_reason interpreter(void* mycpu, long number, long &executed)
 	  goto early_stop;
 	}
 	pc += 4;
-	if (conf.show)
+	if (conf.show) {
+	  mycpu->show(oldpc);
 	  goto early_stop;
+	}
 	break;
       case Op_ebreak:
       case Op_c_ebreak:
@@ -159,8 +198,6 @@ enum stop_reason interpreter(void* mycpu, long number, long &executed)
 	goto early_stop;
 	
       default:
-	if (conf.show)
-	  show_insn(pc);
 	try {
 	  pc = golden[i.op_code](pc, p);
 	} catch (trap_user_ecall& e) {
@@ -170,6 +207,7 @@ enum stop_reason interpreter(void* mycpu, long number, long &executed)
 	  }
 	  pc += 4;
 	  if (conf.show) {
+	    mycpu->show(oldpc);
 	    count++;
 	    goto early_stop;
 	  }
@@ -182,10 +220,11 @@ enum stop_reason interpreter(void* mycpu, long number, long &executed)
 #ifdef DEBUG
       i = code.at(oldpc);
       int rn = i.op_rd==NOREG ? i.op.rs2 : i.op_rd;
-      debug.addval(i.op_rd, get_reg(mycpu, rn));
+      mycpu->debug.addval(i.op_rd, mycpu->get_reg(rn));
+      if (conf.show)
+	mycpu->show(oldpc);
 #endif
       //p->get_state()->XPR[0]=0
-      
     } while (++count < number);
   }
  early_stop:
