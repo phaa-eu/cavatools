@@ -9,83 +9,23 @@
 
 configuration_t conf;
 insnSpace_t code;
-cpu_t* cpu_t::cpu_list =0;
 
 void* operator new(size_t size)
 {
-  fprintf(stderr, "operator new(%ld)\n", size);
+  //  fprintf(stderr, "operator new(%ld)\n", size);
   extern void* malloc(size_t);
   return malloc(size);
 }
-void operator delete(void *p)
+void operator delete(void*) noexcept
 {
 }
 
-
-#ifdef DEBUG
-
-pctrace_t Debug_t::get()
-{
-  cursor = (cursor+1) % PCTRACEBUFSZ;
-  return trace[cursor];
-}
-
-void Debug_t::insert(pctrace_t pt)
-{
-  cursor = (cursor+1) % PCTRACEBUFSZ;
-  trace[cursor] = pt;
-}
-
-void Debug_t::insert(long c, long pc)
-{
-  cursor = (cursor+1) % PCTRACEBUFSZ;
-  trace[cursor].count = c;
-  trace[cursor].pc    = pc;
-  trace[cursor].val   = ~0l;
-  trace[cursor].rn    = GPREG;
-}
-
-void Debug_t::addval(int rn, long val)
-{
-  trace[cursor].rn    = rn;
-  trace[cursor].val   = val;
-}
-
-void Debug_t::print(FILE* f)
-{
-  for (int i=0; i<PCTRACEBUFSZ; i++) {
-    pctrace_t t = get();
-    if (t.rn != NOREG)
-      fprintf(stderr, "%15ld %4s[%016lx] ", t.count, reg_name[t.rn], t.val);
-    else
-      fprintf(stderr, "%15ld %4s[%16s] ", t.count, "", "");
-    labelpc(t.pc);
-    if (code.valid(t.pc))
-      disasm(t.pc, "");
-    fprintf(stderr, "\n");
-  }
-}
 
 //#include <setjmp.h>
 
 //jmp_buf return_to_top_level;
 
-void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
-{
-  //  ucontext_t* context = (ucontext_t*)vcontext;
-  //  context->uc_mcontext.gregs[]
-  fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
-  if (conf.gdb) {
-    HandleException(nSIGnum);
-    ProcessGdbCommand();
-  }
-  else
-    cpu_t::find(gettid())->debug.print();
-  exit(-1);
-  //  longjmp(return_to_top_level, 1);
-}
-
-#endif
+void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext);
 
 int main(int argc, const char* argv[], const char* envp[])
 {
@@ -114,6 +54,8 @@ int main(int argc, const char* argv[], const char* envp[])
   action.sa_flags = 0;
   action.sa_sigaction = signal_handler;
   sigaction(SIGSEGV, &action, NULL);
+  sigaction(SIGABRT, &action, NULL);
+  sigaction(SIGINT,  &action, NULL);
   //  if (setjmp(return_to_top_level) != 0) {
   //    fprintf(stderr, "SIGSEGV signal was caught\n");
   //    debug.print();
@@ -129,10 +71,10 @@ int main(int argc, const char* argv[], const char* envp[])
       ProcessGdbCommand(mycpu);
       do {
 	//	reason = run_insns(stat*1000000, insn_count);
-	reason = interpreter(mycpu, conf.stat*1000000, insn_count);
-	status_report(insn_count);
+	reason = interpreter(mycpu, conf.stat*1000000);
+	status_report();
       } while (reason == stop_normal);
-      status_report(insn_count);
+      status_report();
       fprintf(stderr, "\n");
       if (reason == stop_breakpoint)
 	HandleException(SIGTRAP);
@@ -145,11 +87,11 @@ int main(int argc, const char* argv[], const char* envp[])
   enum stop_reason reason;
   long insn_count = 0;
   do {
-    reason = interpreter(mycpu, conf.stat*1000000, insn_count);
-    status_report(insn_count);
+    reason = interpreter(mycpu, conf.stat*1000000);
+    status_report();
   } while (reason == stop_normal);
   fprintf(stderr, "\n");
-  status_report(insn_count);
+  status_report();
   fprintf(stderr, "\n");
   if (reason == stop_breakpoint)
     fprintf(stderr, "stop_breakpoint\n");
@@ -165,6 +107,48 @@ void insnSpace_t::init(long lo, long hi)
   int n = (hi-lo)/2;
   predecoded=new Insn_t[n];
   memset(predecoded, 0, n*sizeof(Insn_t));
+  // Predecode instruction code segment
+  long pc = lo;
+  while (pc < hi) {
+    Insn_t i = code.set(pc, decoder(code.image(pc), pc));
+    pc += i.op_4B ? 4 : 2;
+  }
+  // look for compare-and-swap pattern
+  long possible=0, replaced=0;
+  for (pc=lo; pc<hi; pc+=code.at(pc).op_4B?4:2) {
+    Insn_t i = code.at(pc);
+    if (!(i.op_code == Op_lr_w || i.op_code == Op_lr_d))
+      continue;
+    possible++;
+    Insn_t i2 = code.at(pc+4);
+    if (i2.op_code == Op_ZERO) i2 = code.set(pc+4, decoder(code.image(pc+4), pc+4));
+    if (!(i2.op_code == Op_bne || i2.op_code == Op_c_bnez)) continue;
+    int len = 4 + (i2.op_code==Op_c_bnez ? 2 : 4);
+    Insn_t i3 = code.at(pc+len);
+    if (i3.op_code == Op_ZERO) i3 = code.set(pc+len, decoder(pc+len, code.image(pc+len)));
+    if (!(i3.op_code == Op_sc_w || i3.op_code == Op_sc_d)) continue;
+    // pattern found, check registers
+    int addr_reg = i.op_rs1;
+    int load_reg = i.op_rd;
+    int test_reg = (i2.op_code == Op_c_bnez) ? 0 : i2.op.rs2;
+    int newv_reg = i3.op.rs2;
+    int flag_reg = i3.op_rd;
+    if (i2.op_rs1 != load_reg) continue;
+    if (i3.op_rs1 != addr_reg) continue;
+    // pattern is good
+    if (len == 8)
+      i.op_code = (i.op_code == Op_lr_w) ? Op_cas_w : Op_cas_d;
+    else
+      i.op_code = (i.op_code == Op_lr_w) ? Op_c_cas_w : Op_c_cas_d;
+    i.op_rd  = flag_reg;
+    i.op_rs1 = addr_reg;
+    i.op.rs2 = test_reg;
+    i.op.rs3 = newv_reg;
+    i.op.imm = i2.op.imm+4;	// branch target relative to lr instruction
+    code.set(pc, i);
+    replaced++;
+  }
+  fprintf(stderr, "%ld Load-Reserve found, %ld substitution failed\n", possible, possible-replaced);
 }
 
 #include "constants.h"

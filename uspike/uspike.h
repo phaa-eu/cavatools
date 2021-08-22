@@ -9,7 +9,7 @@
 
 using namespace std;
 void* operator new(size_t size);
-void operator delete(void *p);
+void operator delete(void*) noexcept;
 
 #define DEBUG
 
@@ -48,45 +48,12 @@ extern "C" {
   extern configuration_t conf;
 };
 
-struct pctrace_t {
-  long count;
-  long pc;
-  long val;
-  uint8_t rn;
-};
-
-#define PCTRACEBUFSZ  (1<<5)
-struct Debug_t {
-  pctrace_t trace[PCTRACEBUFSZ];
-  int cursor;
-  Debug_t() { cursor=0; }
-  pctrace_t get();
-  void insert(pctrace_t pt);
-  void insert(long c, long pc);
-  void addval(int rn, long val);
-  void print(FILE* f =stderr);
-};
-
-class cpu_t {
-  static cpu_t* cpu_list;
-public:
-  class processor_t* spike_cpu;
-  Debug_t debug;
-  cpu_t* next;			// for finding using tid
-  int tid;			// my Linux thread number
-  cpu_t(processor_t* p);
-  long get_pc();
-  long get_reg(int rn);
-  void show(long pc, FILE* f =stderr);
-  static cpu_t* find(int tid);
-};
-
 enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
 
-enum stop_reason interpreter(cpu_t* mycpu, long number, long &executed);
-void status_report(long insn_count);
-cpu_t* initial_cpu(long entry, long sp);
-cpu_t* find_cpu(int tid);
+enum stop_reason interpreter(class cpu_t* mycpu, long number);
+void status_report();
+class cpu_t* initial_cpu(long entry, long sp);
+class cpu_t* find_cpu(int tid);
 void show_insn(long pc, int tid);
 
 static inline bool find_symbol(const char* name, long &begin, long &end) { return elf_find_symbol(name, &begin, &end) != 0; }
@@ -133,7 +100,7 @@ public:
   long index(long pc) { checkif(valid(pc)); return (pc-base)/2; }
   Insn_t at(long pc) { return predecoded[index(pc)]; }
   uint32_t image(long pc) { checkif(valid(pc)); return *(uint32_t*)(pc); }
-  void set(long pc, Insn_t i) { predecoded[index(pc)] = i; }
+  Insn_t set(long pc, Insn_t i) { predecoded[index(pc)] = i; return i; }
 };
 
 extern insnSpace_t code;

@@ -26,7 +26,7 @@
 
 #define xlen 64
 
-extern long (*golden[])(long pc, processor_t* p);
+extern long (*golden[])(long pc, class cpu_t* cpu);
 
 #define NOISA
 
@@ -44,8 +44,9 @@ extern long (*golden[])(long pc, processor_t* p);
 #endif
 
 #undef MMU
-#include "mmu.h"
-extern mmu_t MMU;
+#include "cpu.h"
+
+#define MMU (*cpu)
 
 extern struct syscall_map_t rv_to_host[];
 extern const int highest_ecall_num;

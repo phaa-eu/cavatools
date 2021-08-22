@@ -150,6 +150,6 @@ int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
 int proxy_clone(int (*fn)(void*), void *interp_stack, int flags, void *arg, void *parent_tidptr, void *child_tidptr)
 {
   flags &= ~CLONE_SETTLS;	// not implementing TLS in interpreter yet
-  flags |= SIGCHLD;		// signal parent when finished
+  //  flags |= SIGCHLD;		// signal parent when finished
   return clone(fn, interp_stack, flags, arg, parent_tidptr, 0, child_tidptr);
 }

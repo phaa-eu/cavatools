@@ -21,17 +21,17 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 # Compiling options
 
-bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o mmu.o memory.o
+bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o cpu.o memory.o
 
-CXXFLAGS := $I -g -O0
-CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O0
+CXXFLAGS := $I -g -O2
+CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O2
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 
 uspike: $(bins) libcava.a
 	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) libcava.a $(LIBS)
 
-libcava.a:  mmu.h interpreter.h
+libcava.a:  cpu.h interpreter.h
 	make -j 16 -C insns
 
 # Dependencies
@@ -40,8 +40,8 @@ main.o decoder.o interpreter.o: uspike.h opcodes.h
 main.o options.o: options.h
 decoder.o: decoder.h
 elf_loader.o proxy_syscall.o gdblink.o: processinfo.h interpreter.h
-interpreter.o:  dispatch_table.h fastops.h mmu.h ecall_nums.h
-mmu.o: mmu.h
+interpreter.o:  dispatch_table.h fastops.h cpu.h ecall_nums.h
+cpu.o: cpu.h
 
 decoder.h constants.h dispatch_table.h fastops.h: opcodes.h
 
@@ -54,8 +54,8 @@ ecall_nums.h: Makefile syscall_mapping
 	./syscall_mapping < syscalls-riscv64 > $@
 
 opcodes.h: ./crunch_isa RV_isa.tmp RV.fast
-	./crunch_isa RV_isa.tmp
-#	./crunch_isa RV_isa.tmp RV.fast
+	./crunch_isa RV_isa.tmp RV.fast
+#	./crunch_isa RV_isa.tmp
 
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits

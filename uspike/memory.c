@@ -2,14 +2,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define poolsize  (1<<28)	/* size of simulation memory pool */
+#define poolsize  (1<<29)	/* size of simulation memory pool */
 
 static char simpool[poolsize];	/* base of memory pool */
 static char* pooltop = simpool;	/* current allocation address */
 
 void *malloc(size_t size)
 {
-  fprintf(stderr, "malloc(%ld)", size);
+  //  fprintf(stderr, "malloc(%ld)", size);
   char* after = pooltop + size + 16; /* allow for alignment */
   if (after > simpool+poolsize) {
     fprintf(stderr, " failed\n");
@@ -17,7 +17,7 @@ void *malloc(size_t size)
   }
   void* rv = pooltop;
   pooltop = (void*)((unsigned long)after & ~0xfL); /* always align to 16 bytes */
-  fprintf(stderr, " return %p\n", rv);
+  //  fprintf(stderr, " return %p\n", rv);
   return rv;
 }
 

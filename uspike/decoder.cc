@@ -11,8 +11,9 @@ Insn_t decoder(int b, long pc)
 #define xs(lo, len) (b << (32-lo-len) >> (32-len))
   
 #include "decoder.h"
-
   i.op_code = Op_UNKNOWN;
+  
+ opcode_found:
   return i;
 }
 

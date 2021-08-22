@@ -83,6 +83,11 @@ with open('newcode.tmp', 'w') as f:
     for name in opcodes.keys():
         if 'fast' not in opcodes[name]['flags']:
             opcode_list.append(name)
+    # Special opcodes
+    opcode_list.append('cas.w')
+    opcode_list.append('cas.d')
+    opcode_list.append('c_cas.w')
+    opcode_list.append('c_cas.d')
     opcode_list.append('ILLEGAL')
     opcode_list.append('UNKNOWN')
     for name in opcode_list:
@@ -164,19 +169,23 @@ with open('newcode.tmp', 'w') as f:
         f.write('; '.join(registers))
         if immed:
             f.write(';\ti.{:s}={:s}'.format(bigimm and 'op_immed' or 'op.imm', '|'.join(immed)))
-        f.write('; return i; }\n')
+        f.write('; goto opcode_found; }\n')
 diffcp('decoder.h')
 
 with open('newcode.tmp', 'w') as f:
     for name in opcodes:
-        f.write('long I_{:s}(long pc, processor_t* p);\n'.format(name.replace('.','_')))
+        f.write('long I_{:s}(long pc, cpu_t* cpu);\n'.format(name.replace('.','_')))
     f.write('\n')
-    f.write('long (*golden[])(long pc, processor_t* p) = {')
+    f.write('long (*golden[])(long pc, cpu_t* cpu) = {')
     i = 0
-    for name in ['ILLEGAL'] + list(opcodes.keys()) + ['ILLEGAL', 'UNKNOWN']:
+    #for name in ['ZERO'] + list(opcodes.keys()) + ['ILLEGAL', 'UNKNOWN']:
+    for name in opcode_list:
         if i % 4 == 0:
             f.write('\n  ')
-        f.write('&I_{:21s}'.format(name.replace('.','_')+','))
+        if name in opcodes:
+            f.write('&I_{:21s}'.format(name.replace('.','_')+','))
+        else:
+            f.write('{:24s}'.format('0,'))
         i += 1
     f.write('\n};\n')
 diffcp('dispatch_table.h')
@@ -184,7 +193,8 @@ diffcp('dispatch_table.h')
 with open('newcode.tmp', 'w') as f:
     f.write('const char* op_name[] = {')
     i = 0
-    for name in ['ILLEGAL'] + list(opcodes.keys()) + ['ILLEGAL', 'UNKNOWN']:
+    #for name in ['ILLEGAL'] + list(opcodes.keys()) + ['ILLEGAL', 'UNKNOWN']:
+    for name in opcode_list:
         if i % 4 == 0:
             f.write('\n  ')
         name2 = name.replace('.','_')
@@ -201,7 +211,8 @@ for name in opcodes:
     with open('newcode.tmp', 'w') as f:
         opcode = opcodes[name]
         f.write('#include "interpreter.h"\n')
-        f.write('long I_{:s}(long pc, processor_t* p) {{\n'.format(name.replace('.','_')))
+        f.write('long I_{:s}(long pc, cpu_t* cpu) {{\n'.format(name.replace('.','_')))
+        f.write('  processor_t* p = cpu->spike();\n');
         f.write('  insn_t insn = (long)(*(int{:d}_t*)pc);\n'.format(opcode['len']*8))
         if 'flags' in opcode:
             if 'pc' in opcode['flags']:
