@@ -43,16 +43,16 @@ public:
 #endif
   
 #define load_func(type, prefix, xlate_flags)				\
-  inline type##_t prefix##_##type(/*reg_t*/long addr, bool require_alignment = false) { \
+  inline type##_t prefix##_##type(long addr, bool ra = false) {		\
     return *(type##_t*)(addr); \
   }
-#define store_func(type, prefix, xlate_flags)	     \
-  inline void prefix##_##type(/*reg_t*/long addr, type##_t val) {   \
+#define store_func(type, prefix, xlate_flags)		    \
+  inline void prefix##_##type(long addr, type##_t val) {    \
     *(type##_t*)(addr) = val;				    \
   }
   
 #define amo_func(type)						\
-  template<typename op>	type##_t amo_##type(/*reg_t*/long addr, op f) { \
+  template<typename op>	type##_t amo_##type(long addr, op f) {	\
     type##_t lhs, *ptr = (type##_t*)addr;			\
     do lhs = *ptr;						\
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));	\

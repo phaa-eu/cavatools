@@ -11,7 +11,7 @@ using namespace std;
 void* operator new(size_t size);
 void operator delete(void*) noexcept;
 
-#define DEBUG
+//#define DEBUG
 
 /*
   Utility stuff.

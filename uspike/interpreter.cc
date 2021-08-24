@@ -10,8 +10,6 @@
 #include "uspike.h"
 #include "interpreter.h"
 
-Mutex_t brk_lock;
-
 #define THREAD_STACK_SIZE  (1<<14)
 
 struct syscall_map_t {
@@ -27,18 +25,23 @@ const int highest_ecall_num = HIGHEST_ECALL_NUM;
 void status_report()
 {
   long total = 0;
-  brk_lock.lock();
   double realtime = elapse_time();
-  for (cpu_t* p=cpu_t::list(); p; p=p->next())
-    total += p->insn_count;
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
-  char separator = '(';
+  int n = 0;
   for (cpu_t* p=cpu_t::list(); p; p=p->next()) {
-    fprintf(stderr, "%c%2.0f%%", separator, 100.0*p->insn_count/total);
-    separator = ',';
+    total += p->insn_count;
+    n++;
   }
-  fprintf(stderr, ")");
-  brk_lock.unlock();
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
+  if (n <= 16) {
+    char separator = '(';
+    for (cpu_t* p=cpu_t::list(); p; p=p->next()) {
+      fprintf(stderr, "%c%1ld%%", separator, 100*p->insn_count/total);
+      separator = ',';
+    }
+    fprintf(stderr, ")");
+  }
+  else if (n > 1)
+    fprintf(stderr, "(%d cores)", n);
 }
 
 /* RISCV-V clone() system call arguments not same as X86_64:
@@ -56,9 +59,7 @@ static int thread_interpreter(void* arg)
   WRITE_REG(4, READ_REG(13));	// a3 = tls
   WRITE_REG(10, 0);		// indicating we are child thread
   STATE.pc += 4;		// skip over ecall pc
-  brk_lock.lock();
   cpu_t* newcpu = new cpu_t(p);
-  brk_lock.unlock();
   enum stop_reason reason;
   //conf.show = true;
   //  sleep(100);
@@ -108,7 +109,6 @@ static bool proxy_ecall(processor_t* p, long executed)
   case SYS_clone:
     {
       //fprintf(stderr, "\nclone() called, tid=%d\n", gettid());
-      brk_lock.lock();
       processor_t* q = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
       memcpy(q->get_state(), p->get_state(), sizeof(state_t));
       //memcpy(q, p, sizeof(processor_t));
@@ -119,13 +119,13 @@ static bool proxy_ecall(processor_t* p, long executed)
       //sleep(3);
       //fprintf(stderr, "returning from ecall, a0=%ld\n", READ_REG(10));
       //conf.show = true;
-      brk_lock.unlock();
       goto finished;
     }
+#if 0
   case SYS_futex:
     {
       timespec nap = { 0, 1000 }; // sleep for this many nanoseconds initially
-      long counter = 100;
+      long counter = 1;
       long rc = proxy_syscall(sysnum, executed, name, a0, a1, a2, a3, a4, a5);
       while (rc == -1 && errno == EAGAIN && --counter >= 0) {
 	nanosleep(&nap, 0);
@@ -137,6 +137,7 @@ static bool proxy_ecall(processor_t* p, long executed)
       WRITE_REG(10, rc);
       goto finished;
     }
+#endif
   }
   WRITE_REG(10, proxy_syscall(sysnum, executed, name, a0, a1, a2, a3, a4, a5));
  finished:
@@ -223,30 +224,32 @@ int tid_alone;
   if (failure) fprintf(stderr, "tid=%ld sc(%lx, %ld) %s\n", cpu->tid(), addr, READ_REG(i.op.rs2), failure?"failed":"succeeded"); \
 }
 
-#define amo_swap(type, addr, val)   __sync_lock_test_and_set((type##_t*)addr, val)
-
-#define cas_proxy(type, shorten) {					\
-  auto *ptr = (type##_t*)READ_REG(i.op_rs1);				\
-  type##_t expect  = READ_REG(i.op.rs2);				\
-  type##_t replace = READ_REG(i.op.rs3);				\
-  long oldval = __sync_val_compare_and_swap(ptr, expect, replace);	\
-  WRITE_REG(code.at(pc+4).op_rs1, oldval);				\
-  if (oldval == expect) {						\
-    WRITE_REG(i.op_rd, 0); /* sc was successful */			\
-    pc += shorten ? 10 : 12; /* skip to after sc */			\
-  } else /* note does not update rd! */					\
-    pc += i.op.imm;	/* failure branch taken */			\
+template<class T> bool cmpswap(long pc, processor_t* p)
+{
+  Insn_t i = code.at(pc);
+  T* ptr = (T*)READ_REG(i.op_rs1);
+  T expect  = READ_REG(i.op.rs2);
+  T replace = READ_REG(i.op.rs3);
+  T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
+  WRITE_REG(code.at(pc+4).op_rs1, oldval);
+  if (oldval == expect)  WRITE_REG(i.op_rd, 0);	/* sc was successful */
+  return oldval == expect;
 }
+  
 
 enum stop_reason interpreter(cpu_t* cpu, long number)
 {
   //fprintf(stderr, "interpreter()\n");
   processor_t* p = cpu->spike();
+  long* xrf = (long*)&p->get_state()->XPR;
+  long* frf = (long*)&p->get_state()->FPR;
   enum stop_reason reason = stop_normal;
-  long count = 0;
   long pc = STATE.pc;
+  long count = 0;
   while (count < number) {
     do {
+      
+#if 0
       int v;
       if ((v=tid_alone) && (v!=cpu->tid())) {
 	fprintf(stderr, "tid_alone=%d, my_tid=%ld waiting\n", v, cpu->tid());
@@ -255,6 +258,8 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
 	  fprintf(stderr, "still waiting\n");
 	}
       }
+#endif
+      
 #ifdef DEBUG
       long oldpc = pc;
       cpu->debug.insert(cpu->insn_count+count+1, pc);
@@ -277,10 +282,6 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
 	  goto early_stop;
 	}
 	pc += 4;
-	if (conf.show) {
-	  cpu->show(oldpc);
-	  goto early_stop;
-	}
 	break;
       case Op_ebreak:
       case Op_c_ebreak:
@@ -288,16 +289,16 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
 	goto early_stop;
 
       case Op_cas_w:
-	cas_proxy(int32, false);
+	pc += cmpswap<int32_t>(pc, p) ? 12 : i.op.imm;
 	break;
       case Op_c_cas_w:
-	cas_proxy(int32, true);
+	pc += cmpswap<int32_t>(pc, p) ? 10 : i.op.imm;
 	break;
       case Op_cas_d:
-	cas_proxy(int64, false);
+	pc += cmpswap<int64_t>(pc, p) ? 12 : i.op.imm;
 	break;
       case Op_c_cas_d:
-	cas_proxy(int64, true);
+	pc += cmpswap<int64_t>(pc, p) ? 10 : i.op.imm;
 	break;
 
       case Op_lr_w:
@@ -312,28 +313,20 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
       case Op_sc_d:
 	store_conditional(int64);
 	break;
-#if 0
-      case Op_amoswap_w:
-	WRITE_REG(i.op_rd, amo_swap(int32, READ_REG(i.op_rs1), READ_REG(i.op.rs2)));
-	pc += 4;
-	break;
-      case Op_amoswap_d:
-	WRITE_REG(i.op_rd, amo_swap(int64, READ_REG(i.op_rs1), READ_REG(i.op.rs2)));
-	pc += 4;
-	break;
-#endif	
+	
       default:
 	try {
 	  pc = golden[i.op_code](pc, cpu);
 	} catch (trap_user_ecall& e) {
-	  if (proxy_ecall(p, cpu->insn_count+count)) {
+	  //if (proxy_ecall(p, cpu->insn_count+count)) {
+	  if (proxy_ecall(p, cpu->insn_count)) {
 	    reason = stop_exited;
 	    goto early_stop;
 	  }
 	  pc += 4;
 	  if (conf.show) {
-	    cpu->show(oldpc);
-	    count++;
+	    //count++;
+	    cpu->insn_count++;
 	    goto early_stop;
 	  }
 	} catch (trap_breakpoint& e) {
@@ -342,6 +335,8 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
 	}
 	break;
       }
+      xrf[0] = 0;
+      
 #ifdef DEBUG
       i = code.at(oldpc);
       int rn = i.op_rd==NOREG ? i.op.rs2 : i.op_rd;
@@ -349,7 +344,7 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
       if (conf.show)
 	cpu->show(oldpc);
 #endif
-      //p->get_state()->XPR[0]=0
+
     } while (++count < number);
   }
  early_stop:
