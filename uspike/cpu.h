@@ -70,6 +70,11 @@ public:
   load_func(int32, load, 0);
   load_func(int64, load, 0);
 
+  //  float  load_float32(long addr) { union { float  f; int  i; } x; x.i=load_int32(addr); return x.f; }
+  //  double load_float64(long addr) { union { double d; long l; } x; x.l=load_int64(addr); return x.d; }
+  float  load_fp32(long addr) { return *( float*)addr; }
+  double load_fp64(long addr) { return *(double*)addr; }
+
   store_func(uint8,  store, 0);
   store_func(uint16, store, 0);
   store_func(uint32, store, 0);
@@ -79,6 +84,9 @@ public:
   store_func(int16, store, 0);
   store_func(int32, store, 0);
   store_func(int64, store, 0);
+  
+  void store_fp32(long addr, float  v) { union { float  f; int  i; } x; x.f=v; store_int32(addr, x.i); }
+  void store_fp64(long addr, double v) { union { double d; long l; } x; x.d=v; store_int64(addr, x.l); }
 
   load_func(uint8,  guest_load, 0);
   load_func(uint16, guest_load, 0);

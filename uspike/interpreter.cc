@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <math.h>
 #include <sys/syscall.h>
 #include <linux/futex.h>
 
@@ -236,13 +237,44 @@ template<class T> bool cmpswap(long pc, processor_t* p)
   return oldval == expect;
 }
   
+union frf_t{
+  long l[2];
+  double d;
+  float s;
+  char pad[16];
+  void operator=(long   x) { l[1]=~0L; l[0]=x; }
+  void operator=(double x) { l[1]=~0L; d=x; }
+  void operator=(float  x) { l[1]=l[0]=~0L; s=x; }
+};
+
+#define immed i.op.imm
+#define longimm i.op_immed
+//#define r1 (int64_t)(p->get_state()->XPR[i.op_rs1])
+//#define r2 (int64_t)(p->get_state()->XPR[i.op.rs2])
+//#define wrd(e) p->get_state()->XPR.write(i.op_rd, e)
+#define wpc(e) pc=(e)
+#define r1 xrf[i.op_rs1]
+#define r2 xrf[i.op.rs2]
+#define wrd(e) xrf[i.op_rd]=(e)
+
+union conv_t { float32_t sf; float hf; float64_t sd; double hd; };
+inline float  float_of( float32_t x) { conv_t c; c.sf=x; return c.hf; }
+inline double double_of(float64_t x) { conv_t c; c.sd=x; return c.hd; }
+#define f1 float_of(f32(READ_FREG(i.op_rs1)))
+#define f2 float_of(f32(READ_FREG(i.op.rs2)))
+#define f3 float_of(f32(READ_FREG(i.op.rs3)))
+#define d1 double_of(f64(READ_FREG(i.op_rs1)))
+#define d2 double_of(f64(READ_FREG(i.op.rs2)))
+#define d3 double_of(f64(READ_FREG(i.op.rs3)))
+#define wfrd(x) { conv_t c; c.hf=x; DO_WRITE_FREG(i.op_rd, freg(c.sf)); }
+#define wdrd(x) { conv_t c; c.hd=x; DO_WRITE_FREG(i.op_rd, freg(c.sd)); }
 
 enum stop_reason interpreter(cpu_t* cpu, long number)
 {
   //fprintf(stderr, "interpreter()\n");
   processor_t* p = cpu->spike();
   long* xrf = (long*)&p->get_state()->XPR;
-  long* frf = (long*)&p->get_state()->FPR;
+  
   enum stop_reason reason = stop_normal;
   long pc = STATE.pc;
   long count = 0;

@@ -112,10 +112,12 @@ long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1,
       struct timeval tv;
       tv.tv_sec  = cycles / pretend_Hz;
       tv.tv_usec = cycles % pretend_Hz;
-      tv.tv_sec  += start_tv.tv_sec;
-      tv.tv_usec += start_tv.tv_usec;
-      tv.tv_sec  += tv.tv_usec / 1000000;  // microseconds overflow
-      tv.tv_usec %=              1000000;
+      tv.tv_sec  = start_tv.tv_sec  + (cycles/pretend_Hz);
+      tv.tv_usec = start_tv.tv_usec + (cycles%pretend_Hz);
+      while (tv.tv_usec > 1000000) {
+	tv.tv_sec  += 1;
+	tv.tv_usec -= 1000000;
+      }
       memcpy((void*)(sysnum==__NR_gettimeofday? a0 : a1), &tv, sizeof tv);
     }
     return 0;

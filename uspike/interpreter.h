@@ -50,13 +50,3 @@ extern long (*golden[])(long pc, class cpu_t* cpu);
 
 extern struct syscall_map_t rv_to_host[];
 extern const int highest_ecall_num;
-
-#define immed i.op.imm
-#define longimm i.op_immed
-//#define r1 (int64_t)(p->get_state()->XPR[i.op_rs1])
-//#define r2 (int64_t)(p->get_state()->XPR[i.op.rs2])
-//#define wrd(e) p->get_state()->XPR.write(i.op_rd, e)
-#define r1 xrf[i.op_rs1]
-#define r2 xrf[i.op.rs2]
-#define wrd(e) xrf[i.op_rd]=(e)
-#define wpc(e) pc=(e)

@@ -53,9 +53,10 @@ interpreter.o: interpreter.cc
 ecall_nums.h: Makefile syscall_mapping
 	./syscall_mapping < syscalls-riscv64 > $@
 
-opcodes.h: ./crunch_isa RV_isa.tmp RV.fast
+opcodes.h: ./crunch_isa RV.opt RV_isa.tmp RV.fast
 	./crunch_isa RV_isa.tmp RV.fast
 #	./crunch_isa RV_isa.tmp
+#	./crunch_isa RV.opt RV_isa.tmp RV.fast
 
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
