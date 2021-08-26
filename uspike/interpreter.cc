@@ -181,38 +181,6 @@ void show(cpu_t* cpu, long pc, FILE* f)
   disasm(pc);
 }
 
-int tid_alone;
-
-#define load_reserve(type) {					\
-  long addr = READ_REG(i.rs1());				\
-  long a = (cpu->tid() << 48) | (addr & 0x0000ffffffffffff);	\
-  /*lrsc_lock.lock();*/						\
-  tid_alone = cpu->tid();					\
-  cpu->reserve_addr = a;					\
-  /*long b = __sync_lock_test_and_set(&cpu->reserve_addr, a);*/	\
-  WRITE_REG(i.rd(), MMU.load_##type(addr));			\
-  /*lrsc_lock.unlock();*/					\
-  pc += 4;							\
-}
-
-#define store_conditional(type) {				\
-  long addr = READ_REG(i.rs1());				\
-  long a = (cpu->tid() << 48) | (addr & 0x0000ffffffffffff);	\
-  /*lrsc_lock.lock();*/						\
-  /*long b = __sync_lock_test_and_set(&cpu->reserve_addr, a);*/	\
-  long b = cpu->reserve_addr;					\
-  long failure = (b != a);					\
-  if (!failure)							\
-    MMU.store_int32(addr, READ_REG(i.rs2()));			\
-  cpu->reserve_addr = 0;					\
-  /*lrsc_lock.unlock();*/					\
-  tid_alone = 0;						\
-  syscall(SYS_futex, (int*)&tid_alone, FUTEX_WAKE, 1, 0, 0, 0);	\
-  WRITE_REG(i.rd(), failure);					\
-  pc += 4;							\
-  if (failure) fprintf(stderr, "tid=%ld sc(%lx, %ld) %s\n", cpu->tid(), addr, READ_REG(i.rs2()), failure?"failed":"succeeded"); \
-}
-
 template<class T> bool cmpswap(long pc, processor_t* p)
 {
   Insn_t i = code.at(pc);
@@ -222,36 +190,14 @@ template<class T> bool cmpswap(long pc, processor_t* p)
   T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
   WRITE_REG(code.at(pc+4).rs1(), oldval);
   if (oldval == expect)  WRITE_REG(i.rd(), 0);	/* sc was successful */
-  return oldval == expect;
+  return oldval != expect;
 }
-  
-union frf_t{
-  long l[2];
-  double d;
-  float s;
-  char pad[16];
-  void operator=(long   x) { l[1]=~0L; l[0]=x; }
-  void operator=(double x) { l[1]=~0L; d=x; }
-  void operator=(float  x) { l[1]=l[0]=~0L; s=x; }
-};
 
 #define imm i.immed()
 #define wpc(e) pc=(e)
 #define r1 xrf[i.rs1()]
 #define r2 xrf[i.rs2()]
 #define wrd(e) xrf[i.rd()]=(e)
-
-union conv_t { float32_t sf; float hf; float64_t sd; double hd; };
-inline float  float_of( float32_t x) { conv_t c; c.sf=x; return c.hf; }
-inline double double_of(float64_t x) { conv_t c; c.sd=x; return c.hd; }
-#define f1 float_of(f32(READ_FREG(i.rs1())))
-#define f2 float_of(f32(READ_FREG(i.rs2())))
-#define f3 float_of(f32(READ_FREG(i.op.rs3)))
-#define d1 double_of(f64(READ_FREG(i.rs1())))
-#define d2 double_of(f64(READ_FREG(i.rs2())))
-#define d3 double_of(f64(READ_FREG(i.op.rs3)))
-#define wfrd(x) { conv_t c; c.hf=x; DO_WRITE_FREG(i.rd(), freg(c.sf)); }
-#define wdrd(x) { conv_t c; c.hd=x; DO_WRITE_FREG(i.rd(), freg(c.sd)); }
 
 enum stop_reason interpreter(cpu_t* cpu, long number)
 {
@@ -290,45 +236,6 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
 	goto repeat_dispatch;
 	
 #include "fastops.h"
-	
-      case Op_ecall:
-	STATE.pc=pc;
-	if (proxy_ecall(p, cpu->insn_count+count)) {
-	  reason = stop_exited;
-	  goto early_stop;
-	}
-	pc += 4;
-	break;
-      case Op_ebreak:
-      case Op_c_ebreak:
-	reason = stop_breakpoint;
-	goto early_stop;
-
-      case Op_cas_w:
-	pc += cmpswap<int32_t>(pc, p) ? 12 : code.at(pc+4).immed()+4;
-	break;
-      case Op_c_cas_w:
-	pc += cmpswap<int32_t>(pc, p) ? 10 : code.at(pc+4).immed()+4;
-	break;
-      case Op_cas_d:
-	pc += cmpswap<int64_t>(pc, p) ? 12 : code.at(pc+4).immed()+4;
-	break;
-      case Op_c_cas_d:
-	pc += cmpswap<int64_t>(pc, p) ? 10 : code.at(pc+4).immed()+4;
-	break;
-
-      case Op_lr_w:
-	load_reserve(int32);
-	break;
-      case Op_lr_d:
-	load_reserve(int64);
-	break;
-      case Op_sc_w:
-	store_conditional(int32);
-	break;
-      case Op_sc_d:
-	store_conditional(int64);
-	break;
 	
       default:
 	try {

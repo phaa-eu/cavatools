@@ -42,8 +42,7 @@ instructions.o: decoder.h
 elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h interpreter.h
 interpreter.o:  dispatch_table.h fastops.h cpu.h ecall_nums.h
 cpu.o: cpu.h
-
-decoder.h constants.h dispatch_table.h fastops.h: opcodes.h
+cpu.o decoder.h constants.h dispatch_table.h fastops.h: opcodes.h cpu.h
 
 interpreter.o: interpreter.cc
 	$(CXX) $(CXXFLAGS) -Ofast -c -o $@ interpreter.cc

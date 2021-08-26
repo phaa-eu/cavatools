@@ -24,6 +24,12 @@ struct Debug_t {
 
 #include "opcodes.h"
 
+// The bits[63:32] are a union with two different length immediates
+// For short immediates a 13-bit value is in [47:35] (right shfit by 3)
+// There are 3 flag bits in [34:32].  Bit[32]=0 indicates long immediate.
+// Long immediates always have zeros in low order bits.  We take advantage
+// by making sure flag bits are all zero in this case, then just use value.
+
 class alignas(8) Insn_t {
   Opcode_t op_code;
   int8_t op_rd;		// note unsigned byte
@@ -40,15 +46,13 @@ class alignas(8) Insn_t {
 public:
   Insn_t() { *((int64_t*)this) = -1; } // all registers become NOREG
   Insn_t(Opcode_t code)                { *((int64_t*)this)=-1; op_code=code; }
-  Insn_t(Opcode_t code, int8_t rd, int16_t imm)     :Insn_t(code)  { op_rd=rd; op.imm =imm<<1|1; }
-
+  Insn_t(Opcode_t code, int8_t rd, int16_t imm)     :Insn_t(code)  { op_rd=rd; op.imm=imm<<3|0x1; }
   long opcode() { return op_code; }
   int rd()  { return op_rd; }
   int rs1() { return op_rs1; }
   int rs2() { return op.rs2; }
   int rs3() { return op.rs3; }
-  long immed() { return (op.imm&0x1) ? op.imm>>1 : op_longimm; }
-
+  long immed() { return (op.imm&0x1) ? op.imm>>3 : op_longimm; }
   bool compressed() { return op_code <= Last_Compressed_Opcode; }
   bool longimmed() { return (op.imm & 0x1) == 0; }
   friend Insn_t reg1insn( Opcode_t code, int8_t rd, int8_t rs1);
