@@ -1,9 +1,9 @@
 {
     "c.addi4spn": { "type":"crs", "bits":"000         {5:4|9:6|2|3}    crd 00" },
-    "c.fld"	: { "type":"c",   "bits":"001 {5:3}       cs1 {7:6}    crd 00" },
+    "c.fld"	: { "type":"c",   "bits":"001 {5:3}       cs1 {7:6}    cfd 00" },
     "c.lw" 	: { "type":"c",   "bits":"010 {5:3}       cs1 {2|6}    crd 00" },
     "c.ld"	: { "type":"c",   "bits":"011 {5:3}       cs1 {7:6}    crd 00", "spike":"c.flw" },
-    "c.fsd"	: { "type":"c",   "bits":"101 {5:3}       cs1 {7:6}    cs2 00" },
+    "c.fsd"	: { "type":"c",   "bits":"101 {5:3}       cs1 {7:6}    ds2 00" },
     "c.sw"	: { "type":"c",   "bits":"110 {5:3}       cs1 {2|6}    cs2 00" },
     "c.sd"	: { "type":"c",   "bits":"111 {5:3}       cs1 {7:6}    cs2 00", "spike":"c.fsw" },
     "c.addi"	: { "type":"c",   "bits":"000  {-5}       rd1        {4:0} 01" },
@@ -25,7 +25,7 @@
     "c.bnez"	: { "type":"c",   "bits":"111 {-8|4:3}    cs1  {7:6|2:1|5} 01" },
 
     "c.slli"	: { "type":"c",   "bits":"000   {5}       rd1        {4:0} 10" },
-    "c.fldsp"	: { "type":"csl", "bits":"001   {5}        rd    {4:3|8:6} 10" },
+    "c.fldsp"	: { "type":"csl", "bits":"001   {5}        fd    {4:3|8:6} 10" },
     "c.lwsp"	: { "type":"csl", "bits":"010   {5}        rd    {4:2|7:6} 10" },
     "c.ldsp"	: { "type":"csl", "bits":"011   {5}        rd    {4:3|8:6} 10", "spike":"c.flwsp" },
     "c.jr"	: { "type":"c",   "bits":"100     0       rs5        00000 10" },

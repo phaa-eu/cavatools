@@ -16,7 +16,6 @@ def diffcp(fname):
     if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
         os.system('rm newcode.tmp')
     else:
-        #eprint(fname, 'updated')
         os.system('mv newcode.tmp '+fname)
 
 opcodes = OrderedDict()
@@ -64,12 +63,13 @@ errors = 0
 for name in opcodes:
     if 'bits' not in opcodes[name]:
         print(name, opcodes[name]);
+        errors += 1
         continue;
     for b in opcodes[name]['bits'].split():
         if re.match('[01]+|\{[^}]+\}', b):
             continue
         if b not in regs:
-            eprint('Undefined register', b)
+            eprint(name, 'Undefined register', b)
             errors += 1
 if errors:  exit(-1)
 
@@ -90,6 +90,18 @@ for name in opcodes:
         registers.append('i.op_rd=1')
     if type=='cds':
         registers.append('i.op_rd=2')
+    if re.match('f\w+\.', name):
+        b = opcodes[name]['bits']
+        if re.match('.*\.[wl]u?\.[sd]|(feq|flt|fle|fclass)\.[sd]|fmv\.x\.[wd]', name):
+            b = b.replace('rs1', 'fs1')
+        elif re.match('.*\.[sd]u?\.[wl]u?|fmv\.[wd]\.x', name):
+            b = b.replace('rd', 'fd')
+        elif re.match('f\w+\.[sd]', name):
+            b = b.replace('rd',  'fd')
+            b = b.replace('rs1', 'fs1')
+            b = b.replace('rs2', 'fs2')
+            b = b.replace('rs3', 'fs3')
+        opcodes[name]['bits'] = b
     for b in reversed(opcodes[name]['bits'].split()):
         if re.match('[01]+', b):
             code |= int(b, 2) << pos
@@ -124,6 +136,8 @@ for name in opcodes:
             immed.append('{:s}({:d},{:d}){:s}'.format(signed and 'xs' or 'x', pos, hi-lo+1, shift))
             pos += hi-lo+1
         else:
+                    
+                
             lo = regs[b][0]
             width = regs[b][1]
             offset = regs[b][2]
