@@ -20,7 +20,7 @@
 #include <string.h>
 #include <signal.h>
 
-#include "processinfo.h"
+#include "elf_loader.h"
 
 static long pretend_Hz;
 static struct timeval start_tv;

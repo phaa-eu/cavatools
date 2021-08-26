@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <setjmp.h>
 
+#include "cpu.h"
 #include "interpreter.h"
 #include "uspike.h"
 

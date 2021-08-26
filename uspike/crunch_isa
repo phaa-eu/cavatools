@@ -30,34 +30,63 @@ for filename in sys.argv[1:]:
             opcodes[name] = attrs
 
 regs = {}
-regs['cfd']	= ( 2, 3, '+8+FPREG', 'op_rd')
-regs['crd']	= ( 2, 3, '+8+GPREG', 'op_rd')
-regs['cs2']	= ( 2, 3, '+8+GPREG', 'op.rs2')
-regs['ds2']	= ( 2, 3, '+8+FPREG', 'op.rs2')
-regs['fs4']	= ( 2, 5, '+FPREG',   'op.rs2')
-regs['rs4']	= ( 2, 5, '+GPREG',   'op.rs2')
-regs['cs1']	= ( 7, 3, '+8+GPREG', 'op_rs1')
-regs['cd1']	= ( 7, 3, '+8+GPREG', 'op_rd',  'op_rs1')
-regs['rd1']	= ( 7, 5, '+GPREG',   'op_rd',  'op_rs1')
-regs['rs5']	= ( 7, 5, '+GPREG',   'op_rs1')
+#regs['cfd']	= ( 2, 3, '+8+FPREG', 'op_rd')
+#regs['crd']	= ( 2, 3, '+8+GPREG', 'op_rd')
+#regs['cs2']	= ( 2, 3, '+8+GPREG', 'op.rs2')
+#regs['ds2']	= ( 2, 3, '+8+FPREG', 'op.rs2')
+#regs['fs4']	= ( 2, 5, '+FPREG',   'op.rs2')
+#regs['rs4']	= ( 2, 5, '+GPREG',   'op.rs2')
+#regs['cs1']	= ( 7, 3, '+8+GPREG', 'op_rs1')
+#regs['cd1']	= ( 7, 3, '+8+GPREG', 'op_rd',  'op_rs1')
+#regs['rd1']	= ( 7, 5, '+GPREG',   'op_rd',  'op_rs1')
+#regs['rs5']	= ( 7, 5, '+GPREG',   'op_rs1')
 
-regs['rd']	= ( 7, 5, '+GPREG',   'op_rd')
-regs['fd']	= ( 7, 5, '+FPREG',   'op_rd')
-regs['vd']	= ( 7, 5, '+VPREG',   'op_rd')
-regs['vs3']	= ( 7, 5, '+VPREG',   'op.rs3')
+#regs['rd']	= ( 7, 5, '+GPREG',   'op_rd')
+#regs['fd']	= ( 7, 5, '+FPREG',   'op_rd')
+#regs['vd']	= ( 7, 5, '+VPREG',   'op_rd')
+#regs['vs3']	= ( 7, 5, '+VPREG',   'op.rs3')
 
-regs['rs1']	= (15, 5, '+GPREG',   'op_rs1')
-regs['fs1']	= (15, 5, '+FPREG',   'op_rs1')
-regs['vs1']	= (15, 5, '+VPREG',   'op_rs1')
+#regs['rs1']	= (15, 5, '+GPREG',   'op_rs1')
+#regs['fs1']	= (15, 5, '+FPREG',   'op_rs1')
+#regs['vs1']	= (15, 5, '+VPREG',   'op_rs1')
 
-regs['rs2']	= (20, 5, '+GPREG',   'op.rs2')
-regs['fs2']	= (20, 5, '+FPREG',   'op.rs2')
-regs['vs2']	= (20, 5, '+VPREG',   'op.rs2')
+#regs['rs2']	= (20, 5, '+GPREG',   'op.rs2')
+#regs['fs2']	= (20, 5, '+FPREG',   'op.rs2')
+#regs['vs2']	= (20, 5, '+VPREG',   'op.rs2')
 
-regs['rs3']	= (27, 5, '+GPREG',   'op.rs3')
-regs['fs3']	= (27, 5, '+FPREG',   'op.rs3')
+#regs['rs3']	= (27, 5, '+GPREG',   'op.rs3')
+#regs['fs3']	= (27, 5, '+FPREG',   'op.rs3')
 
-regs['vm']	= (25, 1, '+VMREG',   'op_vm')
+#regs['vm']	= (25, 1, '+VMREG',   'op_vm')
+
+regs['cfd']	= ( 2, 3, '+8+FPREG', 0)
+regs['crd']	= ( 2, 3, '+8+GPREG', 0)
+regs['cs2']	= ( 2, 3, '+8+GPREG', 2)
+regs['ds2']	= ( 2, 3, '+8+FPREG', 2)
+regs['fs4']	= ( 2, 5, '+FPREG',   2)
+regs['rs4']	= ( 2, 5, '+GPREG',   2)
+regs['cs1']	= ( 7, 3, '+8+GPREG', 1)
+regs['cd1']	= ( 7, 3, '+8+GPREG', 0, 1)
+regs['rd1']	= ( 7, 5, '+GPREG',   0, 1)
+regs['rs5']	= ( 7, 5, '+GPREG',   1)
+
+regs['rd']	= ( 7, 5, '+GPREG',   0)
+regs['fd']	= ( 7, 5, '+FPREG',   0)
+regs['vd']	= ( 7, 5, '+VPREG',   0)
+regs['vs3']	= ( 7, 5, '+VPREG',   3)
+
+regs['rs1']	= (15, 5, '+GPREG',   1)
+regs['fs1']	= (15, 5, '+FPREG',   1)
+regs['vs1']	= (15, 5, '+VPREG',   1)
+
+regs['rs2']	= (20, 5, '+GPREG',   2)
+regs['fs2']	= (20, 5, '+FPREG',   2)
+regs['vs2']	= (20, 5, '+VPREG',   2)
+
+regs['rs3']	= (27, 5, '+GPREG',   3)
+regs['fs3']	= (27, 5, '+FPREG',   3)
+
+regs['vm']	= (25, 1, '+VMREG',   3)
 
 errors = 0
 for name in opcodes:
@@ -79,17 +108,17 @@ for name in opcodes:
     mask = 0
     immed = []
     bigimm = 0
-    registers = []
+    registers = [ 'NOREG' ]*4
     if 'type' in opcodes[name]:
         type = opcodes[name]['type']
     else:
         type = 'none'
     if type=='crs' or type=='cds' or type=='csl' or type=='css':
-        registers.append('i.op_rs1=2')
+        registers[2] = '2'
     if type=='cjl':
-        registers.append('i.op_rd=1')
+        registers[0] = '1'
     if type=='cds':
-        registers.append('i.op_rd=2')
+        registers[0] = '2'
     if re.match('f\w+\.', name):
         b = opcodes[name]['bits']
         if re.match('.*\.[wl]u?\.[sd]|(feq|flt|fle|fclass)\.[sd]|fmv\.x\.[wd]', name):
@@ -136,13 +165,11 @@ for name in opcodes:
             immed.append('{:s}({:d},{:d}){:s}'.format(signed and 'xs' or 'x', pos, hi-lo+1, shift))
             pos += hi-lo+1
         else:
-                    
-                
             lo = regs[b][0]
             width = regs[b][1]
             offset = regs[b][2]
-            for reg in regs[b][3:]:
-                registers.append('i.{:s}=x({:d},{:d}){:s}'.format(reg, lo, width, offset))
+            for rn in regs[b][3:]:
+                registers[rn] = 'x({:d},{:d}){:s}'.format(lo, width, offset)
             pos += width
     if pos == 16:
         opcodes[name]['len'] = 2
@@ -163,23 +190,38 @@ with open('newcode.tmp', 'w') as f:
         else:
             biginsn = 1
             f.write('  if((b&0x{:08x})==0x{:08x})'.format(mask, code))
-        f.write(' {{ i=Insn_t(Op_{:s},{:d},{:d});\t'.format(name.replace('.','_'), biginsn, bigimm))
-        f.write('; '.join(registers))
-        if immed:
-            f.write(';\ti.{:s}={:s}'.format(bigimm and 'op_immed' or 'op.imm', '|'.join(immed)))
-        f.write('; goto opcode_found; }\n')
+        if registers[3] != 'NOREG':
+            f.write(' {{ i=reg3insn(Op_{:s}, {:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2], registers[3]))
+        elif immed:
+            if registers[2] != 'NOREG':
+                f.write(' {{ i=reg2imm(Op_{:s}, {:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2], '|'.join(immed)))
+            else:
+                f.write(' {{ i=reg1imm(Op_{:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], '|'.join(immed)))
+        else:
+            if registers[2] != 'NOREG':
+                f.write(' {{ i=reg2imm(Op_{:s}, {:s}, {:s}, {:s}, 0);'.format(name.replace('.','_'), registers[0], registers[1], registers[2]))
+            else:
+                f.write(' {{ i=reg1imm(Op_{:s}, {:s}, {:s}, 0);'.format(name.replace('.','_'), registers[0], registers[1]))
+        f.write(' goto opcode_found; }\n')
 diffcp('decoder.h')
 
 with open('newcode.tmp', 'w') as f:
-    f.write('enum Opcode_t {')
+    f.write('enum Opcode_t : short {')
     n = 0
     opcode_list = ['ZERO']
+    # First come all the compressed instructions
     for name in opcodes.keys():
-        #if 'fast' in opcodes[name]['flags']:
+        if opcodes[name]['len'] == 2:
+            opcode_list.append(name)
+            last_compressed_opcode = name
+    # Next all the fast uncompressed instructions
+    for name in opcodes.keys():
+        if opcodes[name]['len'] == 2:  continue
         if 'fast' in opcodes[name]:
             opcode_list.append(name)
+    # Last all the spike-semantics instructions
     for name in opcodes.keys():
-        #if 'fast' not in opcodes[name]['flags']:
+        if opcodes[name]['len'] == 2:  continue
         if 'fast' not in opcodes[name]:
             opcode_list.append(name)
     # Special opcodes
@@ -195,6 +237,7 @@ with open('newcode.tmp', 'w') as f:
         f.write('{:24s}'.format('Op_' + name.replace('.','_') + ','))
         n += 1
     f.write('};\n')
+    f.write('const Opcode_t Last_Compressed_Opcode = Op_{:s};\n'.format(last_compressed_opcode.replace('.','_')))
 diffcp('opcodes.h')
 
 with open('newcode.tmp', 'w') as f:
@@ -207,7 +250,7 @@ with open('newcode.tmp', 'w') as f:
     for name in opcode_list:
         if i % 4 == 0:
             f.write('\n  ')
-        if name in opcodes:
+        if name in opcodes or name.isupper():
             f.write('&I_{:21s}'.format(name.replace('.','_')+','))
         else:
             f.write('{:24s}'.format('0,'))
@@ -235,6 +278,7 @@ errors = 0
 for name in opcodes:
     with open('newcode.tmp', 'w') as f:
         opcode = opcodes[name]
+        f.write('#include "cpu.h"\n')
         f.write('#include "interpreter.h"\n')
         f.write('long I_{:s}(long pc, cpu_t* cpu) {{\n'.format(name.replace('.','_')))
         f.write('  processor_t* p = cpu->spike();\n');

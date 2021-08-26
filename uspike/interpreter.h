@@ -44,7 +44,6 @@ extern long (*golden[])(long pc, class cpu_t* cpu);
 #endif
 
 #undef MMU
-#include "cpu.h"
 
 #define MMU (*cpu)
 

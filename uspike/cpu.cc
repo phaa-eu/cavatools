@@ -1,11 +1,12 @@
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <signal.h>
 #include <sys/syscall.h>
 #include <linux/futex.h>
 
-#include "uspike.h"
 #include "cpu.h"
+#include "uspike.h"
 
 cpu_t* cpu_t::cpu_list =0;
 long cpu_t::reserve_addr =0;
@@ -18,6 +19,39 @@ cpu_t::cpu_t(processor_t* p)
   do {
     link = cpu_list;
   } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
+}
+
+Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm)
+{
+  Insn_t i(code, rd, imm);
+  i.op_rs1=rs1;
+  i.op.rs2=rs2;
+  return i;
+}
+
+Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm)
+{
+  Insn_t i(code, rd, imm);
+  i.op_rs1=rs1;
+  return i;
+}
+
+Insn_t imm20insn(Opcode_t code, int8_t rd, int32_t longimm)
+{
+  Insn_t i(code);
+  i.op_rd=rd;
+  i.op_longimm=longimm;
+  return i;
+}
+
+Insn_t reg3insn (Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3)
+{
+  Insn_t i(code);
+  i.op_rd=rd;
+  i.op_rs1=rs1;
+  i.op.rs2=rs2;
+  i.op.rs3=rs3;
+  return i;
 }
 
 void cpu_t::acquire_load_reservation(long a)
@@ -33,7 +67,7 @@ void cpu_t::yield_load_reservation()
   reserve_addr = 0;
 }
 
-bool cpu_t::check_load_reservation(long a, size_t size)
+bool cpu_t::check_load_reservation(long a, long size)
 {
   a = (tid() << 48) | (a & 0x0000ffffffffffff);
   return reserve_addr == a;
@@ -67,7 +101,7 @@ void Debug_t::addval(int rn, long val)
   trace[cursor].val   = val;
 }
 
-void Debug_t::print(FILE* f)
+void Debug_t::print()
 {
   for (int i=0; i<PCTRACEBUFSZ; i++) {
     pctrace_t t = get();
@@ -96,4 +130,5 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
   exit(-1);
   //  longjmp(return_to_top_level, 1);
 }
+
 #endif

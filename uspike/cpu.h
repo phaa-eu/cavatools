@@ -1,4 +1,5 @@
-#include <atomic>
+#include <stdint.h>
+#define DEBUG
 
 #ifdef DEBUG
 struct pctrace_t {
@@ -17,14 +18,64 @@ struct Debug_t {
   void insert(pctrace_t pt);
   void insert(long c, long pc);
   void addval(int rn, long val);
-  void print(FILE* f =stderr);
+  void print();
 };
 #endif
 
+#include "opcodes.h"
+
+class alignas(8) Insn_t {
+  Opcode_t op_code;
+  int8_t op_rd;		// note unsigned byte
+  int8_t op_rs1;	// so NOREG==-1
+  union {
+    struct {
+      int16_t imm;
+      int8_t rs2;
+      int8_t rs3;
+    } op;
+    int32_t op_longimm;
+  };
+  
+public:
+  Insn_t() { *((int64_t*)this) = -1; } // all registers become NOREG
+  Insn_t(Opcode_t code)                { *((int64_t*)this)=-1; op_code=code; }
+  Insn_t(Opcode_t code, int8_t rd, int16_t imm)     :Insn_t(code)  { op_rd=rd; op.imm =imm<<1|1; }
+
+  long opcode() { return op_code; }
+  int rd()  { return op_rd; }
+  int rs1() { return op_rs1; }
+  int rs2() { return op.rs2; }
+  int rs3() { return op.rs3; }
+  long immed() { return (op.imm&0x1) ? op.imm>>1 : op_longimm; }
+
+  bool compressed() { return op_code <= Last_Compressed_Opcode; }
+  bool longimmed() { return (op.imm & 0x1) == 0; }
+  friend Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm);
+  friend Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
+  friend Insn_t reg3insn (Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3);
+  friend Insn_t imm20insn(Opcode_t code, int8_t rd, int32_t longimm);
+};
+static_assert(sizeof(Insn_t) == 8);
+
+Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm);
+Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
+Insn_t reg3insn (Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3);
+Insn_t imm20insn(Opcode_t code, int8_t rd, int32_t longimm);
+
+#define GPREG	0
+#define FPREG	GPREG+32
+#define VPREG	FPREG+32
+#define VMREG	VPREG+32
+#define NOREG	-1
+
+Insn_t decoder(int b, long pc);	// given bitpattern image of in struction
+
+
 class cpu_t {
-  static cpu_t* cpu_list;	// for find() using thread id
   class processor_t* spike_cpu;	// opaque pointer to Spike structure
-  cpu_t* link;			// for finding using tid
+  static cpu_t* cpu_list;	// for find() using thread id
+  cpu_t* link;			// list of cpu_t
   int my_tid;			// my Linux thread number
 public:
   static long reserve_addr;	// single lock for all cpu's
@@ -33,10 +84,7 @@ public:
   static class cpu_t* list() { return cpu_list; }
   class cpu_t* next() { return link; }
   class processor_t* spike() { return spike_cpu; }
-  long get_pc();		// from spike structure
-  long get_reg(int rn);		// read XPR[rn]
   long tid() { return my_tid; }
-  void show(long pc, FILE* f =stderr);
   static cpu_t* find(int tid);
 #ifdef DEBUG
   Debug_t debug;
@@ -116,19 +164,9 @@ public:
 
   void acquire_load_reservation(long a);
   void yield_load_reservation();
-  bool check_load_reservation(long a, size_t size);
+  bool check_load_reservation(long a, long size);
   void flush_icache() { }
   void flush_tlb() { }
 };
 
-class Mutex_t {
-public:
-  Mutex_t() : atom_(0) {}
-  void lock();
-  void unlock();
-private:
-  // 0 means unlocked
-  // 1 means locked, no waiters
-  // 2 means locked, there are waiters in lock()
-  std::atomic<int> atom_;
-};
+class cpu_t* find_cpu(int tid);

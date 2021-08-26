@@ -14,7 +14,7 @@
 #include <fcntl.h>
 #include <elf.h>
 
-#include "processinfo.h"
+#include "elf_loader.h"
 
 /*
   Utility stuff.

@@ -21,10 +21,10 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 # Compiling options
 
-bins := main.o options.o decoder.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o cpu.o memory.o
+bins := main.o options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o cpu.o memory.o
 
-CXXFLAGS := $I -g -O2
-CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O2
+CXXFLAGS := $I -g -O3
+CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O3
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 
@@ -36,10 +36,10 @@ libcava.a:  cpu.h interpreter.h
 
 # Dependencies
 
-main.o decoder.o interpreter.o: uspike.h opcodes.h
+main.o instructions.o interpreter.o: uspike.h opcodes.h
 main.o options.o: options.h
-decoder.o: decoder.h
-elf_loader.o proxy_syscall.o gdblink.o: processinfo.h interpreter.h
+instructions.o: decoder.h
+elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h interpreter.h
 interpreter.o:  dispatch_table.h fastops.h cpu.h ecall_nums.h
 cpu.o: cpu.h
 
@@ -47,6 +47,7 @@ decoder.h constants.h dispatch_table.h fastops.h: opcodes.h
 
 interpreter.o: interpreter.cc
 	$(CXX) $(CXXFLAGS) -Ofast -c -o $@ interpreter.cc
+#	$(CXX) $(CXXFLAGS) -c -o $@ interpreter.cc
 
 # Python scripts to create various files
 
@@ -54,10 +55,8 @@ ecall_nums.h: Makefile syscall_mapping
 	./syscall_mapping < syscalls-riscv64 > $@
 
 opcodes.h: ./crunch_isa RV_isa.tmp RV.fast
-	./crunch_isa RV_isa.tmp RV.fast
-#	./crunch_isa RV_isa.tmp
-#	./crunch_isa RV.opt RV_isa.tmp RV.fast
-
+	./crunch_isa RV_isa.tmp
+#	./crunch_isa RV_isa.tmp RV.fast
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
 	./parse_spike $(RVINS) RV_bits.tmp RVC.bits > $@

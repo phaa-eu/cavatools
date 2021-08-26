@@ -11,8 +11,6 @@ using namespace std;
 void* operator new(size_t size);
 void operator delete(void*) noexcept;
 
-//#define DEBUG
-
 /*
   Utility stuff.
 */
@@ -53,46 +51,15 @@ enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
 enum stop_reason interpreter(class cpu_t* mycpu, long number);
 void status_report();
 class cpu_t* initial_cpu(long entry, long sp);
-class cpu_t* find_cpu(int tid);
 void show_insn(long pc, int tid);
 
 static inline bool find_symbol(const char* name, long &begin, long &end) { return elf_find_symbol(name, &begin, &end) != 0; }
 static inline const char* find_pc(long pc, long &offset) { return elf_find_pc(pc, &offset); }
 
-#include "opcodes.h"
-
-struct Insn_t {
-  unsigned op_4B	:  1;
-  unsigned op_vm	:  1;
-  unsigned op_longimmed	:  1;
-  enum Opcode_t op_code	: 13;
-  uint8_t op_rd;		// note unsigned byte
-  uint8_t op_rs1;		// so NOREG==0xFF
-  union {
-    struct {
-      uint8_t rs2;
-      uint8_t rs3;
-      int16_t imm;
-    } op;
-    int32_t op_immed;
-  };
-  Insn_t() { *((int64_t*)this) = -1; } // all registers become NOREG
-  Insn_t(enum Opcode_t code, int big, int bigimm) { *((int64_t*)this)=-1; op_code=code; op_4B=big; op_longimmed=bigimm; }
-};
-static_assert(sizeof(Insn_t) == 8);
-
-#define GPREG	0
-#define FPREG	GPREG+32
-#define VPREG	FPREG+32
-#define VMREG	VPREG+32
-#define NOREG	0xFF
-
-Insn_t decoder(int b, long pc);	// given bitpattern image of in struction
-
 class insnSpace_t {
   long base;
   long limit;
-  Insn_t* predecoded;
+  class Insn_t* predecoded;
 public:  
   insnSpace_t() { base=limit=0; predecoded=0; }
   void init(long lo, long hi);
@@ -110,6 +77,7 @@ extern const char* reg_name[];
 void labelpc(long pc, FILE* f =stderr);
 void disasm(long pc, const char* end, FILE* f =stderr);
 inline void disasm(long pc, FILE* f =stderr) { disasm(pc, "\n", f); }
+void show(cpu_t* cpu, long pc, FILE* f =stderr);
 
 void OpenTcpLink(const char* name);
 void ProcessGdbCommand(void* spike_state =0);
