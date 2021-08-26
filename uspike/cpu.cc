@@ -21,36 +21,53 @@ cpu_t::cpu_t(processor_t* p)
   } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
 }
 
-Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm)
-{
-  Insn_t i(code, rd, imm);
-  i.op_rs1=rs1;
-  i.op.rs2=rs2;
-  return i;
-}
-
-Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm)
-{
-  Insn_t i(code, rd, imm);
-  i.op_rs1=rs1;
-  return i;
-}
-
-Insn_t imm20insn(Opcode_t code, int8_t rd, int32_t longimm)
+Insn_t reg1insn (Opcode_t code, int8_t rd, int8_t rs1)
 {
   Insn_t i(code);
-  i.op_rd=rd;
-  i.op_longimm=longimm;
+  i.op_rd  = rd;
+  i.op_rs1 = rs1;
+  return i;
+}
+
+Insn_t reg2insn (Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2)
+{
+  Insn_t i(code);
+  i.op_rd  = rd;
+  i.op_rs1 = rs1;
+  i.op.rs2 = rs2;
   return i;
 }
 
 Insn_t reg3insn (Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3)
 {
   Insn_t i(code);
-  i.op_rd=rd;
-  i.op_rs1=rs1;
-  i.op.rs2=rs2;
-  i.op.rs3=rs3;
+  i.op_rd  = rd;
+  i.op_rs1 = rs1;
+  i.op.rs2 = rs2;
+  i.op.rs3 = rs3;
+  return i;
+}
+
+Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm)
+{
+  Insn_t i(code, rd, imm);
+  i.op_rs1 = rs1;
+  return i;
+}
+
+Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm)
+{
+  Insn_t i(code, rd, imm);
+  i.op_rs1 = rs1;
+  i.op.rs2 = rs2;
+  return i;
+}
+
+Insn_t longimm(Opcode_t code, int8_t rd, int32_t longimmed)
+{
+  Insn_t i(code);
+  i.op_rd = rd;
+  i.op_longimm = longimmed;
   return i;
 }
 

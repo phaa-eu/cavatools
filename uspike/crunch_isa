@@ -113,8 +113,8 @@ for name in opcodes:
         type = opcodes[name]['type']
     else:
         type = 'none'
-    if type=='crs' or type=='cds' or type=='csl' or type=='css':
-        registers[2] = '2'
+    if type=='csl' or type=='css' or type=='crs' or type=='cds':
+        registers[1] = '2'
     if type=='cjl':
         registers[0] = '1'
     if type=='cds':
@@ -185,23 +185,23 @@ with open('newcode.tmp', 'w') as f:
     for name in opcodes:
         (mask, code, registers, immed, bigimm) = opcodes[name]['decode']
         if opcodes[name]['len'] == 2:
-            biginsn = 0
-            f.write('  if((b&0x{:04x})==0x{:04x})'.format(mask, code))
+            f.write('  if((b&0x{:04x})==0x{:04x}) {{ '.format(mask, code))
         else:
-            biginsn = 1
-            f.write('  if((b&0x{:08x})==0x{:08x})'.format(mask, code))
+            f.write('  if((b&0x{:08x})==0x{:08x}) {{ '.format(mask, code))
         if registers[3] != 'NOREG':
-            f.write(' {{ i=reg3insn(Op_{:s}, {:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2], registers[3]))
-        elif immed:
-            if registers[2] != 'NOREG':
-                f.write(' {{ i=reg2imm(Op_{:s}, {:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2], '|'.join(immed)))
+            f.write('i=reg3insn(Op_{:s}, {:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2], registers[3]))
+        elif len(immed) > 0:
+            if registers[1] == 'NOREG' and name != 'c.li':
+                f.write('i=longimm(Op_{:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], '|'.join(immed)))
+            elif registers[2] == 'NOREG':
+                f.write('i=reg1imm(Op_{:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], '|'.join(immed)))
             else:
-                f.write(' {{ i=reg1imm(Op_{:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], '|'.join(immed)))
+                f.write('i=reg2imm(Op_{:s}, {:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2], '|'.join(immed)))
         else:
-            if registers[2] != 'NOREG':
-                f.write(' {{ i=reg2imm(Op_{:s}, {:s}, {:s}, {:s}, 0);'.format(name.replace('.','_'), registers[0], registers[1], registers[2]))
+            if registers[2] == 'NOREG':
+                f.write('i=reg1insn(Op_{:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1]))
             else:
-                f.write(' {{ i=reg1imm(Op_{:s}, {:s}, {:s}, 0);'.format(name.replace('.','_'), registers[0], registers[1]))
+                f.write('i=reg2insn(Op_{:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2]))
         f.write(' goto opcode_found; }\n')
 diffcp('decoder.h')
 

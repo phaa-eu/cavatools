@@ -242,6 +242,7 @@ long initialize_stack(int argc, const char** argv, const char** envp)
   
   stack_top -= (1 + argc + 1 + envc + 1 + 2*auxc) * sizeof(uintptr_t);
   stack_top &= -16;		/* align */
+  current.stack_top = stack_top;
   long sp = stack_top;
   PUSH_ARG(uintptr_t, argc);
   for (unsigned i = 0; i < argc; i++)
@@ -259,13 +260,13 @@ long initialize_stack(int argc, const char** argv, const char** envp)
     case AT_PHDR:	value = current.phdr; break;
     case AT_PHENT:	value = (size_t)current.phent; break;
     case AT_PHNUM:	value = (size_t)current.phnum; break;
-      //    case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
+    case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
     case AT_ENTRY:	value = current.entry; break;
     case AT_SECURE:	value = 0; break;
-    case AT_RANDOM:	value = stack_top; break;
+    case AT_RANDOM:	value = current.stack_top; break;
       //    case AT_HWCAP2:	value = 0; break;
-      //    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
-      //    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
+    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
+    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
     case AT_NULL:
     default:
       continue;
@@ -274,8 +275,7 @@ long initialize_stack(int argc, const char** argv, const char** envp)
     PUSH_ARG(uintptr_t, value);
   } /* last entry was AT_NULL */
 
-  current.stack_top = stack_top;
-  return stack_top;
+  return current.stack_top;
 }
 
 

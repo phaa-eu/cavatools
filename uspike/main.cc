@@ -143,7 +143,8 @@ void insnSpace_t::init(long lo, long hi)
     code.set(pc, reg3insn(op, flag_reg, addr_reg, test_reg, newv_reg));
     replaced++;
   }
-  fprintf(stderr, "%ld Load-Reserve found, %ld substitution failed\n", possible, possible-replaced);
+  if (replaced != possible)
+    fprintf(stderr, "%ld Load-Reserve found, %ld substitution failed\n", possible, possible-replaced);
 }
 
 #include "constants.h"

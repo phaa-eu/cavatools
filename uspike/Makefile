@@ -55,8 +55,8 @@ ecall_nums.h: Makefile syscall_mapping
 	./syscall_mapping < syscalls-riscv64 > $@
 
 opcodes.h: ./crunch_isa RV_isa.tmp RV.fast
-	./crunch_isa RV_isa.tmp
-#	./crunch_isa RV_isa.tmp RV.fast
+	./crunch_isa RV_isa.tmp RV.fast
+#	./crunch_isa RV_isa.tmp
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
 	./parse_spike $(RVINS) RV_bits.tmp RVC.bits > $@
