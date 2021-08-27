@@ -47,8 +47,8 @@ extern "C" {
 };
 
 enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
-
 enum stop_reason interpreter(class cpu_t* mycpu, long number);
+
 void status_report();
 class cpu_t* initial_cpu(long entry, long sp);
 void show_insn(long pc, int tid);

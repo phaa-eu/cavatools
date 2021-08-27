@@ -64,33 +64,27 @@ int main(int argc, const char* argv[], const char* envp[])
   //  }
 #endif
 
-  if (conf.gdb) {
-    OpenTcpLink(conf.gdb);
-    enum stop_reason reason;
-    long insn_count = 0;
-    do {
-      ProcessGdbCommand(mycpu);
-      do {
-	//	reason = run_insns(stat*1000000, insn_count);
-	reason = interpreter(mycpu, conf.stat*1000000);
-	status_report();
-      } while (reason == stop_normal);
-      status_report();
-      fprintf(stderr, "\n");
-      if (reason == stop_breakpoint)
-	HandleException(SIGTRAP);
-      else if (reason != stop_exited)
-	die("unknown reason %d", reason);
-    } while (reason != stop_exited);
-    exit(0);
-  }
-  
+  long next_status_report = conf.stat*1000000L;
   enum stop_reason reason;
-  long insn_count = 0;
+  if (conf.gdb)
+    OpenTcpLink(conf.gdb);
   do {
-    reason = interpreter(mycpu, conf.stat*1000000);
+    if (conf.gdb)
+      ProcessGdbCommand(mycpu);
+    do {
+      reason = interpreter(mycpu, 10000);
+      if (cpu_t::total_count() > next_status_report) {
+	status_report();
+	next_status_report += conf.stat*1000000L;
+      }
+    } while (reason == stop_normal);
     status_report();
-  } while (reason == stop_normal);
+    fprintf(stderr, "\n");
+    if (reason == stop_breakpoint)
+      HandleException(SIGTRAP);
+    else if (reason != stop_exited)
+      die("unknown reason %d", reason);
+  } while (reason != stop_exited);
   fprintf(stderr, "\n");
   status_report();
   fprintf(stderr, "\n");
@@ -122,15 +116,13 @@ void insnSpace_t::init(long lo, long hi)
       continue;
     possible++;
     Insn_t i2 = code.at(pc+4);
-    if (i2.opcode() == Op_ZERO) i2 = code.set(pc+4, decoder(code.image(pc+4), pc+4));
-    if (!(i2.opcode() == Op_bne || i2.opcode() == Op_c_bnez)) continue;
+    if (i2.opcode() != Op_bne && i2.opcode() != Op_c_bnez) continue;
     int len = 4 + (i2.opcode()==Op_c_bnez ? 2 : 4);
     Insn_t i3 = code.at(pc+len);
-    if (i3.opcode() == Op_ZERO) i3 = code.set(pc+len, decoder(pc+len, code.image(pc+len)));
-    if (!(i3.opcode() == Op_sc_w || i3.opcode() == Op_sc_d)) continue;
+    if (i3.opcode() != Op_sc_w && i3.opcode() != Op_sc_d) continue;
     // pattern found, check registers
-    int addr_reg = i.rs1();
     int load_reg = i.rd();
+    int addr_reg = i.rs1();
     int test_reg = (i2.opcode() == Op_c_bnez) ? 0 : i2.rs2();
     int newv_reg = i3.rs2();
     int flag_reg = i3.rd();
@@ -143,8 +135,10 @@ void insnSpace_t::init(long lo, long hi)
     code.set(pc, reg3insn(op, flag_reg, addr_reg, test_reg, newv_reg));
     replaced++;
   }
-  if (replaced != possible)
+  if (replaced != possible) {
     fprintf(stderr, "%ld Load-Reserve found, %ld substitution failed\n", possible, possible-replaced);
+    exit(-1);
+  }
 }
 
 #include "constants.h"

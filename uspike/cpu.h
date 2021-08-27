@@ -1,4 +1,5 @@
 #include <stdint.h>
+
 //#define DEBUG
 
 #ifdef DEBUG
@@ -79,19 +80,23 @@ Insn_t longimm( Opcode_t code, int8_t rd, int32_t longimmed);
 
 Insn_t decoder(int b, long pc);	// given bitpattern image of in struction
 
-
 class cpu_t {
   class processor_t* spike_cpu;	// opaque pointer to Spike structure
   static cpu_t* cpu_list;	// for find() using thread id
   cpu_t* link;			// list of cpu_t
+  long insn_count;		// instructions executed this thread
+  static long total_insns;	// instructions executed all threads
+  static int num_threads;
   int my_tid;			// my Linux thread number
 public:
-  static long reserve_addr;	// single lock for all cpu's
-  long insn_count;
   cpu_t(processor_t* p);
   static class cpu_t* list() { return cpu_list; }
   class cpu_t* next() { return link; }
   class processor_t* spike() { return spike_cpu; }
+  static int threads() { return num_threads; }
+  long count() { return insn_count; }
+  void incr_count(long n);
+  static long total_count() { return total_insns; }
   long tid() { return my_tid; }
   static cpu_t* find(int tid);
 #ifdef DEBUG
@@ -170,9 +175,9 @@ public:
   amo_func(uint32);
   amo_func(uint64);
 
-  void acquire_load_reservation(long a);
-  void yield_load_reservation();
-  bool check_load_reservation(long a, long size);
+  void acquire_load_reservation(long a) { }
+  void yield_load_reservation() { }
+  bool check_load_reservation(long a, long size) { return true; }
   void flush_icache() { }
   void flush_tlb() { }
 };

@@ -9,7 +9,8 @@
 #include "uspike.h"
 
 cpu_t* cpu_t::cpu_list =0;
-long cpu_t::reserve_addr =0;
+long cpu_t::total_insns =0;
+int cpu_t::num_threads =0;
 
 cpu_t::cpu_t(processor_t* p)
 {
@@ -19,6 +20,10 @@ cpu_t::cpu_t(processor_t* p)
   do {
     link = cpu_list;
   } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
+  int old_n;
+  do {
+    old_n = num_threads;
+  } while (!__sync_bool_compare_and_swap(&num_threads, old_n, old_n+1));
 }
 
 Insn_t reg1insn (Opcode_t code, int8_t rd, int8_t rs1)
@@ -71,26 +76,17 @@ Insn_t longimm(Opcode_t code, int8_t rd, int32_t longimmed)
   return i;
 }
 
-void cpu_t::acquire_load_reservation(long a)
+void cpu_t::incr_count(long n)
 {
-  a = (tid() << 48) | (a & 0x0000ffffffffffff);
-  long b = __sync_lock_test_and_set(&reserve_addr, a);
-  if (b)
-    reserve_addr = 0;
-}
-
-void cpu_t::yield_load_reservation()
-{
-  reserve_addr = 0;
-}
-
-bool cpu_t::check_load_reservation(long a, long size)
-{
-  a = (tid() << 48) | (a & 0x0000ffffffffffff);
-  return reserve_addr == a;
+  insn_count += n;
+  long oldtotal;
+  do {
+    oldtotal = total_insns;
+  } while (!__sync_bool_compare_and_swap(&total_insns, oldtotal, oldtotal+n));
 }
 
 #ifdef DEBUG
+
 pctrace_t Debug_t::get()
 {
   cursor = (cursor+1) % PCTRACEBUFSZ;

@@ -26,24 +26,18 @@ const int highest_ecall_num = HIGHEST_ECALL_NUM;
 
 void status_report()
 {
-  long total = 0;
   double realtime = elapse_time();
-  int n = 0;
-  for (cpu_t* p=cpu_t::list(); p; p=p->next()) {
-    total += p->insn_count;
-    n++;
-  }
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
-  if (n <= 16) {
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", cpu_t::total_count(), realtime, cpu_t::total_count()/1e6/realtime);
+  if (cpu_t::threads() <= 16) {
     char separator = '(';
     for (cpu_t* p=cpu_t::list(); p; p=p->next()) {
-      fprintf(stderr, "%c%1ld%%", separator, 100*p->insn_count/total);
+      fprintf(stderr, "%c%1ld%%", separator, 100*p->count()/cpu_t::total_count());
       separator = ',';
     }
     fprintf(stderr, ")");
   }
-  else if (n > 1)
-    fprintf(stderr, "(%d cores)", n);
+  else if (cpu_t::threads() > 1)
+    fprintf(stderr, "(%d cores)", cpu_t::threads());
 }
 
 /* RISCV-V clone() system call arguments not same as X86_64:
@@ -67,8 +61,8 @@ static int thread_interpreter(void* arg)
   //  sleep(100);
   //fprintf(stderr, "starting thread interpreter, tid=%d, tp=%lx\n", gettid(), READ_REG(4));
   do {
-    reason = interpreter(newcpu, conf.stat*1000000);
-    status_report();
+    reason = interpreter(newcpu, 10000);
+    //status_report();
   } while (reason == stop_normal);
   status_report();
   fprintf(stderr, "\n");
@@ -190,7 +184,7 @@ template<class T> bool cmpswap(long pc, processor_t* p)
   T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
   WRITE_REG(code.at(pc+4).rs1(), oldval);
   if (oldval == expect)  WRITE_REG(i.rd(), 0);	/* sc was successful */
-  return oldval != expect;
+  return oldval == expect;
 }
 
 #define imm i.immed()
@@ -208,71 +202,56 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
   enum stop_reason reason = stop_normal;
   long pc = STATE.pc;
   long count = 0;
-  while (count < number) {
-    do {
-      
-#if 0
-      int v;
-      if ((v=tid_alone) && (v!=cpu->tid())) {
-	fprintf(stderr, "tid_alone=%d, my_tid=%ld waiting\n", v, cpu->tid());
-	while ((v=tid_alone) && (v!=cpu->tid())) {
-	  syscall(SYS_futex, (int*)&tid_alone, FUTEX_WAIT, v, 0, 0, 0);
-	  fprintf(stderr, "still waiting\n");
-	}
-      }
-#endif
-      
 #ifdef DEBUG
-      long oldpc = pc;
-      cpu->debug.insert(cpu->insn_count+count+1, pc);
+  long oldpc;
 #endif
-      if (!code.valid(pc))
-	diesegv();
-    repeat_dispatch:
-      Insn_t i = code.at(pc);
-      switch (i.opcode()) {
-      case Op_ZERO:
-	code.set(pc, decoder(code.image(pc), pc));
-	goto repeat_dispatch;
+  while (count < number) {
+#ifdef DEBUG
+    dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
+    oldpc = pc;
+    cpu->debug.insert(cpu->count()+count+1, pc);
+#endif
+  repeat_dispatch:
+    Insn_t i = code.at(pc);
+    switch (i.opcode()) {
+    case Op_ZERO:
+      code.set(pc, decoder(code.image(pc), pc));
+      goto repeat_dispatch;
 	
 #include "fastops.h"
 	
-      default:
-	try {
-	  pc = golden[i.opcode()](pc, cpu);
-	} catch (trap_user_ecall& e) {
-	  //if (proxy_ecall(p, cpu->insn_count+count)) {
-	  if (proxy_ecall(p, cpu->insn_count)) {
-	    reason = stop_exited;
-	    goto early_stop;
-	  }
-	  pc += 4;
-	  if (conf.show) {
-	    //count++;
-	    cpu->insn_count++;
-	    goto early_stop;
-	  }
-	} catch (trap_breakpoint& e) {
-	  reason = stop_breakpoint;
+    default:
+      try {
+	pc = golden[i.opcode()](pc, cpu);
+      } catch (trap_user_ecall& e) {
+	if (proxy_ecall(p, cpu->count()+count)) {
+	  reason = stop_exited;
 	  goto early_stop;
 	}
-	break;
+	pc += 4;
+	if (conf.show) {
+	  cpu->incr_count(1);
+	  goto early_stop;
+	}
+      } catch (trap_breakpoint& e) {
+	reason = stop_breakpoint;
+	goto early_stop;
       }
-      xrf[0] = 0;
-      
+      break;
+    }
+    xrf[0] = 0;
+    ++count;
 #ifdef DEBUG
-      i = code.at(oldpc);
-      int rn = i.rd()==NOREG ? i.rs2() : i.rd();
-      cpu->debug.addval(i.rd(), cpu->spike()->get_state()->XPR[rn]);
-      if (conf.show)
-	show(cpu, oldpc);
+    i = code.at(oldpc);
+    int rn = i.rd()==NOREG ? i.rs2() : i.rd();
+    cpu->debug.addval(i.rd(), cpu->spike()->get_state()->XPR[rn]);
+    if (conf.show)
+      show(cpu, oldpc);
 #endif
-
-    } while (++count < number);
   }
  early_stop:
   STATE.pc = pc;
-  cpu->insn_count += count;
+  cpu->incr_count(count);
   return reason;
 }
 			  

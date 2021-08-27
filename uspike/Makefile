@@ -1,5 +1,7 @@
 #  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 
+MINUS_O := -Ofast
+
 # Paths to riscv-tools build directories on local system
 RVTOOLS := /opt/riscv-tools
 B := $(RVTOOLS)/riscv-isa-sim
@@ -23,8 +25,8 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 bins := main.o options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o cpu.o memory.o
 
-CXXFLAGS := $I -g -O3
-CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O3
+CXXFLAGS := $I -g $(MINUS_O)
+CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g $(MINUS_O)
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 
@@ -43,10 +45,6 @@ elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h interpreter.h
 interpreter.o:  dispatch_table.h fastops.h cpu.h ecall_nums.h
 cpu.o: cpu.h
 cpu.o decoder.h constants.h dispatch_table.h fastops.h: opcodes.h cpu.h
-
-interpreter.o: interpreter.cc
-	$(CXX) $(CXXFLAGS) -Ofast -c -o $@ interpreter.cc
-#	$(CXX) $(CXXFLAGS) -c -o $@ interpreter.cc
 
 # Python scripts to create various files
 
