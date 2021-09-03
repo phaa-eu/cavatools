@@ -79,12 +79,12 @@
   "srlw"	: { "fast":"wrd(uint32_t(r1) >> uint32_t(r2))" },
   "sraw"	: { "fast":"wrd( int32_t(r1) >>  int32_t(r2))" },
   
-  "cas12.w"	: { "fast":"if (!cmpswap<int32_t>(pc, p)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":12 },
-  "cas12.d"	: { "fast":"if (!cmpswap<int64_t>(pc, p)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":12 },
-  "cas10.w"	: { "fast":"if (!cmpswap<int32_t>(pc, p)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
-  "cas10.d"	: { "fast":"if (!cmpswap<int64_t>(pc, p)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
+  "cas12.w"	: { "fast":"if (!cmpswap<int32_t>(pc, cpu)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":12 },
+  "cas12.d"	: { "fast":"if (!cmpswap<int64_t>(pc, cpu)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":12 },
+  "cas10.w"	: { "fast":"if (!cmpswap<int32_t>(pc, cpu)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
+  "cas10.d"	: { "fast":"if (!cmpswap<int64_t>(pc, cpu)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
 
   "ebreak"	: { "fast":"reason=stop_breakpoint; goto early_stop;" },
   "c.ebreak"	: { "fast":"reason=stop_breakpoint; goto early_stop;" },
-  "ecall"	: { "fast":"STATE.pc=pc; if (proxy_ecall(p, cpu->count()+count)) { reason=stop_exited; goto early_stop; }" }
+  "ecall"	: { "fast":"STATE.pc=pc; if (cpu->proxy_ecall(cpu->count()+count)) { reason=stop_exited; goto early_stop; }" }
 }

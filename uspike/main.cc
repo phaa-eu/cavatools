@@ -5,8 +5,8 @@
 #include <signal.h>
 
 #include "options.h"
-#include "cpu.h"
 #include "uspike.h"
+#include "cpu.h"
 
 configuration_t conf;
 insnSpace_t code;
@@ -42,10 +42,7 @@ int main(int argc, const char* argv[], const char* envp[])
   if (argc == 0)
     help_exit();
   start_time(conf.mhz);
-  long entry = load_elf_binary(argv[0], 1);
-  code.init(low_bound, high_bound);
-  long sp = initialize_stack(argc, argv, envp);
-  cpu_t* mycpu = initial_cpu(entry, sp);
+  cpu_t* mycpu = new cpu_t(argc, argv, envp);
 
   //#ifdef DEBUG
 #if 0

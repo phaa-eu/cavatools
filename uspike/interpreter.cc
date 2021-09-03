@@ -8,9 +8,9 @@
 #include <sys/syscall.h>
 #include <linux/futex.h>
 
-#include "interpreter.h"
-#include "cpu.h"
 #include "uspike.h"
+#include "cpu.h"
+#include "mmu.h"
 
 #define THREAD_STACK_SIZE  (1<<14)
 
@@ -50,12 +50,12 @@ void status_report()
 
 static int thread_interpreter(void* arg)
 {
-  processor_t* p = (processor_t*)arg;
-  WRITE_REG(2, READ_REG(11));	// a1 = child_stack
-  WRITE_REG(4, READ_REG(13));	// a3 = tls
-  WRITE_REG(10, 0);		// indicating we are child thread
-  STATE.pc += 4;		// skip over ecall pc
-  cpu_t* newcpu = new cpu_t(p);
+  cpu_t* newcpu = new cpu_t((cpu_t*)arg);
+  newcpu->write_reg(2, newcpu->read_reg(11));	// a1 = child_stack
+  newcpu->write_reg(4, newcpu->read_reg(13));	// a3 = tls
+  newcpu->write_reg(10, 0);			// we are child thread
+  newcpu->write_pc(newcpu->read_pc() + 4);	// skip over ecall pc
+  
   enum stop_reason reason;
   //conf.show = true;
   //  sleep(100);
@@ -74,31 +74,11 @@ static int thread_interpreter(void* arg)
 	      
 }
 
-cpu_t* initial_cpu(long entry, long sp)
-{
-  processor_t* p = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
-  STATE.prv = PRV_U;
-  STATE.mstatus |= (MSTATUS_FS|MSTATUS_VS);
-  STATE.vsstatus |= SSTATUS_FS;
-  STATE.pc = entry;
-  WRITE_REG(2, sp);
-  cpu_t* mycpu = new cpu_t(p);
-  return mycpu;
-}
-
-cpu_t* cpu_t::find(int tid)
-{
-  for (cpu_t* p=cpu_list; p; p=p->link)
-    if (p->my_tid == tid)
-      return p;
-  return 0;
-}
-
 void show(cpu_t* cpu, long pc, FILE* f)
 {
   Insn_t i = code.at(pc);
   int rn = i.rd()==NOREG ? i.rs2() : i.rd();
-  long rv = cpu->spike()->get_state()->XPR[rn];
+  long rv = cpu->read_reg(rn);
   if (rn != NOREG)
     fprintf(stderr, "%6ld: %4s[%16lx] ", cpu->tid(), reg_name[rn], rv);
   else
@@ -107,32 +87,32 @@ void show(cpu_t* cpu, long pc, FILE* f)
   disasm(pc);
 }
 
-template<class T> bool cmpswap(long pc, processor_t* p)
+template<class T> bool cmpswap(long pc, cpu_t* cpu)
 {
   Insn_t i = code.at(pc);
-  T* ptr = (T*)READ_REG(i.rs1());
-  T expect  = READ_REG(i.rs2());
-  T replace = READ_REG(i.rs3());
+  T* ptr = (T*)cpu->read_reg(i.rs1());
+  T expect  = cpu->read_reg(i.rs2());
+  T replace = cpu->read_reg(i.rs3());
   T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
-  WRITE_REG(code.at(pc+4).rs1(), oldval);
-  if (oldval == expect)  WRITE_REG(i.rd(), 0);	/* sc was successful */
+  cpu->write_reg(code.at(pc+4).rs1(), oldval);
+  if (oldval == expect)  cpu->write_reg(i.rd(), 0);	/* sc was successful */
   return oldval == expect;
 }
 
 #define imm i.immed()
 #define wpc(e) pc=(e)
-#define r1 xrf[i.rs1()]
-#define r2 xrf[i.rs2()]
-#define wrd(e) xrf[i.rd()]=(e)
+#define r1 cpu->read_reg(i.rs1())
+#define r2 cpu->read_reg(i.rs2())
+#define wrd(e) cpu->write_reg(i.rd(), e)
+
+extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* cpu);
 
 enum stop_reason interpreter(cpu_t* cpu, long number)
 {
   //fprintf(stderr, "interpreter()\n");
   processor_t* p = cpu->spike();
-  long* xrf = (long*)&p->get_state()->XPR;
-  
   enum stop_reason reason = stop_normal;
-  long pc = STATE.pc;
+  long pc = cpu->read_pc();
   long count = 0;
 #ifdef DEBUG
   long oldpc;
@@ -149,14 +129,16 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
     case Op_ZERO:
       code.set(pc, decoder(code.image(pc), pc));
       goto repeat_dispatch;
-	
+
+#define MMU  (*cpu->mmu())
 #include "fastops.h"
+#undef MMU
 	
     default:
       try {
-	pc = golden[i.opcode()](pc, cpu);
+	pc = golden[i.opcode()](pc, *cpu->mmu(), cpu->spike());
       } catch (trap_user_ecall& e) {
-	if (proxy_ecall(p, cpu->count()+count)) {
+	if (cpu->proxy_ecall(cpu->count()+count)) {
 	  reason = stop_exited;
 	  goto early_stop;
 	}
@@ -171,25 +153,25 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
       }
       break;
     }
-    xrf[0] = 0;
+    cpu->write_reg(0, 0);
     ++count;
 #ifdef DEBUG
     i = code.at(oldpc);
     int rn = i.rd()==NOREG ? i.rs2() : i.rd();
-    cpu->debug.addval(i.rd(), cpu->spike()->get_state()->XPR[rn]);
+    cpu->debug.addval(i.rd(), cpu->read_reg(rn));
     if (conf.show)
       show(cpu, oldpc);
 #endif
   }
  early_stop:
-  STATE.pc = pc;
+  cpu->write_pc(pc);
   cpu->incr_count(count);
   return reason;
 }
 			  
-long I_ZERO(long pc, cpu_t* cpu)    { die("I_ZERO should never be dispatched!"); }
-long I_ILLEGAL(long pc, cpu_t* cpu) { die("I_ILLEGAL at 0x%lx", pc); }
-long I_UNKNOWN(long pc, cpu_t* cpu) { die("I_UNKNOWN at 0x%lx", pc); }
+long I_ZERO(long pc, mmu_t& MMU, cpu_t* cpu)    { die("I_ZERO should never be dispatched!"); }
+long I_ILLEGAL(long pc, mmu_t& MMU, cpu_t* cpu) { die("I_ILLEGAL at 0x%lx", pc); }
+long I_UNKNOWN(long pc, mmu_t& MMU, cpu_t* cpu) { die("I_UNKNOWN at 0x%lx", pc); }
 
 void substitute_cas(long lo, long hi)
 {

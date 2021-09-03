@@ -5,25 +5,19 @@
 #include <sys/syscall.h>
 #include <linux/futex.h>
 
-#include "cpu.h"
 #include "uspike.h"
+#include "cpu.h"
 
 cpu_t* cpu_t::cpu_list =0;
 long cpu_t::total_insns =0;
 int cpu_t::num_threads =0;
 
-cpu_t::cpu_t(processor_t* p)
+cpu_t* cpu_t::find(int tid)
 {
-  spike_cpu = p;
-  my_tid = gettid();
-  insn_count = 0;
-  do {
-    link = cpu_list;
-  } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
-  int old_n;
-  do {
-    old_n = num_threads;
-  } while (!__sync_bool_compare_and_swap(&num_threads, old_n, old_n+1));
+  for (cpu_t* p=cpu_list; p; p=p->link)
+    if (p->my_tid == tid)
+      return p;
+  return 0;
 }
 
 Insn_t reg1insn (Opcode_t code, int8_t rd, int8_t rs1)
@@ -145,3 +139,73 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 }
 
 #endif
+
+#include "mmu.h"
+
+long cpu_t::read_reg(int n)
+{
+  processor_t* p = spike();
+  return READ_REG(n);
+}
+
+void cpu_t::write_reg(int n, long value)
+{
+  processor_t* p = spike();
+  WRITE_REG(n, value);
+}
+
+long* cpu_t::reg_file()
+{
+  processor_t* p = spike();
+  return (long*)&(p->get_state()->XPR);
+}
+
+long cpu_t::read_pc()
+{
+  processor_t* p = spike();
+  return STATE.pc;
+}
+
+void cpu_t::write_pc(long value)
+{
+  processor_t* p = spike();
+  STATE.pc = value;
+}
+
+cpu_t::cpu_t()
+{
+  my_tid = gettid();
+  spike_cpu = 0;
+  caveat_mmu = new mmu_t();
+  insn_count = 0;
+  do {
+    link = cpu_list;
+  } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
+  int old_n;
+  do {
+    old_n = num_threads;
+  } while (!__sync_bool_compare_and_swap(&num_threads, old_n, old_n+1));
+}
+
+cpu_t::cpu_t(cpu_t* from) : cpu_t()
+{
+  processor_t* p = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
+  memcpy(p->get_state(), from->spike()->get_state(), sizeof(state_t));
+  spike_cpu = p;
+}
+
+#include "elf_loader.h"
+
+cpu_t::cpu_t(int argc, const char* argv[], const char* envp[]) : cpu_t()
+{
+  long entry = load_elf_binary(argv[0], 1);
+  code.init(low_bound, high_bound);
+  long sp = initialize_stack(argc, argv, envp);
+  processor_t* p = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
+  STATE.prv = PRV_U;
+  STATE.mstatus |= (MSTATUS_FS|MSTATUS_VS);
+  STATE.vsstatus |= SSTATUS_FS;
+  STATE.pc = entry;
+  WRITE_REG(2, sp);
+  spike_cpu = p;
+}

@@ -19,10 +19,10 @@
 #include <math.h>
 #include <string.h>
 #include <signal.h>
+#include <sched.h>
 
-#include "interpreter.h"
-#include "cpu.h"
 #include "uspike.h"
+#include "cpu.h"
 
 #include "elf_loader.h"
 
@@ -83,12 +83,12 @@ long emulate_brk(long addr)
 
 static int thread_interpreter(void* arg)
 {
-  processor_t* p = (processor_t*)arg;
-  WRITE_REG(2, READ_REG(11));   // a1 = child_stack
-  WRITE_REG(4, READ_REG(13));   // a3 = tls
-  WRITE_REG(10, 0);             // indicating we are child thread
-  STATE.pc += 4;                // skip over ecall pc
-  cpu_t* newcpu = new cpu_t(p);
+  cpu_t* newcpu = new cpu_t((class cpu_t*)arg);
+  newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
+  newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
+  newcpu->write_reg(10, 0);	// indicating we are child thread
+  newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
+  
   enum stop_reason reason;
   //conf.show = true;
   //  sleep(100);
@@ -138,21 +138,21 @@ static struct syscall_map_t rv_to_host[] = {
 #include "ecall_nums.h"
 };
 
-bool proxy_ecall(processor_t* p, long cycles)
+bool cpu_t::proxy_ecall(long cycles)
 {
   static long ecall_count;
-  long rvnum = READ_REG(17);
+  long rvnum = read_reg(17);
   if (rvnum<0 || rvnum>HIGHEST_ECALL_NUM || !rv_to_host[rvnum].name) {
     fprintf(stderr, "Illegal ecall number %ld\n", rvnum);
     abort();
   }
   long sysnum = rv_to_host[rvnum].sysnum;
-  long a0=READ_REG(10), a1=READ_REG(11), a2=READ_REG(12), a3=READ_REG(13), a4=READ_REG(14), a5=READ_REG(15);
+  long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
   const char* name = rv_to_host[rvnum].name;
   ecall_count++;
   if (conf.ecall && ecall_count % conf.ecall == 0)
     fprintf(stderr, "\n%12ld %8lx: ecalls=%ld %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)",
-	    cycles, STATE.pc, ecall_count, name, sysnum, a0, a1, a2, a3, a4, a5);
+	    cycles, read_pc(), ecall_count, name, sysnum, a0, a1, a2, a3, a4, a5);
   long retval = 0;
   switch (sysnum) {
   case -1:
@@ -218,14 +218,10 @@ bool proxy_ecall(processor_t* p, long cycles)
 
   case SYS_clone:
     {
-      //fprintf(stderr, "\nclone() called, tid=%d\n", gettid());
-      processor_t* q = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
-      memcpy(q->get_state(), p->get_state(), sizeof(state_t));
-      //memcpy(q, p, sizeof(processor_t));
       char* interp_stack = new char[THREAD_STACK_SIZE];
       interp_stack += THREAD_STACK_SIZE; // grows down
       long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
-      retval = clone(thread_interpreter, interp_stack, a0, q, (void*)a2, (void*)a4);
+      retval = clone(thread_interpreter, interp_stack, flags, this, (void*)a2, (void*)a4);
     }
     break;
     
@@ -234,8 +230,8 @@ bool proxy_ecall(processor_t* p, long cycles)
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
     break;
   }
-  WRITE_REG(10, retval);
+  write_reg(10, retval);
   if (conf.ecall && ecall_count % conf.ecall == 0)
-    fprintf(stderr, "->0x%lx", READ_REG(10));
+    fprintf(stderr, "->0x%lx", read_reg(10));
   return false;
 }

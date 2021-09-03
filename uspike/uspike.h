@@ -26,20 +26,77 @@ extern "C" {
   int elf_find_symbol(const char* name, long* begin, long* end);
   const char* elf_find_pc(long pc, long* offset);
   long initialize_stack(int argc, const char** argv, const char** envp);
-long emulate_brk(long addr);
+  long emulate_brk(long addr);
   extern unsigned long low_bound, high_bound;
-
-  struct configuration_t {
-    const char* isa;
-    const char* vec;
-    int mhz;
-    int stat;
-    bool show;
-    const char* gdb;
-    int ecall;
-  };
-  extern configuration_t conf;
 };
+
+struct configuration_t {
+  const char* isa;
+  const char* vec;
+  int mhz;
+  int stat;
+  bool show;
+  const char* gdb;
+  int ecall;
+};
+extern configuration_t conf;
+
+#include "opcodes.h"
+
+// The bits[63:32] are a union with two different length immediates
+// For short immediates a 13-bit value is in [47:35] (right shfit by 3)
+// There are 3 flag bits in [34:32].  Bit[32]=0 indicates long immediate.
+// Long immediates always have zeros in low order bits.  We take advantage
+// by making sure flag bits are all zero in this case, then just use value.
+
+class alignas(8) Insn_t {
+  Opcode_t op_code;
+  int8_t op_rd;		// note unsigned byte
+  int8_t op_rs1;	// so NOREG==-1
+  union {
+    struct {
+      int16_t imm;
+      int8_t rs2;
+      int8_t rs3;
+    } op;
+    int32_t op_longimm;
+  };
+  
+public:
+  Insn_t() { *((int64_t*)this) = -1; } // all registers become NOREG
+  Insn_t(Opcode_t code)                { *((int64_t*)this)=-1; op_code=code; }
+  Insn_t(Opcode_t code, int8_t rd, int16_t imm)     :Insn_t(code)  { op_rd=rd; op.imm=imm<<3|0x1; }
+  long opcode() { return op_code; }
+  int rd()  { return op_rd; }
+  int rs1() { return op_rs1; }
+  int rs2() { return op.rs2; }
+  int rs3() { return op.rs3; }
+  long immed() { return (op.imm&0x1) ? op.imm>>3 : op_longimm; }
+  bool compressed() { return op_code <= Last_Compressed_Opcode; }
+  bool longimmed() { return (op.imm & 0x1) == 0; }
+  friend Insn_t reg1insn( Opcode_t code, int8_t rd, int8_t rs1);
+  friend Insn_t reg2insn( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2);
+  friend Insn_t reg3insn (Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3);
+  friend Insn_t reg0imm(Opcode_t code, int8_t rd, int32_t longimmed);
+  friend Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm);
+  friend Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
+};
+static_assert(sizeof(Insn_t) == 8);
+
+Insn_t reg1insn( Opcode_t code, int8_t rd, int8_t rs1);
+Insn_t reg2insn( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2);
+Insn_t reg3insn(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3);
+Insn_t reg0imm( Opcode_t code, int8_t rd, int32_t longimmed);
+Insn_t reg1imm( Opcode_t code, int8_t rd, int8_t rs1, int16_t imm);
+Insn_t reg2imm( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
+
+#define GPREG	0
+#define FPREG	GPREG+32
+#define VPREG	FPREG+32
+#define VMREG	VPREG+32
+#define NOREG	-1
+
+Insn_t decoder(int b, long pc);	// given bitpattern image of in struction
 
 enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
 enum stop_reason interpreter(class cpu_t* mycpu, long number);
@@ -78,8 +135,7 @@ void show(cpu_t* cpu, long pc, FILE* f =stderr);
 void start_time(int mhz);
 double elapse_time();
 double simulated_time(long cycles);
-bool proxy_ecall(processor_t* p, long cycles);
 
 void OpenTcpLink(const char* name);
-void ProcessGdbCommand(void* spike_state =0);
+void ProcessGdbCommand(cpu_t* theCPU);
 void HandleException(int signum);

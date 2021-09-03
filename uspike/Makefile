@@ -24,7 +24,7 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 # Compiling options
 
-bins := main.o options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o constants.o cpu.o memory.o
+bins := main.o options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o gdblink.o cpu.o memory.o
 
 CXXFLAGS := $I -g $(MINUS_O)
 CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g $(MINUS_O)
@@ -34,7 +34,7 @@ LDFLAGS := -Wl,-Ttext=70000000
 uspike: $(bins) libcava.a
 	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) libcava.a $(LIBS)
 
-libcava.a:  cpu.h interpreter.h
+libcava.a:  mmu.h
 	make -j 16 -C insns
 
 # Dependencies
@@ -42,7 +42,7 @@ libcava.a:  cpu.h interpreter.h
 main.o instructions.o interpreter.o: uspike.h opcodes.h
 main.o options.o: options.h
 instructions.o: decoder.h
-elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h interpreter.h
+elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h
 interpreter.o:  dispatch_table.h fastops.h cpu.h
 cpu.o: cpu.h
 cpu.o decoder.h constants.h dispatch_table.h fastops.h: opcodes.h cpu.h

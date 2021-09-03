@@ -12,12 +12,8 @@
 #include <signal.h>
 #include <setjmp.h>
 
-#include "interpreter.h"
-#include "cpu.h"
 #include "uspike.h"
-
-static processor_t* myCPU;
-#define theCPU  myCPU->get_state()
+#include "cpu.h"
 
 //	E01 - Command syntax error.
 //	E02 - Error in hex data.
@@ -377,24 +373,22 @@ RcvHexToMemory(void* address, long bytes) {
 }
 
 void
-ProcessGdbCommand(void* spike_cpu)
+ProcessGdbCommand(cpu_t* theCPU)
 {
-  if (spike_cpu)
-    myCPU = (processor_t*)spike_cpu;
   for (;;) {
     ReceivePacket();		// Resets inPtr to beginning of inBuffer.
     switch (*inPtr++) {
     case 'g':			// Send all CPU register values to gdb.
       printf("GDB_COMMAND: g\n");
       //ReplyInHex((void*)&theCPU->gpr, (NUMREGS+1)*8);
-      ReplyInHex((void*)&theCPU->XPR, NXPR*8);
+      ReplyInHex(theCPU->reg_file(), 32*8);
       //ReplyInHex((void*)&theCPU->pc, 8);
-      ReplyInt(theCPU->pc, 8);
+      ReplyInt(theCPU->read_pc(), 8);
       break;
     case 'G':			// gdb sets all CPU register values.
       printf("GDB_COMMAND: G\n");
       //if (RcvHexToMemory((void*)&theCPU->gpr, (NUMREGS+1)*8))
-      if (RcvHexToMemory((void*)&theCPU->XPR, NXPR*8))
+      if (RcvHexToMemory(theCPU->reg_file(), 32*8))
 	Reply("OK");
       else
 	Reply("E02");
@@ -411,9 +405,12 @@ ProcessGdbCommand(void* spike_cpu)
 	long regno;
 	//if (RcvHexInt(&regno) && *inPtr++ == '=' && 0 <= regno && regno < NUMREGS) {
 	//  if (RcvHexToMemory((void*)&theCPU->gpr[regno].j, 8))
-	if (RcvHexInt(&regno) && *inPtr++ == '=' && 0 <= regno && regno < NXPR) {
-	  if (RcvHexToMemory((void*)&theCPU->XPR[regno], 8))
+	if (RcvHexInt(&regno) && *inPtr++ == '=' && 0 <= regno && regno < 32) {
+	  long value;
+	  if (RcvHexToMemory(&value, 8)) {
+	    theCPU->write_reg(regno, value);
 	    Reply("OK");
+	  }
 	  else
 	    Reply("E02");
 	}
@@ -471,26 +468,26 @@ ProcessGdbCommand(void* spike_cpu)
 	  return;		// Continue at current pc.
 	else if (RcvHexInt(&addr)) {
 	  //theCPU->pc = addr;
-	  theCPU->pc = addr;
+	  theCPU->write_pc(addr);
 	  return;		// Continue at specified pc.
 	}
 	else
 	  Reply("E01");
-	theCPU->single_step = state_t::STEP_STEPPING;
+	//theCPU->single_step = state_t::STEP_STEPPING;
       }
       break;
 
     case 'c':			// cAA..AA - continue at address AA..AA
       printf("GDB_COMMAND: c\n");
       //theCPU->single_step = false;
-      theCPU->single_step = state_t::STEP_NONE;
+      //theCPU->single_step = state_t::STEP_NONE;
       {
 	long addr;
 	if (*inPtr == '\0')
 	  return;		// Continue at current pc.
 	else if (RcvHexInt(&addr)) {
 	  //theCPU->pc = addr;
-	  theCPU->pc = addr;
+	  theCPU->write_pc(addr);
 	  return;		// Continue at specified pc.
 	}
 	else
@@ -508,7 +505,8 @@ void
 HandleException(int signum) {
   fprintf(stderr, "HandleException(%d)\n", signum);
   //fprintf(stderr, "Current pc = %lx\n", theCPU->pc);
-  fprintf(stderr, "Current pc = %lx\n", theCPU->pc);
+  cpu_t* theCPU = cpu_t::find(gettid());
+  fprintf(stderr, "Current pc = %lx\n", theCPU->read_pc());
   lastSignal = signum;
 
   Reply("S");
@@ -519,7 +517,7 @@ HandleException(int signum) {
   Reply("T");
   ReplyInt(signum, 1);	// signal number
   Reply("20:");		// PC is register 32 (see riscv-tdep.c)
-  ReplyInHex((void*)theCPU->pc, 8);
+  ReplyInt(theCPU->read_pc(), 8);
   Reply(";");
   SendPacket();			// Resets outPtr.
   //  ProcessGdbCommand();

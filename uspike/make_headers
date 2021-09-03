@@ -70,9 +70,9 @@ diffcp('opcodes.h')
 with open('newcode.tmp', 'w') as f:
     for name in opcodes:
         if 'bits' in opcodes[name]:
-            f.write('long I_{:s}(long pc, cpu_t* cpu);\n'.format(name.replace('.','_')))
+            f.write('long I_{:s}(long pc, mmu_t& MMU, class processor_t* cpu);\n'.format(name.replace('.','_')))
     f.write('\n')
-    f.write('long (*golden[])(long pc, cpu_t* cpu) = {')
+    f.write('long (*golden[])(long pc, mmu_t& MMU, class processor_t* cpu) = {')
     i = 0
     for name in opcodes:
         if i % 4 == 0:
@@ -105,10 +105,8 @@ for name in opcodes:
         continue
     with open('newcode.tmp', 'w') as f:
         opcode = opcodes[name]
-        f.write('#include "cpu.h"\n')
-        f.write('#include "interpreter.h"\n')
-        f.write('long I_{:s}(long pc, cpu_t* cpu) {{\n'.format(name.replace('.','_')))
-        f.write('  processor_t* p = cpu->spike();\n');
+        f.write('#include "mmu.h"\n')
+        f.write('long I_{:s}(long pc, mmu_t& MMU, class processor_t* p) {{\n'.format(name.replace('.','_')))
         f.write('  insn_t insn = (long)(*(int{:d}_t*)pc);\n'.format(opcode['len']==2 and 16 or 32))
         if 'flags' in opcode and 'pc' in opcode['flags']:
             f.write('  long npc = pc + {:d};\n'.format(opcode['len']))
