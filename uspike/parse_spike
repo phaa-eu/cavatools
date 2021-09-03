@@ -99,8 +99,10 @@ for name in opcodes.copy():
         flags['lrsc'] = 1
     for e in ext:
         extensions[e] = 1
-    opcodes[name]['ext'] = ','.join(ext)
-    opcodes[name]['flags'] = ','.join(flags)
+    if ext:
+        opcodes[name]['ext'] = ','.join(ext)
+    if flags:
+        opcodes[name]['flags'] = ','.join(flags)
     opcodes[name]['exec'] = action
 
 for k in sorted(extensions.keys()):

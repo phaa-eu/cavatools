@@ -25,14 +25,9 @@ extern "C" {
   long load_elf_binary(const char* file_name, int include_data);
   int elf_find_symbol(const char* name, long* begin, long* end);
   const char* elf_find_pc(long pc, long* offset);
-  long initialize_stack(int argc, const char** argv, const char** envp, long entry);
+  long initialize_stack(int argc, const char** argv, const char** envp);
+long emulate_brk(long addr);
   extern unsigned long low_bound, high_bound;
-  void start_time(int mhz);
-  double elapse_time();
-  double simulated_time(long cycles);
-  long emulate_brk(long addr);
-  long proxy_syscall(long sysnum, long cycles, const char* name, long a0, long a1, long a2, long a3, long a4, long a5);
-  int proxy_clone(int (*fn)(void*), void *interp_stack, int flags, void *arg, void *parent_tidptr, void *child_tidptr);
 
   struct configuration_t {
     const char* isa;
@@ -74,10 +69,16 @@ extern insnSpace_t code;
 extern const char* op_name[];
 extern const char* reg_name[];
 
+void substitute_cas(long lo, long hi);
 void labelpc(long pc, FILE* f =stderr);
 void disasm(long pc, const char* end, FILE* f =stderr);
 inline void disasm(long pc, FILE* f =stderr) { disasm(pc, "\n", f); }
 void show(cpu_t* cpu, long pc, FILE* f =stderr);
+
+void start_time(int mhz);
+double elapse_time();
+double simulated_time(long cycles);
+bool proxy_ecall(processor_t* p, long cycles);
 
 void OpenTcpLink(const char* name);
 void ProcessGdbCommand(void* spike_state =0);

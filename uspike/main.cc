@@ -44,10 +44,11 @@ int main(int argc, const char* argv[], const char* envp[])
   start_time(conf.mhz);
   long entry = load_elf_binary(argv[0], 1);
   code.init(low_bound, high_bound);
-  long sp = initialize_stack(argc, argv, envp, entry);
+  long sp = initialize_stack(argc, argv, envp);
   cpu_t* mycpu = initial_cpu(entry, sp);
 
-#ifdef DEBUG
+  //#ifdef DEBUG
+#if 0
   static struct sigaction action;
   memset(&action, 0, sizeof(struct sigaction));
   sigemptyset(&action.sa_mask);
@@ -108,37 +109,7 @@ void insnSpace_t::init(long lo, long hi)
     Insn_t i = code.set(pc, decoder(code.image(pc), pc));
     pc += i.compressed() ? 2 : 4;
   }
-  // look for compare-and-swap pattern
-  long possible=0, replaced=0;
-  for (pc=lo; pc<hi; pc+=code.at(pc).compressed()?2:4) {
-    Insn_t i = code.at(pc);
-    if (!(i.opcode() == Op_lr_w || i.opcode() == Op_lr_d))
-      continue;
-    possible++;
-    Insn_t i2 = code.at(pc+4);
-    if (i2.opcode() != Op_bne && i2.opcode() != Op_c_bnez) continue;
-    int len = 4 + (i2.opcode()==Op_c_bnez ? 2 : 4);
-    Insn_t i3 = code.at(pc+len);
-    if (i3.opcode() != Op_sc_w && i3.opcode() != Op_sc_d) continue;
-    // pattern found, check registers
-    int load_reg = i.rd();
-    int addr_reg = i.rs1();
-    int test_reg = (i2.opcode() == Op_c_bnez) ? 0 : i2.rs2();
-    int newv_reg = i3.rs2();
-    int flag_reg = i3.rd();
-    if (i2.rs1() != load_reg) continue;
-    if (i3.rs1() != addr_reg) continue;
-    // pattern is good
-    Opcode_t op;
-    if (len == 8) op = (i.opcode() == Op_lr_w) ? Op_cas_w   : Op_cas_d;
-    else          op = (i.opcode() == Op_lr_w) ? Op_c_cas_w : Op_c_cas_d;
-    code.set(pc, reg3insn(op, flag_reg, addr_reg, test_reg, newv_reg));
-    replaced++;
-  }
-  if (replaced != possible) {
-    fprintf(stderr, "%ld Load-Reserve found, %ld substitution failed\n", possible, possible-replaced);
-    exit(-1);
-  }
+  substitute_cas(lo, hi);
 }
 
 #include "constants.h"

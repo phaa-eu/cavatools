@@ -12,8 +12,8 @@
 #include <signal.h>
 #include <setjmp.h>
 
-#include "cpu.h"
 #include "interpreter.h"
+#include "cpu.h"
 #include "uspike.h"
 
 static processor_t* myCPU;
@@ -41,6 +41,7 @@ static jmp_buf bombed;
 
 static void
 LocalExceptionHandler(int signum) {
+  fprintf(stderr, "LocalExceptionHandler called\n");
   longjmp(bombed, signum);
 }
 
@@ -48,10 +49,10 @@ static struct sigaction localaction = { &LocalExceptionHandler, };
 
 static int tcpLink;
 
-static int
+static long
 getDebugChar() {
   char buf;
-  int rc;
+  long rc;
   do {
     rc = read(tcpLink, &buf, 1);
     if (rc < 0) {
@@ -63,10 +64,10 @@ getDebugChar() {
 }
 
 static void
-putDebugChar(int ch) {
-  int rc;
+putDebugChar(long ch) {
+  long rc;
   do {
-    //fprintf(stderr, "%c", ch);
+    //fprlongf(stderr, "%c", ch);
     rc = write(tcpLink, &ch, 1);
     if (rc < 0) {
       perror("putDebugChar");
@@ -134,8 +135,8 @@ OpenTcpLink(const char* name) {
 }
 
 
-static int
-val2hexch(int val) {
+static long
+val2hexch(long val) {
   val &= 0xF;
   if (0 <= val && val <= 9)
     return val + '0';
@@ -143,8 +144,8 @@ val2hexch(int val) {
     return val - 10 + 'a';
 }
 
-static int
-hexch2val(int ch) {
+static long
+hexch2val(long ch) {
   if ('0' <= ch && ch <= '9')
     return ch - '0';
   else if ('A' <= ch && ch <= 'F')
@@ -160,7 +161,7 @@ ReceivePacket() {
   unsigned char checksum;
   unsigned char xmitcsum;
   char* p;
-  int ch;
+  long ch;
   //
   // Wait around for start character, ignoring all other characters.
   //
@@ -241,9 +242,15 @@ Reply(const char* msg) {
 }
 
 static void
-ReplyInHex(void* address, int bytes) {
-  fprintf(stderr, "ReplyInHex(address=%p, bytes=%d)\n", address, bytes);
+ReplyInHex(void* address, long bytes) {
+  fprintf(stderr, "ReplyInHex(address=%p, bytes=%ld)\n", address, bytes);
+  if ((long)address < (long)low_bound) {
+    Reply("E09");
+    return;
+  }
+    
   char* p = (char*)address;
+  fprintf(stderr, "just before alloca\n");
   char* tmpbuf = (char*)alloca(bytes);
   if (tmpbuf == NULL)
     abort();
@@ -254,20 +261,28 @@ ReplyInHex(void* address, int bytes) {
   /* Check addresses. */
   {
     struct sigaction sigsegv_buf, sigbus_buf;
-    int k;
+    long k;
+    fprintf(stderr, "just before setjmp\n");
     if (setjmp(bombed)) {
-      sigaction(SIGSEGV, &sigsegv_buf, 0);
-      sigaction(SIGBUS,  &sigbus_buf,  0);
+      if (sigaction(SIGSEGV, &sigsegv_buf, 0))
+	perror("sigaction(SIGSEGV)");
+      if (sigaction(SIGBUS,  &sigbus_buf,  0))
+	perror("sigaction(SIGBUS)");
       Reply("E09");
       return;
     }
-    sigaction(SIGSEGV, &localaction, &sigsegv_buf);
-    sigaction(SIGBUS,  &localaction, &sigbus_buf);
+    if (sigaction(SIGSEGV, &localaction, &sigsegv_buf))
+	perror("sigaction(SIGSEGV)");
+    if (sigaction(SIGBUS,  &localaction, &sigbus_buf))
+	perror("sigaction(SIGBUS)");
+    fprintf(stderr, "sigactions were ok\n");
     for (k=0; k<bytes; k++) {
       tmpbuf[k] = *p++;
     }
-    sigaction(SIGSEGV, &sigsegv_buf, 0);
-    sigaction(SIGBUS,  &sigbus_buf,  0);
+    if (sigaction(SIGSEGV, &sigsegv_buf, 0))
+	perror("sigaction(SIGSEGV)");
+    if (sigaction(SIGBUS,  &sigbus_buf,  0))
+	perror("sigaction(SIGBUS)");
   }
   p = tmpbuf;
   while (bytes-- > 0) {
@@ -278,8 +293,8 @@ ReplyInHex(void* address, int bytes) {
 }
 
 static void
-ReplyInt(long long unsigned v, int bytes) {
-  int hexdigits = 2 * bytes;
+ReplyInt(long v, long bytes) {
+  long hexdigits = 2 * bytes;
   if (outPtr + hexdigits > outBuf + OUTBUFSIZE-1)
     abort();			// Internal error: output buffer overflow.
   while (hexdigits-- > 0) {
@@ -288,7 +303,7 @@ ReplyInt(long long unsigned v, int bytes) {
   *outPtr = '\0';
 }
 
-static int
+static long
 RcvWord(const char* match) {
   if (strncmp(inPtr, match, strlen(match)) == 0)
     return 1;
@@ -296,9 +311,9 @@ RcvWord(const char* match) {
     return 0;
 }
 
-static int
-RcvHexDigit(int* value) {
-  int digit;
+static long
+RcvHexDigit(long* value) {
+  long digit;
   if ('0' <= *inPtr && *inPtr <= '9')
     digit = *inPtr++ - '0';
   else if ('A' <= *inPtr && *inPtr <= 'F')
@@ -313,8 +328,8 @@ RcvHexDigit(int* value) {
 
 static long
 RcvHexInt(long* ptr) {
-  int value;
-  int digit;
+  long value;
+  long digit;
   if (!RcvHexDigit(&digit))
     return 0;			/* Must have at least 1 digit. */
   value = digit;
@@ -326,14 +341,14 @@ RcvHexInt(long* ptr) {
   return 1;
 }
 
-static int
-RcvHexToMemory(void* address, int bytes) {
+static long
+RcvHexToMemory(void* address, long bytes) {
   unsigned char* p = (unsigned char*)address;
 
   /* Check addresses by writing zeros. */
   {
     struct sigaction sigsegv_buf, sigbus_buf;
-    int k;
+    long k;
     sigaction(SIGSEGV, &localaction, &sigsegv_buf);
     sigaction(SIGBUS,  &localaction, &sigbus_buf);
     if (setjmp(bombed)) {
@@ -348,8 +363,8 @@ RcvHexToMemory(void* address, int bytes) {
   }
   p = (unsigned char*)address;
   while (bytes-- > 0) {
-    int value;
-    int digit;
+    long value;
+    long digit;
     if (!RcvHexDigit(&digit))	/* First of two hex digit */
       return 0;
     value = digit << 4;
@@ -373,7 +388,8 @@ ProcessGdbCommand(void* spike_cpu)
       printf("GDB_COMMAND: g\n");
       //ReplyInHex((void*)&theCPU->gpr, (NUMREGS+1)*8);
       ReplyInHex((void*)&theCPU->XPR, NXPR*8);
-      ReplyInHex((void*)&theCPU->pc, 8);
+      //ReplyInHex((void*)&theCPU->pc, 8);
+      ReplyInt(theCPU->pc, 8);
       break;
     case 'G':			// gdb sets all CPU register values.
       printf("GDB_COMMAND: G\n");
@@ -426,9 +442,10 @@ ProcessGdbCommand(void* spike_cpu)
 	if (RcvHexInt(&addr) && *inPtr++ == ',' && RcvHexInt(&length) && *inPtr++ == ':') {
 	  //if (RcvHexToMemory((char*) memory + addr, length))
 	  if (code.valid(addr) && length <= 4) {
-	    int buf = 0;
+	    long buf = 0;
 	    if (RcvHexToMemory(&buf, length)) {
-	      code.set(addr, decoder(buf, addr));
+	      if (code.valid(addr))
+		code.set(addr, decoder(buf, addr));
 	      Reply("OK");
 	    }
 	    else

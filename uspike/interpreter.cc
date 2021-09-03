@@ -74,74 +74,6 @@ static int thread_interpreter(void* arg)
 	      
 }
 
-static bool proxy_ecall(processor_t* p, long executed)
-{
-  static long ecall_count;
-  long rvnum = READ_REG(17);
-  if (rvnum<0 || rvnum>highest_ecall_num || !rv_to_host[rvnum].name) {
-    fprintf(stderr, "Illegal ecall number %ld\n", rvnum);
-    abort();
-  }
-  long sysnum = rv_to_host[rvnum].sysnum;
-  long a0=READ_REG(10), a1=READ_REG(11), a2=READ_REG(12), a3=READ_REG(13), a4=READ_REG(14), a5=READ_REG(15);
-  const char* name = rv_to_host[rvnum].name;
-  ecall_count++;
-  if (conf.ecall && ecall_count % conf.ecall == 0)
-    fprintf(stderr, "\n%12ld %8lx: ecalls=%ld %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)",
-	    executed, STATE.pc, ecall_count, name, sysnum, a0, a1, a2, a3, a4, a5);
-  switch (sysnum) {
-  case SYS_exit:
-  case SYS_exit_group:
-    return true;
-#if 0
-  case SYS_brk:
-    {
-      brk_lock.lock();
-      long rv = emulate_brk(a0);
-      brk_lock.unlock();
-      return rv;
-    }
-#endif
-  case SYS_clone:
-    {
-      //fprintf(stderr, "\nclone() called, tid=%d\n", gettid());
-      processor_t* q = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
-      memcpy(q->get_state(), p->get_state(), sizeof(state_t));
-      //memcpy(q, p, sizeof(processor_t));
-      char* interp_stack = new char[THREAD_STACK_SIZE];
-      interp_stack += THREAD_STACK_SIZE; // grows down
-      long child_tid = proxy_clone(thread_interpreter, interp_stack, a0, q, (void*)a2, (void*)a4);
-      WRITE_REG(10, (long)child_tid);
-      //sleep(3);
-      //fprintf(stderr, "returning from ecall, a0=%ld\n", READ_REG(10));
-      //conf.show = true;
-      goto finished;
-    }
-#if 0
-  case SYS_futex:
-    {
-      timespec nap = { 0, 1000 }; // sleep for this many nanoseconds initially
-      long counter = 1;
-      long rc = proxy_syscall(sysnum, executed, name, a0, a1, a2, a3, a4, a5);
-      while (rc == -1 && errno == EAGAIN && --counter >= 0) {
-	nanosleep(&nap, 0);
-	nap.tv_nsec *= 2;
-	rc = proxy_syscall(sysnum, executed, name, a0, a1, a2, a3, a4, a5);
-      }
-      if (rc == -1)
-	perror("Proxy futex");
-      WRITE_REG(10, rc);
-      goto finished;
-    }
-#endif
-  }
-  WRITE_REG(10, proxy_syscall(sysnum, executed, name, a0, a1, a2, a3, a4, a5));
- finished:
-  if (conf.ecall && ecall_count % conf.ecall == 0)
-    fprintf(stderr, "->0x%lx", READ_REG(10));
-  return false;
-}
-
 cpu_t* initial_cpu(long entry, long sp)
 {
   processor_t* p = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
@@ -259,8 +191,41 @@ long I_ZERO(long pc, cpu_t* cpu)    { die("I_ZERO should never be dispatched!");
 long I_ILLEGAL(long pc, cpu_t* cpu) { die("I_ILLEGAL at 0x%lx", pc); }
 long I_UNKNOWN(long pc, cpu_t* cpu) { die("I_UNKNOWN at 0x%lx", pc); }
 
-//long I_ecall(long pc, cpu_t* cpu)   { die("I_ecall should never be dispatched!"); }
-//long I_ebreak(long pc, cpu_t* cpu)   { die("I_ebreak should never be dispatched!"); }
-//long I_c_ebreak(long pc, cpu_t* cpu)   { die("I_c_ebreak should never be dispatched!"); }
+void substitute_cas(long lo, long hi)
+{
+#ifndef NOFASTOPS
+  // look for compare-and-swap pattern
+  long possible=0, replaced=0;
+  for (long pc=lo; pc<hi; pc+=code.at(pc).compressed()?2:4) {
+    Insn_t i = code.at(pc);
+    if (!(i.opcode() == Op_lr_w || i.opcode() == Op_lr_d))
+      continue;
+    possible++;
+    Insn_t i2 = code.at(pc+4);
+    if (i2.opcode() != Op_bne && i2.opcode() != Op_c_bnez) continue;
+    int len = 4 + (i2.opcode()==Op_c_bnez ? 2 : 4);
+    Insn_t i3 = code.at(pc+len);
+    if (i3.opcode() != Op_sc_w && i3.opcode() != Op_sc_d) continue;
+    // pattern found, check registers
+    int load_reg = i.rd();
+    int addr_reg = i.rs1();
+    int test_reg = (i2.opcode() == Op_c_bnez) ? 0 : i2.rs2();
+    int newv_reg = i3.rs2();
+    int flag_reg = i3.rd();
+    if (i2.rs1() != load_reg) continue;
+    if (i3.rs1() != addr_reg) continue;
+    // pattern is good
+    Opcode_t op;
+    if (len == 8) op = (i.opcode() == Op_lr_w) ? Op_cas12_w : Op_cas12_d;
+    else          op = (i.opcode() == Op_lr_w) ? Op_cas10_w : Op_cas10_d;
+    code.set(pc, reg3insn(op, flag_reg, addr_reg, test_reg, newv_reg));
+    replaced++;
+  }
+  if (replaced != possible) {
+    fprintf(stderr, "%ld Load-Reserve found, %ld substitution failed\n", possible, possible-replaced);
+    exit(-1);
+  }
+#endif
+}
 
 #include "dispatch_table.h"

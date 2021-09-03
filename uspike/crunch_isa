@@ -143,12 +143,13 @@ for name in opcodes:
                     lo = int(m.group(2)[1:])
                 tuple.append((hi, lo))
                 i += len(m.group(0))
-                if hi >= 16:  bigimm = 1
             for (hi, lo) in reversed(tuple[1:]):
                 shift = lo and '<<{:d}'.format(lo) or ''
                 immed.append('x({:d},{:d}){:s}'.format(pos, hi-lo+1, shift))
                 pos += hi-lo+1
             (hi, lo) = tuple[0]
+            if hi >= 13:
+                bigimm = 1
             shift = lo and '<<{:d}'.format(lo) or ''
             immed.append('{:s}({:d},{:d}){:s}'.format(signed and 'xs' or 'x', pos, hi-lo+1, shift))
             pos += hi-lo+1
@@ -167,126 +168,60 @@ for name in opcodes:
         eprint('Illegal length', name, pos, 'bits', opcodes[name]['bits'])
         eprint(immed)
         exit(-1)
-    opcodes[name]['decode'] = (mask, code, registers, immed, bigimm)
+    regstr = ';'.join(registers)
+    if immed:
+        immstr = '|'.join(immed)
+    else:
+        immstr = 'NONE'
+    opcodes[name]['decode'] = '{:x} {:x} {:s} {:s} {:d}'.format(mask, code, regstr, immstr, bigimm)
 
-with open('newcode.tmp', 'w') as f:
-    for name in opcodes:
-        if 'decode' not in opcodes[name]:
-            continue;
-        (mask, code, registers, immed, bigimm) = opcodes[name]['decode']
-        if opcodes[name]['len'] == 2:
-            f.write('  if((b&0x{:04x})==0x{:04x}) {{ '.format(mask, code))
-        else:
-            f.write('  if((b&0x{:08x})==0x{:08x}) {{ '.format(mask, code))
-        if registers[3] != 'NOREG':
-            f.write('i=reg3insn(Op_{:s}, {:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2], registers[3]))
-        elif len(immed) > 0:
-            if registers[1] == 'NOREG' and name != 'c.li':
-                f.write('i=longimm(Op_{:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], '|'.join(immed)))
-            elif registers[2] == 'NOREG':
-                f.write('i=reg1imm(Op_{:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], '|'.join(immed)))
-            else:
-                f.write('i=reg2imm(Op_{:s}, {:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2], '|'.join(immed)))
-        else:
-            if registers[2] == 'NOREG':
-                f.write('i=reg1insn(Op_{:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1]))
-            else:
-                f.write('i=reg2insn(Op_{:s}, {:s}, {:s}, {:s});'.format(name.replace('.','_'), registers[0], registers[1], registers[2]))
-        f.write(' goto opcode_found; }\n')
-diffcp('decoder.h')
-
-with open('newcode.tmp', 'w') as f:
-    f.write('enum Opcode_t : short {')
-    n = 0
-    opcode_list = ['ZERO']
-    # First come all the compressed instructions
-    for name in opcodes:
-        if re.match('c.', name):
-            opcode_list.append(name)
-            last_compressed_opcode = name
-    # Next all the fast uncompressed instructions
-    for name in opcodes:
-        if re.match('c.', name):  continue
-        if 'fast' in opcodes[name]:
-            opcode_list.append(name)
-    # Last all the spike-semantics instructions
-    for name in opcodes:
-        if re.match('c.', name):  continue
-        if 'fast' not in opcodes[name]:
-            opcode_list.append(name)
-    opcode_list.append('ILLEGAL')
-    opcode_list.append('UNKNOWN')
-    for name in opcode_list:
-        if n % 8 == 0:
-            f.write('\n  ')
-        f.write('{:24s}'.format('Op_' + name.replace('.','_') + ','))
-        n += 1
-    f.write('};\n')
-    f.write('const Opcode_t Last_Compressed_Opcode = Op_{:s};\n'.format(last_compressed_opcode.replace('.','_')))
-diffcp('opcodes.h')
-
-with open('newcode.tmp', 'w') as f:
-    for name in opcodes:
-        if 'bits' in opcodes[name]:
-            f.write('long I_{:s}(long pc, cpu_t* cpu);\n'.format(name.replace('.','_')))
-    f.write('\n')
-    f.write('long (*golden[])(long pc, cpu_t* cpu) = {')
-    i = 0
-    #for name in ['ZERO'] + list(opcodes.keys()) + ['ILLEGAL', 'UNKNOWN']:
-    for name in opcode_list:
-        if i % 4 == 0:
-            f.write('\n  ')
-        if name in opcodes and 'bits' in opcodes[name]:
-            f.write('&I_{:21s}'.format(name.replace('.','_')+','))
-        else:
-            f.write('{:24s}'.format('0,'))
-        i += 1
-    f.write('\n};\n')
-diffcp('dispatch_table.h')
-
-with open('newcode.tmp', 'w') as f:
-    f.write('const char* op_name[] = {')
-    i = 0
-    for name in opcode_list:
-        if i % 4 == 0:
-            f.write('\n  ')
-        name2 = name.replace('.','_')
-        f.write('{:24s}'.format('"'+name2+'",'))
-        i += 1
-    f.write('\n};\n')
-diffcp('constants.h')
-
-if not os.path.exists('./insns'):
-    os.mkdir('./insns')
-
-errors = 0
+newlist = OrderedDict()
+opcode_list = ['ZERO']
+# First come all the compressed instructions
 for name in opcodes:
-    with open('newcode.tmp', 'w') as f:
-        opcode = opcodes[name]
-        f.write('#include "cpu.h"\n')
-        f.write('#include "interpreter.h"\n')
-        f.write('long I_{:s}(long pc, cpu_t* cpu) {{\n'.format(name.replace('.','_')))
-        f.write('  processor_t* p = cpu->spike();\n');
-        f.write('  insn_t insn = (long)(*(int{:d}_t*)pc);\n'.format(opcode['len']==2 and 16 or 32))
-        if 'flags' in opcode:
-            if 'pc' in opcode['flags']:
-                f.write('  long npc = pc + {:d};\n'.format(opcode['len']))
-            for line in opcode["exec"].split('\n'):
-                if line:
-                    f.write('  {:s}\n'.format(line))
-            if 'pc' in opcode['flags']:
-                f.write('  return npc;\n')
-            else:
-                f.write('  return pc + {:d};\n'.format(opcode['len']))
-        else:
-            f.write('  return pc + {:d};\n'.format(opcode['len']))
-        f.write('}\n')
-    diffcp('./insns/{:s}.cc'.format(name.replace('.','_')))
+    if re.match('c\.', name):
+        opcode_list.append(name)
+        last_compressed_opcode = name
+# Next all the fast uncompressed instructions
+for name in opcodes:
+    if re.match('c\.', name):  continue
+    if 'fast' in opcodes[name]:
+        opcode_list.append(name)
+# Last all the spike-semantics instructions
+for name in opcodes:
+    if re.match('c\.', name):  continue
+    if 'fast' not in opcodes[name]:
+        opcode_list.append(name)
+opcode_list.append('ILLEGAL')
+opcode_list.append('UNKNOWN')
+    
+for name in opcode_list:
+    newlist[name] = {}
+    if name not in opcodes:
+        continue
+    flags = []
+    if 'type' in opcodes[name]:
+        flags.append('type_'+opcodes[name]['type'])
+    else:
+        flags.append('type_none')
+    if 'ext' in opcodes[name]:
+        for e in opcodes[name]['ext'].split(','):
+            flags.append('isa_'+e)
+    else:
+        flags.append('isa_I')
+    if 'flags' in opcodes[name]:
+        for f in opcodes[name]['flags'].split(','):
+            flags.append(f)
+        newlist[name]['flags'] = ','.join(flags)
+    if 'bits' in opcodes[name]:
+        newlist[name]['bits'] = opcodes[name]['bits']
+    if 'exec' in opcodes[name]:
+        newlist[name]['exec'] = opcodes[name]['exec']
+    if 'fast' in opcodes[name]:
+        newlist[name]['fast'] = opcodes[name]['fast']
+    newlist[name]['len'] = opcodes[name]['len']
+    if 'decode' in opcodes[name]:
+        newlist[name]['decode'] = opcodes[name]['decode']
 
-with open('newcode.tmp', 'w') as f:
-    for name in opcodes:
-        opcode = opcodes[name]
-        if 'fast' not in opcode:
-            continue;
-        f.write('case Op_{:s}:  {:s}; pc+={:d}; break;\n'.format(name.replace('.','_'), opcode['fast'], opcode['len']))
-diffcp('fastops.h')
+json.dump(newlist, sys.stdout, indent=4)
+

@@ -53,6 +53,14 @@ Insn_t reg3insn (Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3)
   return i;
 }
 
+Insn_t reg0imm(Opcode_t code, int8_t rd, int32_t longimmed)
+{
+  Insn_t i(code);
+  i.op_rd = rd;
+  i.op_longimm = longimmed;
+  return i;
+}
+
 Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm)
 {
   Insn_t i(code, rd, imm);
@@ -65,14 +73,6 @@ Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm)
   Insn_t i(code, rd, imm);
   i.op_rs1 = rs1;
   i.op.rs2 = rs2;
-  return i;
-}
-
-Insn_t longimm(Opcode_t code, int8_t rd, int32_t longimmed)
-{
-  Insn_t i(code);
-  i.op_rd = rd;
-  i.op_longimm = longimmed;
   return i;
 }
 

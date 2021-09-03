@@ -251,28 +251,34 @@ long initialize_stack(int argc, const char** argv, const char** envp)
   for (unsigned i = 0; i < envc; i++)
     PUSH_ARG(uintptr_t, envp[i]);
   PUSH_ARG(uintptr_t, 0); /* envp[envc] = NULL */
+  
   for (unsigned i = 0; i < auxc; i++) {
     size_t value = auxv[i].value;
+    size_t old = value;
     switch (auxv[i].key) {
-      //    case AT_SYSINFO_EHDR:  continue; /* No vDSO */
+      //case AT_SYSINFO_EHDR:  continue; /* No vDSO */
       //    case AT_HWCAP:	value = 0; break;
     case AT_PAGESZ:	value = RISCV_PGSIZE; break;
     case AT_PHDR:	value = current.phdr; break;
     case AT_PHENT:	value = (size_t)current.phent; break;
     case AT_PHNUM:	value = (size_t)current.phnum; break;
-    case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
+      //    case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
+      //case AT_BASE:	continue;
     case AT_ENTRY:	value = current.entry; break;
     case AT_SECURE:	value = 0; break;
     case AT_RANDOM:	value = current.stack_top; break;
       //    case AT_HWCAP2:	value = 0; break;
-    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
-    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
+      //    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
+      //    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
+      //case AT_PLATFORM:	continue;
     case AT_NULL:
     default:
       continue;
+      break;
     }
     PUSH_ARG(uintptr_t, auxv[i].key);
     PUSH_ARG(uintptr_t, value);
+    //fprintf(stderr, "AT=%ld, value=%lx, was %lx\n", auxv[i].key, value, old);
   } /* last entry was AT_NULL */
 
   return current.stack_top;

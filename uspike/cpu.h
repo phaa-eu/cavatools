@@ -10,7 +10,7 @@ struct pctrace_t {
   int8_t rn;
 };
 
-#define PCTRACEBUFSZ  (1<<5)
+#define PCTRACEBUFSZ  (1<<7)
 struct Debug_t {
   pctrace_t trace[PCTRACEBUFSZ];
   int cursor;
@@ -59,18 +59,18 @@ public:
   friend Insn_t reg1insn( Opcode_t code, int8_t rd, int8_t rs1);
   friend Insn_t reg2insn( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2);
   friend Insn_t reg3insn (Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3);
+  friend Insn_t reg0imm(Opcode_t code, int8_t rd, int32_t longimmed);
   friend Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm);
   friend Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
-  friend Insn_t longimm(Opcode_t code, int8_t rd, int32_t longimmed);
 };
 static_assert(sizeof(Insn_t) == 8);
 
 Insn_t reg1insn( Opcode_t code, int8_t rd, int8_t rs1);
 Insn_t reg2insn( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2);
 Insn_t reg3insn(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3);
+Insn_t reg0imm( Opcode_t code, int8_t rd, int32_t longimmed);
 Insn_t reg1imm( Opcode_t code, int8_t rd, int8_t rs1, int16_t imm);
 Insn_t reg2imm( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
-Insn_t longimm( Opcode_t code, int8_t rd, int32_t longimmed);
 
 #define GPREG	0
 #define FPREG	GPREG+32

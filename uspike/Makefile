@@ -1,6 +1,7 @@
 #  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 
-MINUS_O := -Ofast
+#MINUS_O := -Ofast
+MINUS_O := -O0
 
 # Paths to riscv-tools build directories on local system
 RVTOOLS := /opt/riscv-tools
@@ -42,18 +43,22 @@ main.o instructions.o interpreter.o: uspike.h opcodes.h
 main.o options.o: options.h
 instructions.o: decoder.h
 elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h interpreter.h
-interpreter.o:  dispatch_table.h fastops.h cpu.h ecall_nums.h
+interpreter.o:  dispatch_table.h fastops.h cpu.h
 cpu.o: cpu.h
 cpu.o decoder.h constants.h dispatch_table.h fastops.h: opcodes.h cpu.h
+proxy_syscall.o: ecall_nums.h
 
 # Python scripts to create various files
 
 ecall_nums.h: Makefile syscall_mapping
 	./syscall_mapping < syscalls-riscv64 > $@
 
-opcodes.h: ./crunch_isa RV_isa.tmp RV.fast
-	./crunch_isa RV_isa.tmp RV.fast
-#	./crunch_isa RV_isa.tmp
+opcodes.h:  ISA.tmp make_headers
+	./make_headers ISA.tmp
+
+ISA.tmp: ./crunch_isa RV_isa.tmp RV.fast
+	./crunch_isa RV_isa.tmp RV.fast > ISA.tmp
+#	./crunch_isa RV_isa.tmp > ISA.tmp
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
 	./parse_spike $(RVINS) RV_bits.tmp RVC.bits > $@

@@ -46,6 +46,3 @@ extern long (*golden[])(long pc, class cpu_t* cpu);
 #undef MMU
 
 #define MMU (*cpu)
-
-extern struct syscall_map_t rv_to_host[];
-extern const int highest_ecall_num;
