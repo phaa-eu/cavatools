@@ -105,7 +105,7 @@ for name in opcodes:
         continue
     with open('newcode.tmp', 'w') as f:
         opcode = opcodes[name]
-        f.write('#include "mmu.h"\n')
+        f.write('#include "spike_link.h"\n')
         f.write('long I_{:s}(long pc, mmu_t& MMU, class processor_t* p) {{\n'.format(name.replace('.','_')))
         f.write('  insn_t insn = (long)(*(int{:d}_t*)pc);\n'.format(opcode['len']==2 and 16 or 32))
         if 'flags' in opcode and 'pc' in opcode['flags']:

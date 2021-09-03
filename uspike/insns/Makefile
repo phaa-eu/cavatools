@@ -13,4 +13,4 @@ obj_files := $(patsubst %.cc,%.o,$(insn_files))
 ../libcava.a:  $(obj_files)
 	ar r ../libcava.a $?
 
-$(obj_files): ../mmu.h
+$(obj_files): ../spike_link.h ../mmu.h

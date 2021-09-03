@@ -1,30 +1,8 @@
 /* Some Spike instruction semantics files include ../mmu.h
  */
 
-#include "encoding.h"
-#include "trap.h"
-#include "arith.h"
-#include "processor.h"
-
-#undef MMU
-
-#undef set_pc_and_serialize
-#define set_pc_and_serialize(x) STATE.pc = (x) & p->pc_alignment_mask()
-
-#undef serialize
-#define serialize()
-
-#undef validate_csr
-#define validate_csr(which, write) ({ \
-  /* disallow writes to read-only CSRs */ \
-  unsigned csr_read_only = get_field((which), 0xC00) == 3; \
-  if ((write) && csr_read_only) \
-    throw trap_illegal_instruction(insn.bits()); \
-  /* other permissions checks occur in get_csr */ \
-  (which); })
-
-#define xlen 64
-
+#ifndef MMU_H
+#define MMU_H
 
 class mmu_t {
   long va;
@@ -111,14 +89,4 @@ class mmu_t {
   void flush_tlb() { }
 };
 
-
-#if 0
-#undef require
-#undef require_extension
-#undef require_align
-#undef require_fp
-#define require(x)
-#define require_extension(x)
-#define require_align(x,y)
-#define require_fp
 #endif

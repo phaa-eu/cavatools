@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-//#define DEBUG
+#include "mmu.h"
 
 #ifdef DEBUG
 struct pctrace_t {
@@ -25,7 +25,7 @@ struct Debug_t {
 
 class cpu_t {
   class processor_t* spike_cpu;	// opaque pointer to Spike structure
-  class mmu_t* caveat_mmu;	// opaque pointer to our MMU
+  class mmu_t caveat_mmu;	// opaque pointer to our MMU
   static cpu_t* cpu_list;	// for find() using thread id
   cpu_t* link;			// list of cpu_t
   long insn_count;		// instructions executed this thread
@@ -47,7 +47,7 @@ public:
   static cpu_t* find(int tid);
   
   class processor_t* spike() { return spike_cpu; }
-  class mmu_t* mmu() { return caveat_mmu; }
+  class mmu_t* mmu() { return &caveat_mmu; }
   long read_reg(int n);
   void write_reg(int n, long value);
   long* reg_file();

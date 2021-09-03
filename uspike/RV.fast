@@ -86,5 +86,5 @@
 
   "ebreak"	: { "fast":"reason=stop_breakpoint; goto early_stop;" },
   "c.ebreak"	: { "fast":"reason=stop_breakpoint; goto early_stop;" },
-  "ecall"	: { "fast":"STATE.pc=pc; if (cpu->proxy_ecall(cpu->count()+count)) { reason=stop_exited; goto early_stop; }" }
+  "ecall"	: { "fast":"cpu->write_pc(pc); if (cpu->proxy_ecall(cpu->count()+count)) { reason=stop_exited; goto early_stop; }" }
 }

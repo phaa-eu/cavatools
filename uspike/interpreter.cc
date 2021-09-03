@@ -10,7 +10,7 @@
 
 #include "uspike.h"
 #include "cpu.h"
-#include "mmu.h"
+#include "spike_link.h"
 
 #define THREAD_STACK_SIZE  (1<<14)
 
@@ -101,9 +101,16 @@ template<class T> bool cmpswap(long pc, cpu_t* cpu)
 
 #define imm i.immed()
 #define wpc(e) pc=(e)
+
+#if 0
 #define r1 cpu->read_reg(i.rs1())
 #define r2 cpu->read_reg(i.rs2())
 #define wrd(e) cpu->write_reg(i.rd(), e)
+#endif
+
+#define r1 xpr[i.rs1()]
+#define r2 xpr[i.rs2()]
+#define wrd(e) xpr[i.rd()]=(e)
 
 extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* cpu);
 
@@ -111,6 +118,7 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
 {
   //fprintf(stderr, "interpreter()\n");
   processor_t* p = cpu->spike();
+  long* xpr = cpu->reg_file();
   enum stop_reason reason = stop_normal;
   long pc = cpu->read_pc();
   long count = 0;
@@ -153,7 +161,8 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
       }
       break;
     }
-    cpu->write_reg(0, 0);
+    xpr[0] = 0;
+    //cpu->write_reg(0, 0);
     ++count;
 #ifdef DEBUG
     i = code.at(oldpc);

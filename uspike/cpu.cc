@@ -140,7 +140,7 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 
 #endif
 
-#include "mmu.h"
+#include "spike_link.h"
 
 long cpu_t::read_reg(int n)
 {
@@ -172,11 +172,10 @@ void cpu_t::write_pc(long value)
   STATE.pc = value;
 }
 
-cpu_t::cpu_t()
+cpu_t::cpu_t() : caveat_mmu()
 {
   my_tid = gettid();
   spike_cpu = 0;
-  caveat_mmu = new mmu_t();
   insn_count = 0;
   do {
     link = cpu_list;
