@@ -34,7 +34,7 @@ static struct timeval start_tv;
 void start_time(int mhz)
 {
   gettimeofday(&start_tv, 0);
-  pretend_Hz = mhz * 1000000;
+  pretend_Hz = mhz * 1000000L;
 }
 
 double elapse_time()
@@ -90,12 +90,8 @@ static int thread_interpreter(void* arg)
   newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
   
   enum stop_reason reason;
-  //conf.show = true;
-  //  sleep(100);
-  //fprintf(stderr, "starting thread interpreter, tid=%d, tp=%lx\n", gettid(), READ_REG(4));
   do {
     reason = interpreter(newcpu, 10000);
-    //status_report();
   } while (reason == stop_normal);
   status_report();
   fprintf(stderr, "\n");
@@ -162,53 +158,21 @@ bool cpu_t::proxy_ecall(long cycles)
     fprintf(stderr, "RISCV-V system call %s not supported on host system\n", name);
     abort();
 
-#if 0
-  case SYS_brk:
-    return emulate_brk(a0);
-#endif
-
   case SYS_exit:
   case SYS_exit_group:
     return true;
 
+#if 0
   case SYS_rt_sigaction:
     fprintf(stderr, "rt_sigaction called\n");
     retval = 0;
     break;
 
-#if 0
   case SYS_rt_sigprocmask:
     fprintf(stderr, "rt_sigprocmask called\n");
     retval = 0;
     break;
 #endif
-
-  case SYS_clock_gettime:
-  case SYS_gettimeofday:
-    {
-      struct timeval tv;
-      tv.tv_sec  = cycles / pretend_Hz;
-      tv.tv_usec = cycles % pretend_Hz;
-      tv.tv_sec  = start_tv.tv_sec  + (cycles/pretend_Hz);
-      tv.tv_usec = start_tv.tv_usec + (cycles%pretend_Hz);
-      while (tv.tv_usec > 1000000) {
-	tv.tv_sec  += 1;
-	tv.tv_usec -= 1000000;
-      }
-      memcpy((void*)(sysnum==SYS_gettimeofday? a0 : a1), &tv, sizeof tv);
-      retval = 0;
-    }
-    break;
-
-  case SYS_times:
-    {
-      struct tms tms_buf;
-      memset(&tms_buf, 0, sizeof tms_buf);
-      tms_buf.tms_utime = (double)cycles * sysconf(_SC_CLK_TCK) / pretend_Hz;
-      memcpy((void*)a0, &tms_buf, sizeof tms_buf); 
-      retval = 0;
-    }
-    break;
 
   case SYS_close:
     if (a0 <= 2) // Don't close stdin, stdout, stderr

@@ -129,12 +129,7 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
   //  context->uc_mcontext.gregs[]
   fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
   cpu_t* thisCPU = cpu_t::find(gettid());
-  if (conf.gdb) {
-    HandleException(nSIGnum);
-    ProcessGdbCommand(thisCPU);
-  }
-  else
-    thisCPU->debug.print();
+  thisCPU->debug.print();
   exit(-1);
   //  longjmp(return_to_top_level, 1);
 }
@@ -172,6 +167,12 @@ void cpu_t::write_pc(long value)
 {
   processor_t* p = spike();
   STATE.pc = value;
+}
+
+long* cpu_t::ptr_pc()
+{
+  processor_t* p = spike();
+  return (long*)&STATE.pc;
 }
 
 cpu_t::cpu_t() : caveat_mmu()

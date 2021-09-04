@@ -11,7 +11,7 @@ void *malloc(size_t size)
 {
   char volatile *rv, *newtop;
   do {
-    char* after = pooltop + size + 16; /* allow for alignment */
+    volatile char* after = pooltop + size + 16; /* allow for alignment */
     if (after > simpool+poolsize) {
       fprintf(stderr, " failed\n");
       return 0;
@@ -20,7 +20,7 @@ void *malloc(size_t size)
     newtop = (void*)((unsigned long)after & ~0xfL); /* always align to 16 bytes */
   } while (!__sync_bool_compare_and_swap(&pooltop, rv, newtop));
       
-  return rv;
+  return (void*)rv;
 }
 
 void free(void *ptr)

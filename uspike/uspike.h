@@ -28,6 +28,7 @@ extern "C" {
   long initialize_stack(int argc, const char** argv, const char** envp);
   long emulate_brk(long addr);
   extern unsigned long low_bound, high_bound;
+  void redecode(long pc);
 
   struct configuration_t {
     const char* isa;
@@ -35,10 +36,17 @@ extern "C" {
     int mhz;
     int stat;
     bool show;
+    bool quiet;
     const char* gdb;
     int ecall;
   };
   extern configuration_t conf;
+  
+  void OpenTcpLink(const char* name);
+  void ProcessGdbCommand();
+  void HandleException(int signum);
+  extern long *gdb_pc;
+  extern long *gdb_reg;
 };
 
 #include "opcodes.h"
@@ -135,7 +143,3 @@ void show(cpu_t* cpu, long pc, FILE* f =stderr);
 void start_time(int mhz);
 double elapse_time();
 double simulated_time(long cycles);
-
-void OpenTcpLink(const char* name);
-void ProcessGdbCommand(cpu_t* theCPU);
-void HandleException(int signum);

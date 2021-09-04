@@ -12,17 +12,17 @@
 #include <signal.h>
 #include <setjmp.h>
 
-#include "uspike.h"
-#include "cpu.h"
-
 //	E01 - Command syntax error.
 //	E02 - Error in hex data.
 
-//#define INBUFSIZE    ((NUMREGS+1)*16 + 100)
-//#define OUTBUFSIZE   ((NUMREGS+1)*16 + 100)
 
-#define INBUFSIZE    4096
-#define OUTBUFSIZE   4096
+#define NUMREGS   32		/* General purpose registers per context */
+
+long *gdb_pc;
+long *gdb_reg;
+
+#define INBUFSIZE    ((NUMREGS+1)*16 + 100)
+#define OUTBUFSIZE   ((NUMREGS+1)*16 + 100)
 
 static char inBuf[INBUFSIZE];
 static char outBuf[OUTBUFSIZE];
@@ -33,11 +33,10 @@ static char* outPtr = outBuf;
 static int lastSignal =0;	// For '?' command
 static jmp_buf bombed;
 
-#define memory 0
+void  ProcessGdbCommand();
 
 static void
 LocalExceptionHandler(int signum) {
-  fprintf(stderr, "LocalExceptionHandler called\n");
   longjmp(bombed, signum);
 }
 
@@ -45,10 +44,10 @@ static struct sigaction localaction = { &LocalExceptionHandler, };
 
 static int tcpLink;
 
-static long
+static int
 getDebugChar() {
   char buf;
-  long rc;
+  int rc;
   do {
     rc = read(tcpLink, &buf, 1);
     if (rc < 0) {
@@ -60,10 +59,9 @@ getDebugChar() {
 }
 
 static void
-putDebugChar(long ch) {
-  long rc;
+putDebugChar(int ch) {
+  int rc;
   do {
-    //fprlongf(stderr, "%c", ch);
     rc = write(tcpLink, &ch, 1);
     if (rc < 0) {
       perror("putDebugChar");
@@ -75,7 +73,7 @@ putDebugChar(long ch) {
 
 void
 OpenTcpLink(const char* name) {
-  const char *port_str;
+  char *port_str;
   int port;
   struct sockaddr_in sockaddr;
   //  int tmp;
@@ -131,8 +129,8 @@ OpenTcpLink(const char* name) {
 }
 
 
-static long
-val2hexch(long val) {
+static int
+val2hexch(int val) {
   val &= 0xF;
   if (0 <= val && val <= 9)
     return val + '0';
@@ -140,8 +138,8 @@ val2hexch(long val) {
     return val - 10 + 'a';
 }
 
-static long
-hexch2val(long ch) {
+static int
+hexch2val(int ch) {
   if ('0' <= ch && ch <= '9')
     return ch - '0';
   else if ('A' <= ch && ch <= 'F')
@@ -157,7 +155,7 @@ ReceivePacket() {
   unsigned char checksum;
   unsigned char xmitcsum;
   char* p;
-  long ch;
+  int ch;
   //
   // Wait around for start character, ignoring all other characters.
   //
@@ -227,6 +225,7 @@ SendPacket() {
   } while (getDebugChar() != '+');
   outPtr = outBuf;
   *outPtr = '\0';
+
   //  fprintf(stderr, "SendPacket: `%s'\n", outBuf);
 }
 
@@ -238,15 +237,9 @@ Reply(const char* msg) {
 }
 
 static void
-ReplyInHex(void* address, long bytes) {
-  fprintf(stderr, "ReplyInHex(address=%p, bytes=%ld)\n", address, bytes);
-  if ((long)address < (long)low_bound) {
-    Reply("E09");
-    return;
-  }
-    
+ReplyInHex(void* address, int bytes) {
+  //fprintf(stderr, "address=%p, bytes=%d\n", address, bytes);
   char* p = (char*)address;
-  fprintf(stderr, "just before alloca\n");
   char* tmpbuf = (char*)alloca(bytes);
   if (tmpbuf == NULL)
     abort();
@@ -257,28 +250,20 @@ ReplyInHex(void* address, long bytes) {
   /* Check addresses. */
   {
     struct sigaction sigsegv_buf, sigbus_buf;
-    long k;
-    fprintf(stderr, "just before setjmp\n");
+    int k;
     if (setjmp(bombed)) {
-      if (sigaction(SIGSEGV, &sigsegv_buf, 0))
-	perror("sigaction(SIGSEGV)");
-      if (sigaction(SIGBUS,  &sigbus_buf,  0))
-	perror("sigaction(SIGBUS)");
+      sigaction(SIGSEGV, &sigsegv_buf, 0);
+      sigaction(SIGBUS,  &sigbus_buf,  0);
       Reply("E09");
       return;
     }
-    if (sigaction(SIGSEGV, &localaction, &sigsegv_buf))
-	perror("sigaction(SIGSEGV)");
-    if (sigaction(SIGBUS,  &localaction, &sigbus_buf))
-	perror("sigaction(SIGBUS)");
-    fprintf(stderr, "sigactions were ok\n");
+    sigaction(SIGSEGV, &localaction, &sigsegv_buf);
+    sigaction(SIGBUS,  &localaction, &sigbus_buf);
     for (k=0; k<bytes; k++) {
       tmpbuf[k] = *p++;
     }
-    if (sigaction(SIGSEGV, &sigsegv_buf, 0))
-	perror("sigaction(SIGSEGV)");
-    if (sigaction(SIGBUS,  &sigbus_buf,  0))
-	perror("sigaction(SIGBUS)");
+    sigaction(SIGSEGV, &sigsegv_buf, 0);
+    sigaction(SIGBUS,  &sigbus_buf,  0);
   }
   p = tmpbuf;
   while (bytes-- > 0) {
@@ -289,8 +274,8 @@ ReplyInHex(void* address, long bytes) {
 }
 
 static void
-ReplyInt(long v, long bytes) {
-  long hexdigits = 2 * bytes;
+ReplyInt(long long unsigned v, int bytes) {
+  int hexdigits = 2 * bytes;
   if (outPtr + hexdigits > outBuf + OUTBUFSIZE-1)
     abort();			// Internal error: output buffer overflow.
   while (hexdigits-- > 0) {
@@ -299,7 +284,7 @@ ReplyInt(long v, long bytes) {
   *outPtr = '\0';
 }
 
-static long
+static int
 RcvWord(const char* match) {
   if (strncmp(inPtr, match, strlen(match)) == 0)
     return 1;
@@ -307,9 +292,9 @@ RcvWord(const char* match) {
     return 0;
 }
 
-static long
-RcvHexDigit(long* value) {
-  long digit;
+static int
+RcvHexDigit(int* value) {
+  int digit;
   if ('0' <= *inPtr && *inPtr <= '9')
     digit = *inPtr++ - '0';
   else if ('A' <= *inPtr && *inPtr <= 'F')
@@ -322,10 +307,10 @@ RcvHexDigit(long* value) {
   return 1;
 }
 
-static long
+static int
 RcvHexInt(long* ptr) {
-  long value;
-  long digit;
+  int value;
+  int digit;
   if (!RcvHexDigit(&digit))
     return 0;			/* Must have at least 1 digit. */
   value = digit;
@@ -337,14 +322,14 @@ RcvHexInt(long* ptr) {
   return 1;
 }
 
-static long
-RcvHexToMemory(void* address, long bytes) {
+static int
+RcvHexToMemory(void* address, int bytes) {
   unsigned char* p = (unsigned char*)address;
 
   /* Check addresses by writing zeros. */
   {
     struct sigaction sigsegv_buf, sigbus_buf;
-    long k;
+    int k;
     sigaction(SIGSEGV, &localaction, &sigsegv_buf);
     sigaction(SIGBUS,  &localaction, &sigbus_buf);
     if (setjmp(bombed)) {
@@ -359,8 +344,8 @@ RcvHexToMemory(void* address, long bytes) {
   }
   p = (unsigned char*)address;
   while (bytes-- > 0) {
-    long value;
-    long digit;
+    int value;
+    int digit;
     if (!RcvHexDigit(&digit))	/* First of two hex digit */
       return 0;
     value = digit << 4;
@@ -373,44 +358,53 @@ RcvHexToMemory(void* address, long bytes) {
 }
 
 void
-ProcessGdbCommand(cpu_t* theCPU)
-{
+HandleException(int signum) {
+  //fprintf(stderr, "HandleException(%d)\n", signum);
+  //fprintf(stderr, "Current pc = %lx\n", *gdb_pc);
+  lastSignal = signum;
+
+  Reply("T");
+  ReplyInt(signum, 1);	// signal number
+  Reply("20:");			// PC is register #32
+  ReplyInHex((void*)gdb_pc, 8);
+  Reply(";");
+  SendPacket();			// Resets outPtr.
+  ProcessGdbCommand();
+}
+
+void
+ProcessGdbCommand() {
   for (;;) {
+    int errors = 0;
     ReceivePacket();		// Resets inPtr to beginning of inBuffer.
     switch (*inPtr++) {
     case 'g':			// Send all CPU register values to gdb.
-      printf("GDB_COMMAND: g\n");
-      //ReplyInHex((void*)&theCPU->gpr, (NUMREGS+1)*8);
-      ReplyInHex(theCPU->reg_file(), 32*8);
-      //ReplyInHex((void*)&theCPU->pc, 8);
-      ReplyInt(theCPU->read_pc(), 8);
+      //pr9intf("GDB_COMMAND: g\n");
+      ReplyInHex((void*)gdb_reg, NUMREGS*8);
+      ReplyInHex((void*)gdb_pc,  8);
       break;
     case 'G':			// gdb sets all CPU register values.
-      printf("GDB_COMMAND: G\n");
-      //if (RcvHexToMemory((void*)&theCPU->gpr, (NUMREGS+1)*8))
-      if (RcvHexToMemory(theCPU->reg_file(), 32*8))
+      //pr9intf("GDB_COMMAND: G\n");
+      errors += RcvHexToMemory((void*)gdb_reg, NUMREGS*8);
+      errors += RcvHexToMemory((void*)gdb_pc,  8);
+      if (errors)
 	Reply("OK");
       else
 	Reply("E02");
       break;
     case '?':			// gdb asks what was last signal.
-      printf("GDB_COMMAND: ?\n");
+      //pr9intf("GDB_COMMAND: ?\n");
       Reply("S");
       ReplyInt(lastSignal, 1);
       break;
 
     case 'P':			// Prr=VVVV - gdb sets single CPU register rr.
       {
-	printf("GDB_COMMAND: P\n");
+        //pr9intf("GDB_COMMAND: P\n");
 	long regno;
-	//if (RcvHexInt(&regno) && *inPtr++ == '=' && 0 <= regno && regno < NUMREGS) {
-	//  if (RcvHexToMemory((void*)&theCPU->gpr[regno].j, 8))
-	if (RcvHexInt(&regno) && *inPtr++ == '=' && 0 <= regno && regno < 32) {
-	  long value;
-	  if (RcvHexToMemory(&value, 8)) {
-	    theCPU->write_reg(regno, value);
+	if (RcvHexInt(&regno) && *inPtr++ == '=' && 0 <= regno && regno < NUMREGS) {
+	  if (RcvHexToMemory((void*)&gdb_reg[regno], 8))
 	    Reply("OK");
-	  }
 	  else
 	    Reply("E02");
 	}
@@ -420,11 +414,10 @@ ProcessGdbCommand(cpu_t* theCPU)
       break;
     case 'm':			// mAAAA,LLL - send LLL bytes at AAAA to gdb.
       {
-	printf("GDB_COMMAND: m\n");
+        //pr9intf("GDB_COMMAND: m\n");
 	long addr;		// Beginning address.
 	long length;		// Number of bytes.
 	if (RcvHexInt(&addr) && *inPtr++ == ',' && RcvHexInt(&length)) {
-	  //ReplyInHex((char*) memory + addr, length);
 	  ReplyInHex((char*)addr, length);
 	}
 	else
@@ -433,61 +426,45 @@ ProcessGdbCommand(cpu_t* theCPU)
       break;
     case 'M':			// Gdb writes LLL bytes at AA..AA.
       {
-	printf("GDB_COMMAND: M\n");
+        //pr9intf("GDB_COMMAND: M\n");
 	long addr;		// Beginning address.
 	long length;		// Number of bytes.
 	if (RcvHexInt(&addr) && *inPtr++ == ',' && RcvHexInt(&length) && *inPtr++ == ':') {
-	  //if (RcvHexToMemory((char*) memory + addr, length))
-	  if (code.valid(addr) && length <= 4) {
-	    long buf = 0;
-	    if (RcvHexToMemory(&buf, length)) {
-	      if (code.valid(addr))
-		code.set(addr, decoder(buf, addr));
-	      Reply("OK");
-	    }
-	    else
-	      Reply("E02");
+	  if (RcvHexToMemory((char*)addr, length)) {
+	    void redecode(long pc);
+	    redecode(addr);
+	    Reply("OK");
 	  }
-	  else {
-	    if (RcvHexToMemory((char*)addr, length))
-	      Reply("OK");
-	    else
-	      Reply("E02");
-	  }
+	  else
+	    Reply("E02");
 	}
 	else
 	  Reply("E01");
       }
       break;
     case 's':			// Single step.
-      //theCPU->single_step = true;
       {
-	printf("GDB_COMMAND: s\n");
+        //pr9intf("GDB_COMMAND: s\n");
 	long addr;
 	if (*inPtr == '\0')
 	  return;		// Continue at current pc.
 	else if (RcvHexInt(&addr)) {
-	  //theCPU->pc = addr;
-	  theCPU->write_pc(addr);
+	  *gdb_pc = addr;
 	  return;		// Continue at specified pc.
 	}
 	else
 	  Reply("E01");
-	//theCPU->single_step = state_t::STEP_STEPPING;
       }
       break;
 
     case 'c':			// cAA..AA - continue at address AA..AA
-      printf("GDB_COMMAND: c\n");
-      //theCPU->single_step = false;
-      //theCPU->single_step = state_t::STEP_NONE;
+      //printf("GDB_COMMAND: c\n");
       {
 	long addr;
 	if (*inPtr == '\0')
 	  return;		// Continue at current pc.
 	else if (RcvHexInt(&addr)) {
-	  //theCPU->pc = addr;
-	  theCPU->write_pc(addr);
+	  *gdb_pc = addr;
 	  return;		// Continue at specified pc.
 	}
 	else
@@ -500,27 +477,5 @@ ProcessGdbCommand(cpu_t* theCPU)
   } /* for (;;) */
 }
 
-
-void
-HandleException(int signum) {
-  fprintf(stderr, "HandleException(%d)\n", signum);
-  //fprintf(stderr, "Current pc = %lx\n", theCPU->pc);
-  cpu_t* theCPU = cpu_t::find(gettid());
-  fprintf(stderr, "Current pc = %lx\n", theCPU->read_pc());
-  lastSignal = signum;
-
-  Reply("S");
-  ReplyInt(signum, 1);	// signal number
-  SendPacket();			// Resets outPtr.
-  return;
-
-  Reply("T");
-  ReplyInt(signum, 1);	// signal number
-  Reply("20:");		// PC is register 32 (see riscv-tdep.c)
-  ReplyInt(theCPU->read_pc(), 8);
-  Reply(";");
-  SendPacket();			// Resets outPtr.
-  //  ProcessGdbCommand();
-}
 
 

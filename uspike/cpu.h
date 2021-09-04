@@ -53,6 +53,7 @@ public:
   long* reg_file();
   long read_pc();
   void write_pc(long value);
+  long* ptr_pc();
   bool proxy_ecall(long cycles);
   
 #ifdef DEBUG

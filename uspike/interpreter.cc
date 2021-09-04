@@ -26,6 +26,8 @@ const int highest_ecall_num = HIGHEST_ECALL_NUM;
 
 void status_report()
 {
+  if (conf.quiet)
+    return;
   double realtime = elapse_time();
   fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", cpu_t::total_count(), realtime, cpu_t::total_count()/1e6/realtime);
   if (cpu_t::threads() <= 16) {
@@ -57,12 +59,8 @@ static int thread_interpreter(void* arg)
   newcpu->write_pc(newcpu->read_pc() + 4);	// skip over ecall pc
   
   enum stop_reason reason;
-  //conf.show = true;
-  //  sleep(100);
-  //fprintf(stderr, "starting thread interpreter, tid=%d, tp=%lx\n", gettid(), READ_REG(4));
   do {
     reason = interpreter(newcpu, 10000);
-    //status_report();
   } while (reason == stop_normal);
   status_report();
   fprintf(stderr, "\n");

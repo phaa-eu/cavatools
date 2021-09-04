@@ -18,6 +18,12 @@ Insn_t decoder(int b, long pc)
   return i;
 }
 
+void redecode(long pc)
+{
+  if (code.valid(pc))
+    code.set(pc, decoder(code.image(pc), pc));
+}
+
 #define LABEL_WIDTH  16
 #define OFFSET_WIDTH  8
 void labelpc(long pc, FILE* f)
