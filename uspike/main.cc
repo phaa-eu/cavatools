@@ -33,9 +33,9 @@ int main(int argc, const char* argv[], const char* envp[])
   new option<>     (conf.isa,	"isa",		"rv64imafdcv",			"RISC-V ISA string");
   new option<>     (conf.vec,	"vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
   new option<int>  (conf.mhz,	"mhz",		1000,				"Pretend MHz");
-  new option<int>  (conf.stat,	"stat",	100,				"Status every M instructions");
-  new option<bool> (conf.show,	"show",	false, true,			"Show instructions executing");
-  new option<>     (conf.gdb,	"gdb", 	0, "localhost:1234", 		"Remote GDB on socket");
+  new option<int>  (conf.stat,	"stat",		100,				"Status every M instructions");
+  new option<bool> (conf.show,	"show",		false, true,			"Show instructions executing");
+  new option<>     (conf.gdb,	"gdb",		0, "localhost:1234", 		"Remote GDB on socket");
   new option<int>  (conf.ecall,	"ecall",	0, 1,				"Report every N ecalls");
   
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");

@@ -83,7 +83,7 @@ long emulate_brk(long addr)
 
 static int thread_interpreter(void* arg)
 {
-  cpu_t* newcpu = new cpu_t((class cpu_t*)arg);
+  cpu_t* newcpu = (class cpu_t*)arg;
   newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
   newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
   newcpu->write_reg(10, 0);	// indicating we are child thread
@@ -221,7 +221,8 @@ bool cpu_t::proxy_ecall(long cycles)
       char* interp_stack = new char[THREAD_STACK_SIZE];
       interp_stack += THREAD_STACK_SIZE; // grows down
       long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
-      retval = clone(thread_interpreter, interp_stack, flags, this, (void*)a2, (void*)a4);
+      cpu_t* newcpu = new cpu_t(this);
+      retval = clone(thread_interpreter, interp_stack, flags, newcpu, (void*)a2, (void*)a4);
     }
     break;
     

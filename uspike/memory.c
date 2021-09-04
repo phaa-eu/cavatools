@@ -2,14 +2,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define poolsize  (1<<29)	/* size of simulation memory pool */
+#define poolsize  (1<<30)	/* size of simulation memory pool */
 
 static char simpool[poolsize];	/* base of memory pool */
-static char* pooltop = simpool;	/* current allocation address */
+static volatile char* pooltop = simpool; /* current allocation address */
 
 void *malloc(size_t size)
 {
-  void *rv, *newtop;
+  char volatile *rv, *newtop;
   do {
     char* after = pooltop + size + 16; /* allow for alignment */
     if (after > simpool+poolsize) {

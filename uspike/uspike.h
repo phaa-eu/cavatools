@@ -28,18 +28,18 @@ extern "C" {
   long initialize_stack(int argc, const char** argv, const char** envp);
   long emulate_brk(long addr);
   extern unsigned long low_bound, high_bound;
-};
 
-struct configuration_t {
-  const char* isa;
-  const char* vec;
-  int mhz;
-  int stat;
-  bool show;
-  const char* gdb;
-  int ecall;
+  struct configuration_t {
+    const char* isa;
+    const char* vec;
+    int mhz;
+    int stat;
+    bool show;
+    const char* gdb;
+    int ecall;
+  };
+  extern configuration_t conf;
 };
-extern configuration_t conf;
 
 #include "opcodes.h"
 

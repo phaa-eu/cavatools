@@ -126,6 +126,7 @@ enum stop_reason interpreter(cpu_t* cpu, long number)
   long oldpc;
 #endif
   while (count < number) {
+    dieif(!code.valid(pc), "Invalid PC %lx", pc);
 #ifdef DEBUG
     dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
     oldpc = pc;

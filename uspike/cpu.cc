@@ -128,12 +128,13 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
   //  ucontext_t* context = (ucontext_t*)vcontext;
   //  context->uc_mcontext.gregs[]
   fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
+  cpu_t* thisCPU = cpu_t::find(gettid());
   if (conf.gdb) {
     HandleException(nSIGnum);
-    ProcessGdbCommand();
+    ProcessGdbCommand(thisCPU);
   }
   else
-    cpu_t::find(gettid())->debug.print();
+    thisCPU->debug.print();
   exit(-1);
   //  longjmp(return_to_top_level, 1);
 }
@@ -157,7 +158,8 @@ void cpu_t::write_reg(int n, long value)
 long* cpu_t::reg_file()
 {
   processor_t* p = spike();
-  return (long*)&(p->get_state()->XPR);
+  //return (long*)&(p->get_state()->XPR);
+  return (long*)&p->get_state()->XPR[0];
 }
 
 long cpu_t::read_pc()
