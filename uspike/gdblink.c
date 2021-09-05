@@ -369,7 +369,7 @@ HandleException(int signum) {
   ReplyInHex((void*)gdb_pc, 8);
   Reply(";");
   SendPacket();			// Resets outPtr.
-  ProcessGdbCommand();
+  //  ProcessGdbCommand();
 }
 
 void

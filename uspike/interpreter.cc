@@ -50,28 +50,6 @@ void status_report()
    a4 = child_tidptr
 */
 
-static int thread_interpreter(void* arg)
-{
-  cpu_t* newcpu = new cpu_t((cpu_t*)arg);
-  newcpu->write_reg(2, newcpu->read_reg(11));	// a1 = child_stack
-  newcpu->write_reg(4, newcpu->read_reg(13));	// a3 = tls
-  newcpu->write_reg(10, 0);			// we are child thread
-  newcpu->write_pc(newcpu->read_pc() + 4);	// skip over ecall pc
-  
-  enum stop_reason reason;
-  do {
-    reason = interpreter(newcpu, 10000);
-  } while (reason == stop_normal);
-  status_report();
-  fprintf(stderr, "\n");
-  if (reason == stop_breakpoint)
-    fprintf(stderr, "stop_breakpoint\n");
-  else if (reason != stop_exited)
-    die("unknown reason %d", reason);
-  return 0;
-	      
-}
-
 void show(cpu_t* cpu, long pc, FILE* f)
 {
   Insn_t i = code.at(pc);
@@ -97,84 +75,78 @@ template<class T> bool cmpswap(long pc, cpu_t* cpu)
   return oldval == expect;
 }
 
-#define imm i.immed()
-#define wpc(e) pc=(e)
-
-#if 0
-#define r1 cpu->read_reg(i.rs1())
-#define r2 cpu->read_reg(i.rs2())
-#define wrd(e) cpu->write_reg(i.rd(), e)
-#endif
-
-#define r1 xpr[i.rs1()]
-#define r2 xpr[i.rs2()]
-#define wrd(e) xpr[i.rd()]=(e)
-
 extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* cpu);
 
-enum stop_reason interpreter(cpu_t* cpu, long number)
+#define wpc(e)	pc=(e)
+#define wrd(e)	xpr[i.rd()]=(e)
+#define r1	xpr[i.rs1()]
+#define r2	xpr[i.rs2()]
+#define imm	i.immed()
+
+static inline long one_instruction(long pc, Insn_t i, long xpr[], cpu_t* cpu)
 {
-  //fprintf(stderr, "interpreter()\n");
+  switch (i.opcode()) {
+#define MMU  (*cpu->mmu())
+#include "fastops.h"
+#undef MMU
+  default:
+    pc = golden[i.opcode()](pc, *cpu->mmu(), cpu->spike());
+    break;
+  } // switch (i.opcode())
+  xpr[0] = 0;
+  return pc;
+}
+
+bool cpu_t::single_step()
+{
+  try {
+    write_pc(one_instruction(read_pc(), code.at(read_pc()), reg_file(), this));
+  } catch (trap_breakpoint& e) {
+    return false;
+  }
+  incr_count(1);
+  return true;
+}
+
+void interpreter(cpu_t* cpu)
+{
   processor_t* p = cpu->spike();
   long* xpr = cpu->reg_file();
-  enum stop_reason reason = stop_normal;
   long pc = cpu->read_pc();
   long count = 0;
 #ifdef DEBUG
   long oldpc;
 #endif
-  while (count < number) {
-    dieif(!code.valid(pc), "Invalid PC %lx", pc);
+  while (1) {
+    
 #ifdef DEBUG
     dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
     oldpc = pc;
     cpu->debug.insert(cpu->count()+count+1, pc);
 #endif
-  repeat_dispatch:
-    Insn_t i = code.at(pc);
-    switch (i.opcode()) {
-    case Op_ZERO:
-      code.set(pc, decoder(code.image(pc), pc));
-      goto repeat_dispatch;
 
-#define MMU  (*cpu->mmu())
-#include "fastops.h"
-#undef MMU
-	
-    default:
-      try {
-	pc = golden[i.opcode()](pc, *cpu->mmu(), cpu->spike());
-      } catch (trap_user_ecall& e) {
-	if (cpu->proxy_ecall(cpu->count()+count)) {
-	  reason = stop_exited;
-	  goto early_stop;
-	}
-	pc += 4;
-	if (conf.show) {
-	  cpu->incr_count(1);
-	  goto early_stop;
-	}
-      } catch (trap_breakpoint& e) {
-	reason = stop_breakpoint;
-	goto early_stop;
-      }
-      break;
+    try {
+      pc = one_instruction(pc, code.at(pc), xpr, cpu);
+    } catch (trap_breakpoint& e) {
+      cpu->write_pc(pc);
+      cpu->incr_count(count);
+      return;
     }
-    xpr[0] = 0;
-    //cpu->write_reg(0, 0);
-    ++count;
+    
 #ifdef DEBUG
-    i = code.at(oldpc);
+    Insn_t i = code.at(oldpc);
     int rn = i.rd()==NOREG ? i.rs2() : i.rd();
     cpu->debug.addval(i.rd(), cpu->read_reg(rn));
     if (conf.show)
       show(cpu, oldpc);
 #endif
+    
+    if (++count >= conf.stat) {
+      cpu->incr_count(count);
+      count = 0;
+      status_report();
+    }
   }
- early_stop:
-  cpu->write_pc(pc);
-  cpu->incr_count(count);
-  return reason;
 }
 			  
 long I_ZERO(long pc, mmu_t& MMU, cpu_t* cpu)    { die("I_ZERO should never be dispatched!"); }

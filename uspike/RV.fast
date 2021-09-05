@@ -84,7 +84,5 @@
   "cas10.w"	: { "fast":"if (!cmpswap<int32_t>(pc, cpu)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
   "cas10.d"	: { "fast":"if (!cmpswap<int64_t>(pc, cpu)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
 
-  "ebreak"	: { "fast":"reason=stop_breakpoint; goto early_stop;" },
-  "c.ebreak"	: { "fast":"reason=stop_breakpoint; goto early_stop;" },
-  "ecall"	: { "fast":"cpu->write_pc(pc); if (cpu->proxy_ecall(cpu->count()+count)) { reason=stop_exited; goto early_stop; }" }
+  "ecall"	: { "fast":"cpu->write_pc(pc); cpu->proxy_ecall();" }
 }

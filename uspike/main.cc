@@ -21,6 +21,14 @@ void operator delete(void*) noexcept
 {
 }
 
+void exit_func()
+{
+  fprintf(stderr, "\n");
+  fprintf(stderr, "EXIT_FUNC() called\n\n");
+  status_report();
+  fprintf(stderr, "\n");
+}  
+
 
 //#include <setjmp.h>
 
@@ -32,17 +40,17 @@ int main(int argc, const char* argv[], const char* envp[])
 {
   new option<>     (conf.isa,	"isa",		"rv64imafdcv",			"RISC-V ISA string");
   new option<>     (conf.vec,	"vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
-  new option<int>  (conf.mhz,	"mhz",		1000,				"Pretend MHz");
-  new option<int>  (conf.stat,	"stat",		100,				"Status every M instructions");
+  new option<long> (conf.stat,	"stat",		100,				"Status every M instructions");
   new option<bool> (conf.show,	"show",		false, true,			"Show instructions executing");
+  new option<bool> (conf.ecall,	"ecall",	false, true,			"Show system calls");
+  new option<bool> (conf.quiet,	"quiet",	false, true,			"No status report");
   new option<>     (conf.gdb,	"gdb",		0, "localhost:1234", 		"Remote GDB on socket");
-  new option<int>  (conf.ecall,	"ecall",	0, 1,				"Report every N ecalls");
-  new option<bool> (conf.quiet,	"quiet",	0, 1,				"No status report");
   
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
   if (argc == 0)
     help_exit();
-  start_time(conf.mhz);
+  conf.stat *= 1000000L;	// in millions of instructions
+  start_time(1);
   cpu_t* mycpu = new cpu_t(argc, argv, envp);
 
   //#ifdef DEBUG
@@ -63,46 +71,22 @@ int main(int argc, const char* argv[], const char* envp[])
   //  }
 #endif
 
+  dieif(atexit(exit_func), "atexit failed");
   long next_status_report = conf.stat*1000000L;
-  enum stop_reason reason;
+  //  enum stop_reason reason;
   if (conf.gdb) {
     gdb_pc = mycpu->ptr_pc();
     gdb_reg = mycpu->reg_file();
     OpenTcpLink(conf.gdb);
-    ProcessGdbCommand();
     while (1) {
-      do {
-	reason = interpreter(mycpu, 100);
-      } while (reason == stop_normal);
-      if (reason != stop_breakpoint)
-	break;
+      ProcessGdbCommand();
+      while (mycpu->single_step())
+	/* pass */;
       HandleException(SIGTRAP);
     }
   }
-  else {
-    do {
-      do {
-	reason = interpreter(mycpu, 10000);
-	if (cpu_t::total_count() > next_status_report) {
-	  status_report();
-	  next_status_report += conf.stat*1000000L;
-	}
-      } while (reason == stop_normal);
-      status_report();
-      fprintf(stderr, "\n");
-      if (reason == stop_breakpoint)
-	HandleException(SIGTRAP);
-      else if (reason != stop_exited)
-	die("unknown reason %d", reason);
-    } while (reason != stop_exited);
-  }
-  fprintf(stderr, "\n");
-  status_report();
-  fprintf(stderr, "\n");
-  if (reason == stop_breakpoint)
-    fprintf(stderr, "stop_breakpoint\n");
-  else if (reason != stop_exited)
-    die("unknown reason %d", reason);
+  else
+    interpreter(mycpu);
   return 0;
 }
 

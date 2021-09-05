@@ -45,6 +45,7 @@ public:
   static long total_count() { return total_insns; }
   long tid() { return my_tid; }
   static cpu_t* find(int tid);
+  bool single_step();
   
   class processor_t* spike() { return spike_cpu; }
   class mmu_t* mmu() { return &caveat_mmu; }
@@ -54,7 +55,7 @@ public:
   long read_pc();
   void write_pc(long value);
   long* ptr_pc();
-  bool proxy_ecall(long cycles);
+  bool proxy_ecall();
   
 #ifdef DEBUG
   Debug_t debug;

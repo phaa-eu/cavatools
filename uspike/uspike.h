@@ -33,12 +33,11 @@ extern "C" {
   struct configuration_t {
     const char* isa;
     const char* vec;
-    int mhz;
-    int stat;
-    bool show;
-    bool quiet;
     const char* gdb;
-    int ecall;
+    long stat;
+    bool show;
+    bool ecall;
+    bool quiet;
   };
   extern configuration_t conf;
   
@@ -106,8 +105,13 @@ Insn_t reg2imm( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
 
 Insn_t decoder(int b, long pc);	// given bitpattern image of in struction
 
-enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
-enum stop_reason interpreter(class cpu_t* mycpu, long number);
+//enum stop_reason { stop_normal, stop_exited, stop_breakpoint };
+//enum stop_reason interpreter(class cpu_t* mycpu, long number);
+void interpreter(class cpu_t* cpu);
+
+long emulate(long pc, cpu_t* cpu);
+#define STOP_breakpoint -1
+#define STOP_exited     -2
 
 void status_report();
 class cpu_t* initial_cpu(long entry, long sp);

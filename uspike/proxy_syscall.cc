@@ -28,13 +28,12 @@
 
 #define THREAD_STACK_SIZE (1<<16)
 
-static long pretend_Hz;
-static struct timeval start_tv;
+static timeval start_tv;
 
 void start_time(int mhz)
 {
   gettimeofday(&start_tv, 0);
-  pretend_Hz = mhz * 1000000L;
+  //  pretend_Hz = mhz * 1000000;
 }
 
 double elapse_time()
@@ -47,40 +46,6 @@ double elapse_time()
   return seconds;
 }
 
-double simulated_time(long cycles)
-{
-  double seconds = cycles / pretend_Hz;
-  seconds += (cycles % pretend_Hz) / 1e6;
-  return seconds;
-}
-
-long emulate_brk(long addr)
-{
-  struct pinfo_t* info = &current;
-  long newbrk = addr;
-  if (addr < info->brk_min)
-    newbrk = info->brk_min;
-  else if (addr > info->brk_max)
-    newbrk = info->brk_max;
-
-  if (info->brk == 0)
-    info->brk = ROUNDUP(info->brk_min, RISCV_PGSIZE);
-
-  uintptr_t newbrk_page = ROUNDUP(newbrk, RISCV_PGSIZE);
-  if (info->brk > newbrk_page)
-    munmap((void*)newbrk_page, info->brk - newbrk_page);
-  else if (info->brk < newbrk_page) {
-    void* rc = mmap((void*)info->brk, newbrk_page - info->brk, -1, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
-    if(rc != (void*)info->brk) {
-      fprintf(stderr, "Unable to mmap() in emulate_brk()\n");
-      abort();
-    }
-  }
-  info->brk = newbrk_page;
-
-  return newbrk;
-}
-
 static int thread_interpreter(void* arg)
 {
   cpu_t* newcpu = (class cpu_t*)arg;
@@ -88,17 +53,7 @@ static int thread_interpreter(void* arg)
   newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
   newcpu->write_reg(10, 0);	// indicating we are child thread
   newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
-  
-  enum stop_reason reason;
-  do {
-    reason = interpreter(newcpu, 10000);
-  } while (reason == stop_normal);
-  status_report();
-  fprintf(stderr, "\n");
-  if (reason == stop_breakpoint)
-    fprintf(stderr, "stop_breakpoint\n");
-  else if (reason != stop_exited)
-    die("unknown reason %d", reason);
+  interpreter(newcpu);
   return 0;
 }
 
@@ -134,7 +89,7 @@ static struct syscall_map_t rv_to_host[] = {
 #include "ecall_nums.h"
 };
 
-bool cpu_t::proxy_ecall(long cycles)
+bool cpu_t::proxy_ecall()
 {
   static long ecall_count;
   long rvnum = read_reg(17);
@@ -147,8 +102,8 @@ bool cpu_t::proxy_ecall(long cycles)
   const char* name = rv_to_host[rvnum].name;
   ecall_count++;
   if (conf.ecall && ecall_count % conf.ecall == 0)
-    fprintf(stderr, "\n%12ld %8lx: ecalls=%ld %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)",
-	    cycles, read_pc(), ecall_count, name, sysnum, a0, a1, a2, a3, a4, a5);
+    fprintf(stderr, "\n%8lx: ecalls=%ld %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)",
+	    read_pc(), ecall_count, name, sysnum, a0, a1, a2, a3, a4, a5);
   long retval = 0;
   switch (sysnum) {
   case -1:
@@ -160,25 +115,7 @@ bool cpu_t::proxy_ecall(long cycles)
 
   case SYS_exit:
   case SYS_exit_group:
-    return true;
-
-#if 0
-  case SYS_rt_sigaction:
-    fprintf(stderr, "rt_sigaction called\n");
-    retval = 0;
-    break;
-
-  case SYS_rt_sigprocmask:
-    fprintf(stderr, "rt_sigprocmask called\n");
-    retval = 0;
-    break;
-#endif
-
-  case SYS_close:
-    if (a0 <= 2) // Don't close stdin, stdout, stderr
-      return 0;
-    goto default_case;
-    return true;
+    exit(a0);
 
   case SYS_clone:
     {
@@ -191,7 +128,6 @@ bool cpu_t::proxy_ecall(long cycles)
     break;
     
   default:
-  default_case:
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
     break;
   }
