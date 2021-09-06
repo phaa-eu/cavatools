@@ -18,8 +18,11 @@
 
 #define NUMREGS   32		/* General purpose registers per context */
 
+jmp_buf mainGdbJmpBuf;
+int lastGdbSignal = 0;
 long *gdb_pc;
 long *gdb_reg;
+long gdbNumContinue = -1;	/* program started by 'c' */
 
 #define INBUFSIZE    ((NUMREGS+1)*16 + 100)
 #define OUTBUFSIZE   ((NUMREGS+1)*16 + 100)
@@ -30,10 +33,7 @@ static char outBuf[OUTBUFSIZE];
 static char* inPtr = inBuf;
 static char* outPtr = outBuf;
 
-static int lastSignal =0;	// For '?' command
 static jmp_buf bombed;
-
-void  ProcessGdbCommand();
 
 static void
 LocalExceptionHandler(int signum) {
@@ -358,21 +358,6 @@ RcvHexToMemory(void* address, int bytes) {
 }
 
 void
-HandleException(int signum) {
-  //fprintf(stderr, "HandleException(%d)\n", signum);
-  //fprintf(stderr, "Current pc = %lx\n", *gdb_pc);
-  lastSignal = signum;
-
-  Reply("T");
-  ReplyInt(signum, 1);	// signal number
-  Reply("20:");			// PC is register #32
-  ReplyInHex((void*)gdb_pc, 8);
-  Reply(";");
-  SendPacket();			// Resets outPtr.
-  //  ProcessGdbCommand();
-}
-
-void
 ProcessGdbCommand() {
   for (;;) {
     int errors = 0;
@@ -395,9 +380,8 @@ ProcessGdbCommand() {
     case '?':			// gdb asks what was last signal.
       //pr9intf("GDB_COMMAND: ?\n");
       Reply("S");
-      ReplyInt(lastSignal, 1);
+      ReplyInt(lastGdbSignal, 1);
       break;
-
     case 'P':			// Prr=VVVV - gdb sets single CPU register rr.
       {
         //pr9intf("GDB_COMMAND: P\n");
@@ -460,6 +444,7 @@ ProcessGdbCommand() {
     case 'c':			// cAA..AA - continue at address AA..AA
       //printf("GDB_COMMAND: c\n");
       {
+	++gdbNumContinue;
 	long addr;
 	if (*inPtr == '\0')
 	  return;		// Continue at current pc.
@@ -479,3 +464,18 @@ ProcessGdbCommand() {
 
 
 
+void signal_handler(int nSIGnum)
+{
+  lastGdbSignal = nSIGnum;
+  longjmp(mainGdbJmpBuf, 1);
+}
+
+void ProcessGdbException()
+{
+  Reply("T");
+  ReplyInt(lastGdbSignal, 1);	// signal number
+  Reply("20:");			// PC is register #32
+  ReplyInHex((void*)gdb_pc, 8);
+  Reply(";");
+  SendPacket();			// Resets outPtr.
+}

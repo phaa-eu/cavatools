@@ -3,6 +3,7 @@
 */
 #include <unistd.h>
 #include <signal.h>
+#include <setjmp.h>
 
 #include "options.h"
 #include "uspike.h"
@@ -29,21 +30,27 @@ void exit_func()
   fprintf(stderr, "\n");
 }  
 
-
-//#include <setjmp.h>
-
-//jmp_buf return_to_top_level;
-
-void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext);
+extern "C" {
+  extern int lastGdbSignal;
+  extern jmp_buf mainGdbJmpBuf;
+  void signal_handler(int nSIGnum);
+  void ProcessGdbCommand();
+  void ProcessGdbException();
+  void OpenTcpLink(const char* name);
+  extern long *gdb_pc;
+  extern long *gdb_reg;
+  extern long gdbNumContinue;
+};
+  
 
 int main(int argc, const char* argv[], const char* envp[])
 {
   new option<>     (conf.isa,	"isa",		"rv64imafdcv",			"RISC-V ISA string");
   new option<>     (conf.vec,	"vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
   new option<long> (conf.stat,	"stat",		100,				"Status every M instructions");
-  new option<bool> (conf.show,	"show",		false, true,			"Show instructions executing");
   new option<bool> (conf.ecall,	"ecall",	false, true,			"Show system calls");
   new option<bool> (conf.quiet,	"quiet",	false, true,			"No status report");
+  new option<long> (conf.show,	"show",		0, 				"Trace execution after N gdb continue");
   new option<>     (conf.gdb,	"gdb",		0, "localhost:1234", 		"Remote GDB on socket");
   
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
@@ -78,11 +85,30 @@ int main(int argc, const char* argv[], const char* envp[])
     gdb_pc = mycpu->ptr_pc();
     gdb_reg = mycpu->reg_file();
     OpenTcpLink(conf.gdb);
+    signal(SIGABRT, signal_handler);
+    signal(SIGFPE,  signal_handler);
+    signal(SIGSEGV, signal_handler);
+    //    signal(SIGILL,  signal_handler);
+    //    signal(SIGINT,  signal_handler);
+    //    signal(SIGTERM, signal_handler);
     while (1) {
+      if (setjmp(mainGdbJmpBuf))
+	ProcessGdbException();
       ProcessGdbCommand();
+#if 1
+      while (1) {
+	long oldpc = mycpu->read_pc();
+	if (!mycpu->single_step())
+	  break;
+	if (gdbNumContinue > conf.show)
+	  show(mycpu, oldpc);
+      }
+#else
       while (mycpu->single_step())
-	/* pass */;
-      HandleException(SIGTRAP);
+	/* pass */ ;
+#endif
+      lastGdbSignal = SIGTRAP;
+      ProcessGdbException();
     }
   }
   else

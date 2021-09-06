@@ -35,17 +35,11 @@ extern "C" {
     const char* vec;
     const char* gdb;
     long stat;
-    bool show;
+    long show;
     bool ecall;
     bool quiet;
   };
   extern configuration_t conf;
-  
-  void OpenTcpLink(const char* name);
-  void ProcessGdbCommand();
-  void HandleException(int signum);
-  extern long *gdb_pc;
-  extern long *gdb_reg;
 };
 
 #include "opcodes.h"
