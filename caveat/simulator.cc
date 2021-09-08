@@ -98,7 +98,7 @@ void signal_handler(int nSIGnum)
 
 int main(int argc, const char* argv[], const char* envp[])
 {
-  parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
+  parse_options(argc, argv, "caveat: user-mode RISC-V parallel simulator");
   if (argc == 0)
     help_exit();
   start_time();
@@ -115,7 +115,7 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
   
   while (1) {
-    mycpu->run_epoch(1000000L);
+    mycpu->run_epoch(10000000L);
     double realtime = elapse_time();
     fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS D$", core_t::total_count(), realtime, core_t::total_count()/1e6/realtime);
     char separator = '=';
