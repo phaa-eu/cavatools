@@ -8,11 +8,37 @@
 #include <sys/syscall.h>
 #include <linux/futex.h>
 
+#include "options.h"
 #include "uspike.h"
+#include "mmu.h"
 #include "cpu.h"
 #include "spike_link.h"
 
 #define THREAD_STACK_SIZE  (1<<14)
+
+
+
+option<>     conf_isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
+option<>     conf_vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
+option<long> conf_stat("stat",		100,				"Status every M instructions");
+option<bool> conf_ecall("ecall",	false, true,			"Show system calls");
+option<bool> conf_quiet("quiet",	false, true,			"No status report");
+option<long> conf_show("show",		0, 				"Trace execution after N gdb continue");
+option<>     conf_gdb("gdb",		0, "localhost:1234", 		"Remote GDB on socket");
+
+
+insnSpace_t code;
+
+void* operator new(size_t size)
+{
+  //  fprintf(stderr, "operator new(%ld)\n", size);
+  extern void* malloc(size_t);
+  return malloc(size);
+}
+void operator delete(void*) noexcept
+{
+}
+
 
 struct syscall_map_t {
   int sysnum;
@@ -26,7 +52,7 @@ const int highest_ecall_num = HIGHEST_ECALL_NUM;
 
 void status_report()
 {
-  if (conf.quiet)
+  if (conf_quiet)
     return;
   double realtime = elapse_time();
   fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", cpu_t::total_count(), realtime, cpu_t::total_count()/1e6/realtime);
@@ -108,17 +134,17 @@ bool cpu_t::single_step()
   return true;
 }
 
-void interpreter(cpu_t* cpu)
+bool cpu_t::run_epoch(long how_many)
 {
-  processor_t* p = cpu->spike();
-  long* xpr = cpu->reg_file();
-  long pc = cpu->read_pc();
+  processor_t* p = spike();
+  long* xpr = reg_file();
+  long pc = read_pc();
   long count = 0;
 #ifdef DEBUG
   long oldpc;
 #endif
-  while (1) {
-    
+  bool breakpoint = false;
+  do {
 #ifdef DEBUG
     dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
     oldpc = pc;
@@ -126,11 +152,10 @@ void interpreter(cpu_t* cpu)
 #endif
 
     try {
-      pc = one_instruction(pc, code.at(pc), xpr, cpu);
+      pc = one_instruction(pc, code.at(pc), xpr, this);
     } catch (trap_breakpoint& e) {
-      cpu->write_pc(pc);
-      cpu->incr_count(count);
-      return;
+      breakpoint = true;
+      break;
     }
     
 #ifdef DEBUG
@@ -140,12 +165,19 @@ void interpreter(cpu_t* cpu)
     if (conf.show)
       show(cpu, oldpc);
 #endif
-    
-    if (++count >= conf.stat) {
-      cpu->incr_count(count);
-      count = 0;
-      status_report();
-    }
+  } while (++count < how_many);
+  write_pc(pc);
+  incr_count(count);
+  return breakpoint;
+}
+  
+
+void interpreter(cpu_t* cpu)
+{
+  while (1) {
+    if (cpu->run_epoch(conf_stat*1000000L))
+      return;
+    status_report();
   }
 }
 			  

@@ -21,7 +21,9 @@
 #include <signal.h>
 #include <sched.h>
 
+#include "options.h"
 #include "uspike.h"
+#include "mmu.h"
 #include "cpu.h"
 
 #include "elf_loader.h"
@@ -30,10 +32,9 @@
 
 static timeval start_tv;
 
-void start_time(int mhz)
+void start_time()
 {
   gettimeofday(&start_tv, 0);
-  //  pretend_Hz = mhz * 1000000;
 }
 
 double elapse_time()
@@ -101,7 +102,7 @@ bool cpu_t::proxy_ecall()
   long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
   const char* name = rv_to_host[rvnum].name;
   ecall_count++;
-  if (conf.ecall && ecall_count % conf.ecall == 0)
+  if (conf_ecall)
     fprintf(stderr, "\n%8lx: ecalls=%ld %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)",
 	    read_pc(), ecall_count, name, sysnum, a0, a1, a2, a3, a4, a5);
   long retval = 0;
@@ -113,6 +114,12 @@ bool cpu_t::proxy_ecall()
     fprintf(stderr, "RISCV-V system call %s not supported on host system\n", name);
     abort();
 
+#if 0
+  case 262:			// newfstatat
+    sysnum = 4;			// -> stat
+    goto default_case;
+#endif
+
   case SYS_exit:
   case SYS_exit_group:
     exit(a0);
@@ -122,17 +129,18 @@ bool cpu_t::proxy_ecall()
       char* interp_stack = new char[THREAD_STACK_SIZE];
       interp_stack += THREAD_STACK_SIZE; // grows down
       long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
-      cpu_t* newcpu = new cpu_t(this);
+      cpu_t* newcpu = new cpu_t(this, new mmu_t());
       retval = clone(thread_interpreter, interp_stack, flags, newcpu, (void*)a2, (void*)a4);
     }
     break;
     
   default:
+  default_case:
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
     break;
   }
   write_reg(10, retval);
-  if (conf.ecall && ecall_count % conf.ecall == 0)
+  if (conf_ecall)
     fprintf(stderr, "->0x%lx", read_reg(10));
   return false;
 }

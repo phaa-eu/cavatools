@@ -1,7 +1,5 @@
 #include <stdint.h>
 
-#include "mmu.h"
-
 #ifdef DEBUG
 struct pctrace_t {
   long count;
@@ -25,7 +23,7 @@ struct Debug_t {
 
 class cpu_t {
   class processor_t* spike_cpu;	// opaque pointer to Spike structure
-  class mmu_t caveat_mmu;	// opaque pointer to our MMU
+  class mmu_t* caveat_mmu;	// opaque pointer to our MMU
   static cpu_t* cpu_list;	// for find() using thread id
   cpu_t* link;			// list of cpu_t
   long insn_count;		// instructions executed this thread
@@ -34,8 +32,8 @@ class cpu_t {
   int my_tid;			// my Linux thread number
 public:
   cpu_t();
-  cpu_t(cpu_t* p);
-  cpu_t(int argc, const char* argv[], const char* envp[]);
+  cpu_t(cpu_t* p, mmu_t* m);
+  cpu_t(int argc, const char* argv[], const char* envp[], mmu_t* m);
     
   static class cpu_t* list() { return cpu_list; }
   class cpu_t* next() { return link; }
@@ -46,9 +44,10 @@ public:
   long tid() { return my_tid; }
   static cpu_t* find(int tid);
   bool single_step();
+  bool run_epoch(long how_many);
   
   class processor_t* spike() { return spike_cpu; }
-  class mmu_t* mmu() { return &caveat_mmu; }
+  class mmu_t* mmu() { return caveat_mmu; }
   long read_reg(int n);
   void write_reg(int n, long value);
   long* reg_file();

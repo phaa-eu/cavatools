@@ -29,18 +29,15 @@ extern "C" {
   long emulate_brk(long addr);
   extern unsigned long low_bound, high_bound;
   void redecode(long pc);
-
-  struct configuration_t {
-    const char* isa;
-    const char* vec;
-    const char* gdb;
-    long stat;
-    long show;
-    bool ecall;
-    bool quiet;
-  };
-  extern configuration_t conf;
 };
+
+extern option<>     conf_isa;
+extern option<>     conf_vec;
+extern option<long> conf_stat;
+extern option<bool> conf_ecall;
+extern option<bool> conf_quiet;
+extern option<long> conf_show;
+extern option<>     conf_gdb;
 
 #include "opcodes.h"
 
@@ -138,6 +135,6 @@ void disasm(long pc, const char* end, FILE* f =stderr);
 inline void disasm(long pc, FILE* f =stderr) { disasm(pc, "\n", f); }
 void show(cpu_t* cpu, long pc, FILE* f =stderr);
 
-void start_time(int mhz);
+void start_time();
 double elapse_time();
 double simulated_time(long cycles);

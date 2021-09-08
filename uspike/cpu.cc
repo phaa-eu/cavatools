@@ -5,7 +5,9 @@
 #include <sys/syscall.h>
 #include <linux/futex.h>
 
+#include "options.h"
 #include "uspike.h"
+#include "mmu.h"
 #include "cpu.h"
 
 cpu_t* cpu_t::cpu_list =0;
@@ -175,7 +177,7 @@ long* cpu_t::ptr_pc()
   return (long*)&STATE.pc;
 }
 
-cpu_t::cpu_t() : caveat_mmu()
+cpu_t::cpu_t()
 {
   my_tid = gettid();
   spike_cpu = 0;
@@ -189,25 +191,27 @@ cpu_t::cpu_t() : caveat_mmu()
   } while (!__sync_bool_compare_and_swap(&num_threads, old_n, old_n+1));
 }
 
-cpu_t::cpu_t(cpu_t* from) : cpu_t()
+cpu_t::cpu_t(cpu_t* from, mmu_t* m) : cpu_t()
 {
-  processor_t* p = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
+  processor_t* p = new processor_t(conf_isa, "mu", conf_vec, 0, 0, false, stdout);
   memcpy(p->get_state(), from->spike()->get_state(), sizeof(state_t));
   spike_cpu = p;
+  caveat_mmu = m;
 }
 
 #include "elf_loader.h"
 
-cpu_t::cpu_t(int argc, const char* argv[], const char* envp[]) : cpu_t()
+cpu_t::cpu_t(int argc, const char* argv[], const char* envp[], mmu_t* m) : cpu_t()
 {
   long entry = load_elf_binary(argv[0], 1);
   code.init(low_bound, high_bound);
   long sp = initialize_stack(argc, argv, envp);
-  processor_t* p = new processor_t(conf.isa, "mu", conf.vec, 0, 0, false, stdout);
+  processor_t* p = new processor_t(conf_isa, "mu", conf_vec, 0, 0, false, stdout);
   STATE.prv = PRV_U;
   STATE.mstatus |= (MSTATUS_FS|MSTATUS_VS);
   STATE.vsstatus |= SSTATUS_FS;
   STATE.pc = entry;
   WRITE_REG(2, sp);
   spike_cpu = p;
+  caveat_mmu = m;
 }

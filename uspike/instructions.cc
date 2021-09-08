@@ -1,10 +1,13 @@
 /*
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
+#include <stdint.h>
 #include <stdio.h>
 
-#include "cpu.h"
+#include "options.h"
 #include "uspike.h"
+#include "mmu.h"
+#include "cpu.h"
 
 Insn_t decoder(int b, long pc)
 {
@@ -58,3 +61,23 @@ void disasm(long pc, const char* end, FILE* f)
   }
   fprintf(f, "%s", end);
 }
+
+
+
+void insnSpace_t::init(long lo, long hi)
+{
+  base=lo;
+  limit=hi;
+  int n = (hi-lo)/2;
+  predecoded=new Insn_t[n];
+  memset(predecoded, 0, n*sizeof(Insn_t));
+  // Predecode instruction code segment
+  long pc = lo;
+  while (pc < hi) {
+    Insn_t i = code.set(pc, decoder(code.image(pc), pc));
+    pc += i.compressed() ? 2 : 4;
+  }
+  substitute_cas(lo, hi);
+}
+
+#include "constants.h"
