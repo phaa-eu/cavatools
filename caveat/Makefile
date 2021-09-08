@@ -2,8 +2,8 @@ RVTOOLS := /opt/riscv-tools
 B := $(RVTOOLS)/riscv-isa-sim
 L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 
-#CXXFLAGS := -g -Ofast
-CXXFLAGS := -g -O0
+CXXFLAGS := -g -Ofast
+#CXXFLAGS := -g -O0 -DDEBUG
 LDFLAGS := -Wl,-Ttext=70000000
 
 install:  caveat

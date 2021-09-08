@@ -34,7 +34,10 @@ public:
   cpu_t();
   cpu_t(cpu_t* p, mmu_t* m);
   cpu_t(int argc, const char* argv[], const char* envp[], mmu_t* m);
-    
+  virtual cpu_t* newcore() { return new cpu_t(this, new mmu_t); }
+  virtual void before_syscall(long num) { }
+  virtual void after_syscall() { }
+  
   static class cpu_t* list() { return cpu_list; }
   class cpu_t* next() { return link; }
   static int threads() { return num_threads; }
@@ -42,6 +45,7 @@ public:
   void incr_count(long n);
   static long total_count() { return total_insns; }
   long tid() { return my_tid; }
+  void set_tid();
   static cpu_t* find(int tid);
   bool single_step();
   bool run_epoch(long how_many);

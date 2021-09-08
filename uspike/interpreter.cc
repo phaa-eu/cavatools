@@ -101,7 +101,7 @@ template<class T> bool cmpswap(long pc, cpu_t* cpu)
   return oldval == expect;
 }
 
-extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* cpu);
+extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* p);
 
 #define wpc(e)	pc=(e)
 #define wrd(e)	xpr[i.rd()]=(e)
@@ -139,7 +139,7 @@ bool cpu_t::run_epoch(long how_many)
   processor_t* p = spike();
   long* xpr = reg_file();
   long pc = read_pc();
-  long count = 0;
+  long insns = 0;
 #ifdef DEBUG
   long oldpc;
 #endif
@@ -148,7 +148,7 @@ bool cpu_t::run_epoch(long how_many)
 #ifdef DEBUG
     dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
     oldpc = pc;
-    cpu->debug.insert(cpu->count()+count+1, pc);
+    debug.insert(count()+insns+1, pc);
 #endif
 
     try {
@@ -161,13 +161,13 @@ bool cpu_t::run_epoch(long how_many)
 #ifdef DEBUG
     Insn_t i = code.at(oldpc);
     int rn = i.rd()==NOREG ? i.rs2() : i.rd();
-    cpu->debug.addval(i.rd(), cpu->read_reg(rn));
-    if (conf.show)
-      show(cpu, oldpc);
+    debug.addval(i.rd(), read_reg(rn));
+    if (conf_show)
+      show(this, oldpc);
 #endif
-  } while (++count < how_many);
+  } while (++insns < how_many);
   write_pc(pc);
-  incr_count(count);
+  incr_count(insns);
   return breakpoint;
 }
   

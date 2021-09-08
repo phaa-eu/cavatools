@@ -199,6 +199,11 @@ cpu_t::cpu_t(cpu_t* from, mmu_t* m) : cpu_t()
   caveat_mmu = m;
 }
 
+void cpu_t::set_tid()
+{
+  my_tid = gettid();
+}
+
 #include "elf_loader.h"
 
 cpu_t::cpu_t(int argc, const char* argv[], const char* envp[], mmu_t* m) : cpu_t()

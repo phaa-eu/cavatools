@@ -54,6 +54,7 @@ static int thread_interpreter(void* arg)
   newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
   newcpu->write_reg(10, 0);	// indicating we are child thread
   newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
+  newcpu->set_tid();
   interpreter(newcpu);
   return 0;
 }
@@ -99,48 +100,30 @@ bool cpu_t::proxy_ecall()
     abort();
   }
   long sysnum = rv_to_host[rvnum].sysnum;
-  long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
   const char* name = rv_to_host[rvnum].name;
-  ecall_count++;
-  if (conf_ecall)
-    fprintf(stderr, "\n%8lx: ecalls=%ld %s:%ld(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)",
-	    read_pc(), ecall_count, name, sysnum, a0, a1, a2, a3, a4, a5);
-  long retval = 0;
-  switch (sysnum) {
-  case -1:
-    fprintf(stderr, "No mapping for system call %s to host system\n", name);
-    abort();
-  case -2:
-    fprintf(stderr, "RISCV-V system call %s not supported on host system\n", name);
-    abort();
-
-#if 0
-  case 262:			// newfstatat
-    sysnum = 4;			// -> stat
-    goto default_case;
-#endif
-
-  case SYS_exit:
-  case SYS_exit_group:
-    exit(a0);
-
-  case SYS_clone:
-    {
-      char* interp_stack = new char[THREAD_STACK_SIZE];
-      interp_stack += THREAD_STACK_SIZE; // grows down
-      long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
-      cpu_t* newcpu = new cpu_t(this, new mmu_t());
-      retval = clone(thread_interpreter, interp_stack, flags, newcpu, (void*)a2, (void*)a4);
+  if (sysnum < 0) {
+    switch (sysnum) {
+    case -1:
+      die("No mapping for system call %s to host system", name);
+    case -2:
+      die("RISCV-V system call %s not supported on host system", name);
     }
-    break;
-    
-  default:
-  default_case:
-    retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
-    break;
+    die("Unknown negative syscall number %ld", sysnum);
   }
+  long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
+  ecall_count++;
+  long retval = 0;
+  before_syscall(sysnum);
+  if (sysnum == SYS_clone) {
+    char* interp_stack = new char[THREAD_STACK_SIZE];
+    interp_stack += THREAD_STACK_SIZE; // grows down
+    long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
+    cpu_t* newcpu = newcore();
+    retval = clone(thread_interpreter, interp_stack, flags, newcpu, (void*)a2, (void*)a4);
+  }
+  else
+    retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
+  after_syscall();
   write_reg(10, retval);
-  if (conf_ecall)
-    fprintf(stderr, "->0x%lx", read_reg(10));
   return false;
 }
