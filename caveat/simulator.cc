@@ -25,6 +25,8 @@ public:
 };
 
 class core_t : public cpu_t {
+  static volatile long global_time;
+  long local_time;
 public:
   core_t(core_t* p, mem_t* m);
   core_t(int argc, const char* argv[], const char* envp[], mem_t* m);
@@ -69,14 +71,14 @@ void status_report();
 
 void exitfunc()
 {
-  fprintf(stderr, "\n\n");
+  fprintf(stderr, "\n--------\n");
   for (core_t* p=core_t::list(); p; p=p->next()) {
-    mem_t* mm = (mem_t*)p->mmu();
     fprintf(stderr, "Core [%ld] ", p->tid());
     p->mem()->print();
   }
-  fprintf(stderr, "\n\n");
+  fprintf(stderr, "\n");
   status_report();
+  fprintf(stderr, "\n");
 }
 
 #ifdef DEBUG

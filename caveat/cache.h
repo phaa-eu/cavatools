@@ -6,14 +6,6 @@
 #ifndef CACHE_T
 #define CACHE_T
 
-
-struct tag_t {			// 16 byte object 
-  long     addr         ;	// cache line tag 
-  unsigned dirty    :  1;	// line is modified 
-  unsigned prefetch :  1;	// line was prefetched 
-  long     ready    : 62;	// time when line available 
-};
-
 struct lru_fsm_t {
   unsigned short way;		// cache way to look up 
   unsigned short next_state;	// number if hit 
@@ -28,7 +20,7 @@ class cache_t {		        // cache descriptor
   long lg_line, lg_rows;	// specified in log-base-2 units 
   long tag_mask;		// = ~((1<<lg_line)-1) 
   long row_mask;		// row index mask = ((1<<lg_rows)-1) << dc->lg_line 
-  tag_t** tags;			// cache tag array [ways][rows]
+  long** tags;			// cache tag array [ways][rows]
   unsigned short* states;	// LRU state vector [rows] 
   long* evicted;		// tag of evicted line, 0 if clean, NULL if unwritable 
   long penalty;			// cycles to refill line 
@@ -37,7 +29,7 @@ class cache_t {		        // cache descriptor
   
  public:
   cache_t(const char* nam, int miss, int w, int lin, int row, bool writeable);
-  long lookup(long addr, int write =false);
+  bool lookup(long addr, bool write =false);
   long refs() { return _refs; }
   long misses() { return _misses; }
   long updates() { return _updates; }
@@ -48,28 +40,33 @@ class cache_t {		        // cache descriptor
   void print(FILE* f =stderr);
 };
 
-/* returns cycle when line available (may be in past)
-   cache miss if return value == when_miss_arrive */
-#define when_miss_arrive 10
-inline long cache_t::lookup(long addr, int write)
+inline bool cache_t::lookup(long addr, bool write)
 {
   _refs++;
   addr >>= lg_line;		// make proper tag (ok to include index) 
   int index = addr & row_mask;
   unsigned short* state = states + index;
-  
   struct lru_fsm_t* p = fsm + *state; // recall fsm points to [-1] 
   struct lru_fsm_t* end = p + ways;	 // hence +ways = last entry 
-  struct tag_t* tag;
+  struct long* tag;
+  bool missed = false;
   do {
     p++;
     tag = tags[p->way] + index;
     //    tag = tags + index*ways + p->way;
-    if (addr == tag->addr)
+    if (addr == *tag)
       goto cache_hit;
   } while (p < end);
-  
+  missed = true;
+  *tag = addr;
   _misses++;
+ cache_hit:
+  *state = p->next_state;	// already multiplied by ways
+  return missed;
+}
+  
+  
+#if 0
   if (tag->dirty) {
     *evicted = tag->addr;	// will SEGV if not cache not writable 
     _evictions++;		// can conveniently point to your location 
@@ -81,13 +78,14 @@ inline long cache_t::lookup(long addr, int write)
   tag->ready = when_miss_arrive;
   
  cache_hit:
-  *state = p->next_state;	// already multiplied by ways 
+  *state = p->next_state;	// already multiplied by ways
   if (write) {
     tag->dirty = 1;
     _updates++;
   }
   return tag->ready;
 }
+#endif
 
 
 void flush_cache();

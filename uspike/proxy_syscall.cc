@@ -91,8 +91,9 @@ static struct syscall_map_t rv_to_host[] = {
 #include "ecall_nums.h"
 };
 
-bool cpu_t::proxy_ecall()
+bool cpu_t::proxy_ecall(long count)
 {
+  incr_count(count);		// make _count correct for inspection/exit
   static long ecall_count;
   long rvnum = read_reg(17);
   if (rvnum<0 || rvnum>HIGHEST_ECALL_NUM || !rv_to_host[rvnum].name) {
@@ -101,29 +102,32 @@ bool cpu_t::proxy_ecall()
   }
   long sysnum = rv_to_host[rvnum].sysnum;
   const char* name = rv_to_host[rvnum].name;
-  if (sysnum < 0) {
-    switch (sysnum) {
-    case -1:
-      die("No mapping for system call %s to host system", name);
-    case -2:
-      die("RISCV-V system call %s not supported on host system", name);
-    }
-    die("Unknown negative syscall number %ld", sysnum);
-  }
   long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
   ecall_count++;
   long retval = 0;
   before_syscall(sysnum);
-  if (sysnum == SYS_clone) {
-    char* interp_stack = new char[THREAD_STACK_SIZE];
-    interp_stack += THREAD_STACK_SIZE; // grows down
-    long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
-    cpu_t* newcpu = newcore();
-    retval = clone(thread_interpreter, interp_stack, flags, newcpu, (void*)a2, (void*)a4);
-  }
-  else
+  switch (sysnum) {
+  case -1:
+    die("No mapping for system call %s to host system", name);
+  case -2:
+    die("RISCV-V system call %s not supported on host system", name);
+  case SYS_exit:
+  case SYS_exit_group:
+    exit(a0);
+  case SYS_clone:
+    {
+      char* interp_stack = new char[THREAD_STACK_SIZE];
+      interp_stack += THREAD_STACK_SIZE; // grows down
+      long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
+      cpu_t* newcpu = newcore();
+      retval = clone(thread_interpreter, interp_stack, flags, newcpu, (void*)a2, (void*)a4);
+    }
+    break;
+  default:
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
+  }
   after_syscall();
   write_reg(10, retval);
+  incr_count(-count);		// put back old value
   return false;
 }

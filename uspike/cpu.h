@@ -58,8 +58,10 @@ public:
   long read_pc();
   void write_pc(long value);
   long* ptr_pc();
-  bool proxy_ecall();
-  
+  bool proxy_ecall(long count);
+
+  template<class T> bool cas(long pc);
+
 #ifdef DEBUG
   Debug_t debug;
 #endif

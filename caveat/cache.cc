@@ -31,9 +31,9 @@ cache_t::cache_t(const char* nam, int miss, int w, int lin, int row, bool writea
   tag_mask = ~(line-1);
   //  row_mask =  (rows-1) << lg_line;
   row_mask =  (rows-1);
-  tags = new tag_t*[ways];
+  tags = new long*[ways];
   for (int k=0; k<ways; k++)
-    tags[k] = new tag_t[rows];
+    tags[k] = new long[rows];
   states = new unsigned short[rows];
   flush();
   static long place =0;
@@ -46,7 +46,7 @@ cache_t::cache_t(const char* nam, int miss, int w, int lin, int row, bool writea
 void cache_t::flush()
 {
   for (int k=0; k<ways; k++)
-    memset((char*)tags[k], 0, rows*sizeof(struct tag_t));
+    memset((char*)tags[k], 0, rows*sizeof(long));
   memset((char*)states, 0, rows*sizeof(unsigned short));
 }
 
@@ -67,10 +67,12 @@ void cache_t::print(FILE* f)
   fprintf(f, "  %ld ways set associativity\n", ways);
   fprintf(f, "  %ld cycles miss penalty\n", penalty);
   fprintf(f, "  %ld references\n", _refs);
+  fprintf(f, "  %ld misses (%5.3f%%)\n", _misses, 100.0*_misses/_refs);
+#if 0
   if (evicted)
     fprintf(f, "  %ld stores (%5.3f%%)\n", _updates, 100.0*_updates/_refs);
-  fprintf(f, "  %ld misses (%5.3f%%)\n", _misses, 100.0*_misses/_refs);
   if (evicted)
     fprintf(f, "  %ld writebacks (%5.3f%%)\n", _evictions, 100.0*_evictions/_refs);
+#endif
 }
   

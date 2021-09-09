@@ -89,15 +89,15 @@ void show(cpu_t* cpu, long pc, FILE* f)
   disasm(pc);
 }
 
-template<class T> bool cmpswap(long pc, cpu_t* cpu)
+template<class T> bool cpu_t::cas(long pc)
 {
   Insn_t i = code.at(pc);
-  T* ptr = (T*)cpu->read_reg(i.rs1());
-  T expect  = cpu->read_reg(i.rs2());
-  T replace = cpu->read_reg(i.rs3());
+  T* ptr = (T*)read_reg(i.rs1());
+  T expect  = read_reg(i.rs2());
+  T replace = read_reg(i.rs3());
   T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
-  cpu->write_reg(code.at(pc+4).rs1(), oldval);
-  if (oldval == expect)  cpu->write_reg(i.rd(), 0);	/* sc was successful */
+  write_reg(code.at(pc+4).rs1(), oldval);
+  if (oldval == expect)  write_reg(i.rd(), 0);	/* sc was successful */
   return oldval == expect;
 }
 
@@ -108,28 +108,27 @@ extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* p);
 #define r1	xpr[i.rs1()]
 #define r2	xpr[i.rs2()]
 #define imm	i.immed()
-
-static inline long one_instruction(long pc, Insn_t i, long xpr[], cpu_t* cpu)
-{
-  switch (i.opcode()) {
-#define MMU  (*cpu->mmu())
-#include "fastops.h"
-#undef MMU
-  default:
-    pc = golden[i.opcode()](pc, *cpu->mmu(), cpu->spike());
-    break;
-  } // switch (i.opcode())
-  xpr[0] = 0;
-  return pc;
-}
+#define MMU	(*mmu())
 
 bool cpu_t::single_step()
 {
-  try {
-    write_pc(one_instruction(read_pc(), code.at(read_pc()), reg_file(), this));
-  } catch (trap_breakpoint& e) {
+  processor_t* p = spike();
+  long* xpr = reg_file();
+  long pc = read_pc();
+  Insn_t i = code.at(pc);
+  long insns = 0;
+  switch (i.opcode()) {
+#include "fastops.h"
+  default:
+    try {
+      pc = golden[i.opcode()](pc, *mmu(), spike());
+    } catch (trap_breakpoint& e) {
+      return true;
+    }
     return false;
-  }
+  } // switch (i.opcode())
+  xpr[0] = 0;
+  write_pc(pc);
   incr_count(1);
   return true;
 }
@@ -143,23 +142,27 @@ bool cpu_t::run_epoch(long how_many)
 #ifdef DEBUG
   long oldpc;
 #endif
-  bool breakpoint = false;
   do {
 #ifdef DEBUG
     dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
     oldpc = pc;
     debug.insert(count()+insns+1, pc);
 #endif
-
-    try {
-      pc = one_instruction(pc, code.at(pc), xpr, this);
-    } catch (trap_breakpoint& e) {
-      breakpoint = true;
-      break;
-    }
-    
+    Insn_t i = code.at(pc);
+    switch (i.opcode()) {
+#include "fastops.h"
+    default:
+      try {
+	pc = golden[i.opcode()](pc, *mmu(), spike());
+      } catch (trap_breakpoint& e) {
+	write_pc(pc);
+	incr_count(insns);
+	return true;
+      }
+    } // switch (i.opcode())
+    xpr[0] = 0;
 #ifdef DEBUG
-    Insn_t i = code.at(oldpc);
+    i = code.at(oldpc);
     int rn = i.rd()==NOREG ? i.rs2() : i.rd();
     debug.addval(i.rd(), read_reg(rn));
     if (conf_show)
@@ -168,7 +171,7 @@ bool cpu_t::run_epoch(long how_many)
   } while (++insns < how_many);
   write_pc(pc);
   incr_count(insns);
-  return breakpoint;
+  return false;
 }
   
 
@@ -180,7 +183,8 @@ void interpreter(cpu_t* cpu)
     status_report();
   }
 }
-			  
+
+#undef MMU
 long I_ZERO(long pc, mmu_t& MMU, cpu_t* cpu)    { die("I_ZERO should never be dispatched!"); }
 long I_ILLEGAL(long pc, mmu_t& MMU, cpu_t* cpu) { die("I_ILLEGAL at 0x%lx", pc); }
 long I_UNKNOWN(long pc, mmu_t& MMU, cpu_t* cpu) { die("I_UNKNOWN at 0x%lx", pc); }
