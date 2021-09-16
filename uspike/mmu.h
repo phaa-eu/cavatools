@@ -5,82 +5,54 @@
 #define MMU_H
 
 class mmu_t {
-  virtual long load_model( long a, int b) { return a; }
-  virtual long store_model(long a, int b) { return a; }
-  virtual void amo_model(  long a, int b) { }
-  
-#define load_func(type, prefix, len)				\
-  inline type##_t prefix##_##type(long addr, bool boo =false) {	\
-  return *(type##_t*)load_model(addr, len);			\
-  }
-#define store_func(type, prefix, len)				\
-  inline void prefix##_##type(long addr, type##_t val) {	\
-    *(type##_t*)store_model(addr, len) = val;			\
-  }
-  
-#define amo_func(type, len)					\
-  template<typename op>	type##_t amo_##type(long addr, op f) {	\
-    type##_t lhs, *ptr = (type##_t*)addr;			\
-    do lhs = *ptr;						\
-    while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));	\
-    amo_model(addr, len);					\
-    return lhs;							\
-  }
+  virtual long load_model( long a, long pc) { return a; }
+  virtual long store_model(long a, long pc) { return a; }
+  virtual void amo_model(  long a, long pc) { }
   
  public:
   mmu_t() { }
+  virtual long jump_model(long npc, long pc) { return npc;} 
+
+  uint8_t  load_uint8( long a, long pc) { return *(uint8_t* )load_model(a, pc); }
+  uint16_t load_uint16(long a, long pc) { return *(uint16_t*)load_model(a, pc); }
+  uint32_t load_uint32(long a, long pc) { return *(uint32_t*)load_model(a, pc); }
+  uint64_t load_uint64(long a, long pc) { return *(uint64_t*)load_model(a, pc); }
+
+  int8_t  load_int8( long a, long pc) { return *(int8_t* )load_model(a, pc); }
+  int16_t load_int16(long a, long pc) { return *(int16_t*)load_model(a, pc); }
+  int32_t load_int32(long a, long pc) { return *(int32_t*)load_model(a, pc); }
+  int64_t load_int64(long a, long pc) { return *(int64_t*)load_model(a, pc); }
+
+  float  load_fp32(long a, long pc) { return ( float)load_int32(a, pc); }
+  double load_fp64(long a, long pc) { return (double)load_int64(a, pc); }
   
-  load_func(uint8,  load, 1);
-  load_func(uint16, load, 2);
-  load_func(uint32, load, 4);
-  load_func(uint64, load, 8);
-
-  load_func(int8,  load, 1);
-  load_func(int16, load, 2);
-  load_func(int32, load, 4);
-  load_func(int64, load, 8);
-
-  float  load_fp32(long addr) { return ( float)load_int32(addr); }
-  double load_fp64(long addr) { return (double)load_int64(addr); }
-
-  store_func(uint8,  store, 1);
-  store_func(uint16, store, 2);
-  store_func(uint32, store, 4);
-  store_func(uint64, store, 8);
-
-  store_func(int8,  store, 1);
-  store_func(int16, store, 2);
-  store_func(int32, store, 4);
-  store_func(int64, store, 8);
+  void store_uint8( long a, long pc, uint8_t  v) { *(uint8_t* )store_model(a, pc)=v; }
+  void store_uint16(long a, long pc, uint16_t v) { *(uint16_t*)store_model(a, pc)=v; }
+  void store_uint32(long a, long pc, uint32_t v) { *(uint32_t*)store_model(a, pc)=v; }
+  void store_uint64(long a, long pc, uint64_t v) { *(uint64_t*)store_model(a, pc)=v; }
   
-  void store_fp32(long addr, float  v) { union { float  f; int  i; } x; x.f=v; store_int32(addr, x.i); }
-  void store_fp64(long addr, double v) { union { double d; long l; } x; x.d=v; store_int64(addr, x.l); }
-
-  load_func(uint8,  guest_load, 1);
-  load_func(uint16, guest_load, 2);
-  load_func(uint32, guest_load, 4);
-  load_func(uint64, guest_load, 8);
-
-  load_func(int8,  guest_load, 1);
-  load_func(int16, guest_load, 2);
-  load_func(int32, guest_load, 4);
-  load_func(int64, guest_load, 8);
+  void store_int8( long a, long pc, int8_t  v) { *(int8_t* )store_model(a, pc)=v; }
+  void store_int16(long a, long pc, int16_t v) { *(int16_t*)store_model(a, pc)=v; }
+  void store_int32(long a, long pc, int32_t v) { *(int32_t*)store_model(a, pc)=v; }
+  void store_int64(long a, long pc, int64_t v) { *(int64_t*)store_model(a, pc)=v; }
   
-  load_func(uint16, guest_load_x, 2);
-  load_func(uint32, guest_load_x, 4);
+  void store_fp32(long a, long pc, float  v) { union { float  f; int  i; } x; x.f=v; store_int32(a, pc, x.i); }
+  void store_fp64(long a, long pc, double v) { union { double d; long l; } x; x.d=v; store_int64(a, pc, x.l); }
 
-  store_func(uint8,  guest_store, 1);
-  store_func(uint16, guest_store, 2);
-  store_func(uint32, guest_store, 4);
-  store_func(uint64, guest_store, 8);
-
-  store_func(int8,  guest_store, 1);
-  store_func(int16, guest_store, 2);
-  store_func(int32, guest_store, 4);
-  store_func(int64, guest_store, 8);
-
-  amo_func(uint32, 4);
-  amo_func(uint64, 8);
+  template<typename op>	uint32_t amo_uint32(long a, long pc, op f) {
+    uint32_t lhs, *ptr = (uint32_t*)a;
+    do lhs = *ptr;
+    while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
+    amo_model(a, pc);
+    return lhs;
+  }
+  template<typename op>	uint64_t amo_uint64(long a, long pc, op f) {
+    uint64_t lhs, *ptr = (uint64_t*)a;
+    do lhs = *ptr;
+    while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
+    amo_model(a, pc);
+    return lhs;
+  }
 
   void acquire_load_reservation(long a) { }
   void yield_load_reservation() { }
@@ -88,5 +60,34 @@ class mmu_t {
   void flush_icache() { }
   void flush_tlb() { }
 };
+
+#define load_uint8( a)  load_uint8( a, pc)
+#define load_uint16(a)  load_uint16(a, pc)
+#define load_uint32(a)  load_uint32(a, pc)
+#define load_uint64(a)  load_uint64(a, pc)
+
+#define load_int8( a)  load_int8( a, pc)
+#define load_int16(a)  load_int16(a, pc)
+#define load_int32(a, ...)  load_int32(a, pc)
+#define load_int64(a, ...)  load_int64(a, pc)
+
+#define load_fp32(a)  load_fp32(a, pc)
+#define load_fp64(a)  load_fp64(a, pc)
+
+#define store_uint8( a, v)  store_uint8( a, pc, v)
+#define store_uint16(a, v)  store_uint16(a, pc, v)
+#define store_uint32(a, v)  store_uint32(a, pc, v)
+#define store_uint64(a, v)  store_uint64(a, pc, v)
+
+#define store_int8( a, v)  store_int8( a, pc, v)
+#define store_int16(a, v)  store_int16(a, pc, v)
+#define store_int32(a, v)  store_int32(a, pc, v)
+#define store_int64(a, v)  store_int64(a, pc, v)
+
+#define store_fp32(a, v)  store_fp32(a, pc, v)
+#define store_fp64(a, v)  store_fp64(a, pc, v)
+
+#define amo_uint32(a, f)  amo_uint32(a, pc, f)
+#define amo_uint64(a, f)  amo_uint64(a, pc, f)
 
 #endif

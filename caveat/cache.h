@@ -23,7 +23,7 @@ class cache_t {		        // cache descriptor
   long** tags;			// cache tag array [ways][rows]
   unsigned short* states;	// LRU state vector [rows] 
   long* evicted;		// tag of evicted line, 0 if clean, NULL if unwritable 
-  long penalty;			// cycles to refill line 
+  long _penalty;		// cycles to refill line 
   long _refs, _misses;		// count number of 
   long _updates, _evictions;	// if writeable
   
@@ -34,6 +34,7 @@ class cache_t {		        // cache descriptor
   long misses() { return _misses; }
   long updates() { return _updates; }
   long evictions() { return _evictions; }
+  long penalty() { return _penalty; }
   
   void flush();
   void show();

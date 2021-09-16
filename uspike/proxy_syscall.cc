@@ -91,7 +91,7 @@ static struct syscall_map_t rv_to_host[] = {
 #include "ecall_nums.h"
 };
 
-bool cpu_t::proxy_ecall(long count)
+bool cpu_t::proxy_syscall(long count)
 {
   incr_count(count);		// make _count correct for inspection/exit
   static long ecall_count;
@@ -105,7 +105,6 @@ bool cpu_t::proxy_ecall(long count)
   long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
   ecall_count++;
   long retval = 0;
-  before_syscall(sysnum);
   switch (sysnum) {
   case -1:
     die("No mapping for system call %s to host system", name);
@@ -126,7 +125,6 @@ bool cpu_t::proxy_ecall(long count)
   default:
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
   }
-  after_syscall();
   write_reg(10, retval);
   incr_count(-count);		// put back old value
   return false;

@@ -103,12 +103,12 @@ template<class T> bool cpu_t::cas(long pc)
 
 extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* p);
 
-#define wpc(e)	pc=(e)
 #define wrd(e)	xpr[i.rd()]=(e)
 #define r1	xpr[i.rs1()]
 #define r2	xpr[i.rs2()]
 #define imm	i.immed()
 #define MMU	(*mmu())
+#define wpc(npc)  pc=MMU.jump_model(npc, pc)
 
 bool cpu_t::single_step()
 {

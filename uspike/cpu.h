@@ -35,8 +35,8 @@ public:
   cpu_t(cpu_t* p, mmu_t* m);
   cpu_t(int argc, const char* argv[], const char* envp[], mmu_t* m);
   virtual cpu_t* newcore() { return new cpu_t(this, new mmu_t); }
-  virtual void before_syscall(long num) { }
-  virtual void after_syscall() { }
+  bool proxy_syscall(long insns);
+  virtual bool proxy_ecall(long insns) { return proxy_syscall(insns); }
   
   static class cpu_t* list() { return cpu_list; }
   class cpu_t* next() { return link; }
@@ -58,7 +58,6 @@ public:
   long read_pc();
   void write_pc(long value);
   long* ptr_pc();
-  bool proxy_ecall(long count);
 
   template<class T> bool cas(long pc);
 

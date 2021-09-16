@@ -13,7 +13,7 @@
 cache_t::cache_t(const char* nam, int miss, int w, int lin, int row, bool writeable)
 {
   name = nam;
-  penalty = miss;
+  _penalty = miss;
   ways = w;
   switch (ways) {
   case 1:  fsm = cache_fsm_1way;  break;
@@ -65,7 +65,7 @@ void cache_t::print(FILE* f)
   else                         fprintf(f, "  %ld B capacity\n", size);
   fprintf(f, "  %ld bytes line size\n", line);
   fprintf(f, "  %ld ways set associativity\n", ways);
-  fprintf(f, "  %ld cycles miss penalty\n", penalty);
+  fprintf(f, "  %ld cycles miss penalty\n", _penalty);
   fprintf(f, "  %ld references\n", _refs);
   fprintf(f, "  %ld misses (%5.3f%%)\n", _misses, 100.0*_misses/_refs);
 #if 0

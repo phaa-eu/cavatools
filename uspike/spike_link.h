@@ -7,11 +7,17 @@
 #include "processor.h"
 
 #undef MMU
+#undef set_pc
 #undef set_pc_and_serialize
 #undef serialize
 #undef validate_csr
 
 #define xlen 64
+
+#define set_pc(x)				\
+  do { p->check_pc_alignment(x);		\
+    npc = MMU.jump_model(sext_xlen(x), pc);	\
+  } while(0)
 
 #define set_pc_and_serialize(x) STATE.pc = (x) & p->pc_alignment_mask()
 
