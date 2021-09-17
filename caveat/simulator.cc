@@ -2,6 +2,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <signal.h>
+#include <limits.h>
+#include <sys/syscall.h>
+#include <linux/futex.h>
 
 #include "cache.h"
 #include "../uspike/options.h"
@@ -16,8 +19,8 @@ option<int> conf_Dline("dline",	6,	"Data cache log-base-2 line size");
 option<int> conf_Drows("drows",	6,	"Data cache log-base-2 number of rows");
 
 class mem_t : public mmu_t {
-  cache_t dc;
 public:
+  long local_time;
   long begin_pc;		// of sequence before current event
   mem_t();
   void timing_model(long event_pc);
@@ -26,27 +29,31 @@ public:
   long store_model(long a,  long pc) { timing_model(pc); if (!dc.lookup(a, true)) local_time += dc.penalty(); return a; }
   void amo_model(  long a,  long pc) { timing_model(pc); if (!dc.lookup(a, true)) local_time += dc.penalty();           }
   cache_t* dcache() { return &dc; }
+  long clock() { return local_time; }
   void print();
-  long local_time;
+private:
+  cache_t dc;
 };
 
-class core_t : public cpu_t {
-  mem_t derived_mmu;
+class core_t : public mem_t, public cpu_t {
   static volatile long global_time;
 public:
   core_t(core_t* p);
   core_t(int argc, const char* argv[], const char* envp[]);
   core_t* newcore() { return new core_t(this); }
-  bool proxy_ecall(long insns);
+  void proxy_syscall(long sysnum);
   
   static core_t* list() { return (core_t*)cpu_t::list(); }
   core_t* next() { return (core_t*)cpu_t::next(); }
-  mem_t* mem() { return &derived_mmu; }
+  mem_t* mem() { return static_cast<mem_t*>(this); }
   cache_t* dcache() { return mem()->dcache(); }
 
   long system_clock() { return global_time; }
-  long local_clock() { return mem()->local_time; }
+  long local_clock() { return mem()->clock(); }
+  void update_time();
 };
+
+volatile long core_t::global_time;
 
 inline void mem_t::timing_model(long event_pc)
 {
@@ -58,6 +65,7 @@ inline void mem_t::timing_model(long event_pc)
 
 mem_t::mem_t() : dc("Data cache", conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true)
 {
+  local_time = 0;
 }
 
 void mem_t::print()
@@ -65,19 +73,54 @@ void mem_t::print()
   dc.print();
 }
 
-core_t::core_t(core_t* p) : cpu_t(p, &derived_mmu)
+core_t::core_t(core_t* p) : cpu_t(p, mem())
 {
+  local_time = p->local_time;
+  begin_pc = p->read_pc();
 }
 
-core_t::core_t(int argc, const char* argv[], const char* envp[]) : cpu_t(argc, argv, envp, &derived_mmu)
+core_t::core_t(int argc, const char* argv[], const char* envp[]) : cpu_t(argc, argv, envp, mem())
 {
-  derived_mmu.begin_pc = read_pc();
+  begin_pc = read_pc();
 }
 
-bool core_t::proxy_ecall(long insns)
+
+#define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
+
+#define SYSCALL_OVERHEAD 100
+void core_t::proxy_syscall(long sysnum)
 {
-  return proxy_syscall(insns);
+  /*
+  update_time();
+  long t = global_time;
+  fprintf(stderr, "local=%ld %ld=global\n", local_time, t);
+  while (t < local_time) {
+    futex((int*)&global_time, FUTEX_WAIT, (int)t);
+    t = global_time;
+    fprintf(stderr, "local=%ld %ld=global\n", local_time, t);
+  }
+  local_time = LONG_MAX;
+  */
+  cpu_t::proxy_syscall(sysnum);
+  /*
+  global_time += SYSCALL_OVERHEAD;
+  local_time = global_time;
+  update_time();
+  futex((int*)&global_time, FUTEX_WAKE, INT_MAX);
+  */
 }
+
+void core_t::update_time()
+{
+  long last_local = LONG_MAX;
+  for (core_t* p=core_t::list(); p; p=p->next()) {
+    if (p->local_time < last_local)
+      last_local = p->local_time;
+  }
+  dieif(last_local<global_time, "local %ld < %ld global", last_local, global_time);
+  global_time = last_local;
+}
+
 
 void start_time();
 double elapse_time();

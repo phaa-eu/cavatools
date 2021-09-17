@@ -30,13 +30,15 @@ class cpu_t {
   static long total_insns;	// instructions executed all threads
   static int num_threads;
   int my_tid;			// my Linux thread number
+  volatile int clone_lock;	// 0=free, 1=locked
+  friend int thread_interpreter(void* arg);
 public:
   cpu_t();
   cpu_t(cpu_t* p, mmu_t* m);
   cpu_t(int argc, const char* argv[], const char* envp[], mmu_t* m);
   virtual cpu_t* newcore() { return new cpu_t(this, new mmu_t); }
-  bool proxy_syscall(long insns);
-  virtual bool proxy_ecall(long insns) { return proxy_syscall(insns); }
+  virtual void proxy_syscall(long sysnum);
+  void proxy_ecall(long insns);
   
   static class cpu_t* list() { return cpu_list; }
   class cpu_t* next() { return link; }

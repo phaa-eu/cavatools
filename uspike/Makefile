@@ -1,7 +1,7 @@
 #  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 
-#MINUS_O := -Ofast
-MINUS_O := -O0 -DDEBUG
+MINUS_O := -Ofast
+#MINUS_O := -O0 -DDEBUG
 
 # Paths to riscv-tools build directories on local system
 RVTOOLS := /opt/riscv-tools

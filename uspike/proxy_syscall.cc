@@ -47,18 +47,6 @@ double elapse_time()
   return seconds;
 }
 
-static int thread_interpreter(void* arg)
-{
-  cpu_t* newcpu = (class cpu_t*)arg;
-  newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
-  newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
-  newcpu->write_reg(10, 0);	// indicating we are child thread
-  newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
-  newcpu->set_tid();
-  interpreter(newcpu);
-  return 0;
-}
-
 static __inline long asm_syscall(long sysnum, long a0, long a1, long a2, long a3, long a4, long a5)
 {
   long retval;
@@ -91,10 +79,9 @@ static struct syscall_map_t rv_to_host[] = {
 #include "ecall_nums.h"
 };
 
-bool cpu_t::proxy_syscall(long count)
+void cpu_t::proxy_ecall(long insns)
 {
-  incr_count(count);		// make _count correct for inspection/exit
-  static long ecall_count;
+  incr_count(insns);		// make _count correct for inspection/exit
   long rvnum = read_reg(17);
   if (rvnum<0 || rvnum>HIGHEST_ECALL_NUM || !rv_to_host[rvnum].name) {
     fprintf(stderr, "Illegal ecall number %ld\n", rvnum);
@@ -102,14 +89,44 @@ bool cpu_t::proxy_syscall(long count)
   }
   long sysnum = rv_to_host[rvnum].sysnum;
   const char* name = rv_to_host[rvnum].name;
+  if (sysnum < 0) {
+    switch (sysnum) {
+    case -1:
+      die("No mapping for system call %s to host system", name);
+    case -2:
+      die("RISCV-V system call %s not supported on host system", name);
+    default:
+      abort();
+    }
+  }
+  if (conf_ecall)
+    fprintf(stderr, "Ecall %s\n", name);
+  proxy_syscall(sysnum);
+  incr_count(-insns);		// put back old value
+}
+
+#define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
+
+int thread_interpreter(void* arg)
+{
+  cpu_t* oldcpu = (cpu_t*)arg;
+  cpu_t* newcpu = oldcpu->newcore();
+  newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
+  newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
+  newcpu->write_reg(10, 0);	// indicating we are child thread
+  newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
+  newcpu->set_tid();
+  oldcpu->clone_lock = 0;
+  futex(&oldcpu->clone_lock, FUTEX_WAKE, 1);
+  interpreter(newcpu);
+  return 0;
+}
+
+void cpu_t::proxy_syscall(long sysnum)
+{
   long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
-  ecall_count++;
-  long retval = 0;
+  long retval=0;
   switch (sysnum) {
-  case -1:
-    die("No mapping for system call %s to host system", name);
-  case -2:
-    die("RISCV-V system call %s not supported on host system", name);
   case SYS_exit:
   case SYS_exit_group:
     exit(a0);
@@ -118,14 +135,14 @@ bool cpu_t::proxy_syscall(long count)
       char* interp_stack = new char[THREAD_STACK_SIZE];
       interp_stack += THREAD_STACK_SIZE; // grows down
       long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
-      cpu_t* newcpu = newcore();
-      retval = clone(thread_interpreter, interp_stack, flags, newcpu, (void*)a2, (void*)a4);
+      clone_lock = 1;		       // private mutex
+      retval = clone(thread_interpreter, interp_stack, flags, this, (void*)a2, (void*)a4);
+      while (clone_lock)
+	futex(&clone_lock, FUTEX_WAIT, 1);
     }
     break;
   default:
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
   }
   write_reg(10, retval);
-  incr_count(-count);		// put back old value
-  return false;
 }
