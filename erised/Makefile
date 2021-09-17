@@ -1,25 +1,26 @@
-# Path where things should be installed
-R = $(HOME)
+#
+#  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+#
+#  Environment variables RVTOOLS and CAVA must be defined
 
-CFLAGS   = -I$R/include/cava -g -O3
-//CFLAGS   = -I$R/include/cava -g -O0
-LIBS     = $R/lib/libcava.a -lrt -lpthread -lncurses
-LDFLAGS  = -Wl,-Ttext=70000000
+B := $(RVTOOLS)/riscv-isa-sim
+L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
+I := $(CAVA)/include/cava
+
+CXXFLAGS := -I$I -g -O0
+
+LIBS := $(CAVA)/lib/libcava.a $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl -lrt -lncurses
+LDFLAGS := -Wl,-Ttext=70000000
 
 # Dependent headers
-hdrs := caveat.h opcodes.h insn.h core.h
-
-# Text substitutions
-hdrs := $(addprefix $R/include/cava/,$(hdrs))
+#hdrs := I$/options.h $I/uspike.h $I/perf.h
 
 
 erised:  erised.o $(LIBS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-erised.o:  $(hdrs)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 install:  erised
-	-cp $^ $R/bin/
+	-cp $^ $(CAVA)/bin
 
 .PHONY:
 clean:

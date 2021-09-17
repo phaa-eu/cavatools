@@ -112,17 +112,20 @@ static inline bool find_symbol(const char* name, long &begin, long &end) { retur
 static inline const char* find_pc(long pc, long &offset) { return elf_find_pc(pc, &offset); }
 
 class insnSpace_t {
-  long base;
-  long limit;
+  long _base;
+  long _limit;
   class Insn_t* predecoded;
 public:  
-  insnSpace_t() { base=limit=0; predecoded=0; }
+  insnSpace_t() { _base=_limit=0; predecoded=0; }
   void init(long lo, long hi);
-  bool valid(long pc) { return base<=pc && pc<limit; }
-  long index(long pc) { checkif(valid(pc)); return (pc-base)/2; }
+  bool valid(long pc) { return _base<=pc && pc<_limit; }
+  long index(long pc) { checkif(valid(pc)); return (pc-_base)/2; }
   Insn_t at(long pc) { return predecoded[index(pc)]; }
+  Insn_t* descr(long pc) { return &predecoded[index(pc)]; }
   uint32_t image(long pc) { checkif(valid(pc)); return *(uint32_t*)(pc); }
   Insn_t set(long pc, Insn_t i) { predecoded[index(pc)] = i; return i; }
+  long base() { return _base; }
+  long limit() { return _limit; }
 };
 
 extern insnSpace_t code;
@@ -130,7 +133,9 @@ extern const char* op_name[];
 extern const char* reg_name[];
 
 void substitute_cas(long lo, long hi);
+int slabelpc(char* buf, long pc);
 void labelpc(long pc, FILE* f =stderr);
+int sdisasm(char* buf, long pc);
 void disasm(long pc, const char* end, FILE* f =stderr);
 inline void disasm(long pc, FILE* f =stderr) { disasm(pc, "\n", f); }
 void show(cpu_t* cpu, long pc, FILE* f =stderr);

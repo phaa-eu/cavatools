@@ -1,30 +1,26 @@
+#
+#  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+#
+#  Environment variables RVTOOLS and CAVA must be defined
+
 .PHONY:  nothing clean install
 nothing:
 	echo "clean, tarball, install?"
 
 clean:
-	rm -f $(HOME)/lib/libcava.a $(HOME)/lib/softfloat.a *~ ./#*#
-	( cd softfloat/build/Linux-x86_64-GCC; rm -f softfloat.a *.o )
-	make -C caveat    clean
-#	make -C cachesim  clean
-	make -C erised    clean
+	rm -f $(CAVA)/lib/libcava.a *~ ./#*#
+	rm -f $(CAVA)/include/cava/*
 	make -C uspike    clean
-
-#	(cd $(HOME)/bin; rm -f caveat cachesim pipesim traceinfo )
-
-
+	make -C caveat    clean
+	make -C erised    clean
 
 tarball:  clean
 	( cd ..; tar -czvf cavatools.tgz cavatools )
 
-
 install:
-	( cd softfloat/build/Linux-x86_64-GCC; make; cp softfloat.a $(HOME)/lib )
-	cp -rp softfloat/source/include $(HOME)/include/softfloat
-	make -C caveat    install
-#	make -C cachesim  install
-	make -C erised    install
-	make -C utilities/softpipe install
+	make -C uspike install
+	make -C caveat install
+	make -C erised install
 
 
 

@@ -7,16 +7,19 @@
 #include <linux/futex.h>
 
 #include "cache.h"
-#include "../uspike/options.h"
-#include "../uspike/uspike.h"
-#include "../uspike/mmu.h"
-#include "../uspike/cpu.h"
+#include "perf.h"
+#include "options.h"
+#include "uspike.h"
+#include "mmu.h"
+#include "cpu.h"
 
-option<long> conf_Jump("jump",	2,	"Taken branch pipeline flush cycles");
-option<int> conf_Dmiss("dmiss",	20,	"Data cache miss penalty");
-option<int> conf_Dways("dways", 4,	"Data cache number of ways associativity");
-option<int> conf_Dline("dline",	6,	"Data cache log-base-2 line size");
-option<int> conf_Drows("drows",	6,	"Data cache log-base-2 number of rows");
+option<long> conf_Jump("jump",	2,		"Taken branch pipeline flush cycles");
+option<int> conf_Dmiss("dmiss",	20,		"Data cache miss penalty");
+option<int> conf_Dways("dways", 4,		"Data cache number of ways associativity");
+option<int> conf_Dline("dline",	6,		"Data cache log-base-2 line size");
+option<int> conf_Drows("drows",	6,		"Data cache log-base-2 number of rows");
+option<int> conf_cores("cores",	8,		"Maximum number of cores");
+option<>    conf_perf( "perf",	"caveat",	"Name of shared memory segment");
 
 class mem_t : public mmu_t {
 public:
@@ -154,7 +157,8 @@ void signal_handler(int nSIGnum)
   exit(-2);
 }
 #endif
- 
+
+perf_t perf;
 
 int main(int argc, const char* argv[], const char* envp[])
 {
@@ -164,6 +168,7 @@ int main(int argc, const char* argv[], const char* envp[])
   start_time();
   core_t* mycpu = new core_t(argc, argv, envp);
   atexit(exitfunc);
+  perf = perf_t(code.base(), code.limit(), conf_cores, conf_perf);
 
 #ifdef DEBUG
   static struct sigaction action;

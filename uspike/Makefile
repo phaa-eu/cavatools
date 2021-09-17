@@ -1,13 +1,18 @@
+#
 #  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+#
+#  Environment variables RVTOOLS and CAVA must be defined
 
 MINUS_O := -Ofast
 #MINUS_O := -O0 -DDEBUG
 
 # Paths to riscv-tools build directories on local system
-RVTOOLS := /opt/riscv-tools
 B := $(RVTOOLS)/riscv-isa-sim
 I := -I$B/build -I$B/riscv -I$B/fesvr -I$B/softfloat -I$B/riscv/insns
 L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
+
+# Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
+HEADERS := options.h opcodes.h uspike.h mmu.h cpu.h
 
 # Collect all the opcodes
 RVOPS = $(RVTOOLS)/riscv-opcodes
@@ -24,7 +29,7 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 # Compiling options
 
-libfiles := options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o cpu.o memory.o
+libfiles := options.o opcodes.o elf_loader.o proxy_syscall.o interpreter.o cpu.o memory.o
 bins := main.o gdblink.o $(libfiles)
 
 CXXFLAGS := $I -g $(MINUS_O)
@@ -32,17 +37,18 @@ CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O0
 LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
 LDFLAGS := -Wl,-Ttext=70000000
 
-uspike: $(bins) libcava.a
-	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) libcava.a $(LIBS)
+uspike: $(bins) $(CAVA)/lib/libcava.a
+	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) $(CAVA)/lib/libcava.a $(LIBS)
 
-libcava.a:  mmu.h
+$(CAVA)/lib/libcava.a:  mmu.h
 	make -j 16 -C insns
+	mv libcava.a $@
 
 # Dependencies
 
-main.o instructions.o interpreter.o: uspike.h opcodes.h
+main.o opcodes.o interpreter.o: uspike.h opcodes.h
 main.o options.o: options.h
-instructions.o: decoder.h constants.h 
+opcodes.o: decoder.h constants.h 
 elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h
 interpreter.o:  dispatch_table.h fastops.h cpu.h
 cpu.o: cpu.h
@@ -76,6 +82,7 @@ clean:
 	rm -f uspike opcodes.h decoder.h dispatch_table.h constants.h ecall_nums.h fastops.h libcava.a
 
 install: uspike
-	cp uspike $(HOME)/bin/.
-	ar r libcava.a $(libfiles)
-
+	cp uspike $(CAVA)/bin/.
+	ar r $(CAVA)/lib/libcava.a $(libfiles)
+	mkdir -p $(CAVA)/include/cava
+	cp $(HEADERS) $(CAVA)/include/cava/.

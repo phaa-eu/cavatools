@@ -10,13 +10,13 @@
 #include "mmu.h"
 #include "cpu.h"
 
-cpu_t* cpu_t::cpu_list =0;
-long cpu_t::total_insns =0;
-int cpu_t::num_threads =0;
+volatile cpu_t* cpu_t::cpu_list =0;
+volatile long cpu_t::total_insns =0;
+volatile int cpu_t::num_threads =0;
 
 cpu_t* cpu_t::find(int tid)
 {
-  for (cpu_t* p=cpu_list; p; p=p->link)
+  for (cpu_t* p=list(); p; p=p->link)
     if (p->my_tid == tid)
       return p;
   return 0;
@@ -183,12 +183,13 @@ cpu_t::cpu_t()
   spike_cpu = 0;
   insn_count = 0;
   do {
-    link = cpu_list;
+    link = list();
   } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
-  int old_n;
+  int old_n;			// atomically increment thread count
   do {
     old_n = num_threads;
   } while (!__sync_bool_compare_and_swap(&num_threads, old_n, old_n+1));
+  _number = old_n;		// after loop in case of race
 }
 
 cpu_t::cpu_t(cpu_t* from, mmu_t* m) : cpu_t()
