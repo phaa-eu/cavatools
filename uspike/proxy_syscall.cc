@@ -24,7 +24,7 @@
 #include "options.h"
 #include "uspike.h"
 #include "mmu.h"
-#include "cpu.h"
+#include "hart.h"
 
 #include "elf_loader.h"
 
@@ -79,7 +79,7 @@ static struct syscall_map_t rv_to_host[] = {
 #include "ecall_nums.h"
 };
 
-void cpu_t::proxy_ecall(long insns)
+void hart_t::proxy_ecall(long insns)
 {
   incr_count(insns);		// make _count correct for inspection/exit
   long rvnum = read_reg(17);
@@ -109,8 +109,8 @@ void cpu_t::proxy_ecall(long insns)
 
 int thread_interpreter(void* arg)
 {
-  cpu_t* oldcpu = (cpu_t*)arg;
-  cpu_t* newcpu = oldcpu->newcore();
+  hart_t* oldcpu = (hart_t*)arg;
+  hart_t* newcpu = oldcpu->newcore();
   newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
   newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
   newcpu->write_reg(10, 0);	// indicating we are child thread
@@ -118,11 +118,14 @@ int thread_interpreter(void* arg)
   newcpu->set_tid();
   oldcpu->clone_lock = 0;
   futex(&oldcpu->clone_lock, FUTEX_WAKE, 1);
-  interpreter(newcpu);
+  while (1) {
+    newcpu->interpreter(conf_stat*1000000L);
+    status_report();
+  }
   return 0;
 }
 
-void cpu_t::proxy_syscall(long sysnum)
+void hart_t::proxy_syscall(long sysnum)
 {
   long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
   long retval=0;

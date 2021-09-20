@@ -31,9 +31,9 @@ cache_t::cache_t(const char* nam, int miss, int w, int lin, int row, bool writea
   tag_mask = ~(line-1);
   //  row_mask =  (rows-1) << lg_line;
   row_mask =  (rows-1);
-  tags = new long*[ways];
+  tags = new tag_t*[ways];
   for (int k=0; k<ways; k++)
-    tags[k] = new long[rows];
+    tags[k] = new tag_t[rows];
   states = new unsigned short[rows];
   flush();
   static long place =0;

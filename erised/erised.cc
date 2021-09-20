@@ -12,12 +12,13 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <curses.h>
+#include <ncurses.h>
 
 //#define DEBUG
 
 #include "../uspike/options.h"
 #include "../uspike/uspike.h"
+#include "../uspike/instructions.h"
 #include "../caveat/perf.h"
 
 
@@ -50,13 +51,13 @@ struct assembly_t {
   int lines;
 };
 
-perf_t perf;
-int corenum;
+perf_t** perf;
+perf_t* cur_core;
 
 WINDOW *menu;
 struct histogram_t global, local;
 struct assembly_t assembly;
-WINDOW* summary;
+//WINDOW* summary;
 
 long insn_count =0;
 
@@ -89,7 +90,7 @@ void histo_delete(struct histogram_t* histo)
   memset(histo, 0, sizeof(struct histogram_t));
 }
 
-void histo_compute(int corenum, struct histogram_t* histo, long base, long bound)
+void histo_compute(perf_t* p, struct histogram_t* histo, long base, long bound)
 {
   if (base == 0 || bound == 0)
     return;
@@ -101,9 +102,11 @@ void histo_compute(int corenum, struct histogram_t* histo, long base, long bound
   long max_count = 0;
   for (int i=0; i<histo->bins; i++) {
     long mcount = 0;
-    long limit = pc + range;
-    while (pc < limit) {
-      mcount += perf.count(pc, corenum);
+    long end = pc + range;
+    if (end > bound)
+      end = bound;
+    while (pc < end) {
+      mcount += p->count(pc);
       pc += code.at(pc).compressed() ? 2 : 4;
     }
     if (mcount != histo->bin[i])
@@ -118,10 +121,10 @@ void paint_count_color(WINDOW* win, int width, long count, int decay, int always
 {
   int heat = (decay + PERSISTENCE-1)/PERSISTENCE;
   wattron(win, COLOR_PAIR(heat + 2));
-  if (count > 0 || always)
+  //  if (count > 0 || always)
     wprintw(win, "%*ld", width, count);
-  else
-    wprintw(win, "%*s", width, "");
+    //  else
+    //    wprintw(win, "%*s", width, "");
   wattroff(win, COLOR_PAIR(heat + 2));
 }
 
@@ -179,7 +182,7 @@ int fmtpercent(char* b, long num, long over)
   return sprintf(b, " .%03u%%", (unsigned)((percent+0.005)*100));
 }
 
-void assembly_paint(int corenum, struct assembly_t* assembly)
+void assembly_paint(perf_t* p, struct assembly_t* assembly)
 {
   long numcycles = 0;
   WINDOW* win = assembly->win;
@@ -190,22 +193,23 @@ void assembly_paint(int corenum, struct assembly_t* assembly)
   if (pc != 0) {
     for (int y=1; y<getmaxy(win) && pc<code.limit(); y++) {
       wmove(win, y, 0);
-      if (perf.count(pc, corenum) != assembly->old[y])
+      if (p->count(pc) != assembly->old[y])
 	assembly->decay[y] = HOT_COLOR*PERSISTENCE;
-      assembly->old[y] = perf.count(pc, corenum);
-      paint_count_color(win, 16, perf.count(pc, corenum), assembly->decay[y], 1);
+      assembly->old[y] = p->count(pc);
+      paint_count_color(win, 16, p->count(pc), assembly->decay[y], 1);
       if (assembly->decay[y] > 0)
 	assembly->decay[y]--;
-      double cpi = (double)perf.cycles(pc, corenum)/perf.count(pc, corenum);
-      int dim = cpi < 1.0+EPSILON || perf.count(pc, corenum) == 0;
+      double cpi = (double)p->cycle(pc)/p->count(pc);
+      int dim = cpi < 1.0+EPSILON || p->count(pc) == 0;
       if (dim)  wattron(win, A_DIM);
-      if (perf.count(pc, corenum) == 0 || cpi < 0.01) wprintw(win, " %-5s", "");
-      else if (perf.cycles(pc, corenum) == perf.count(pc, corenum))  wprintw(win, " %-5s", " 1");
-      else                                                           wprintw(win, " %5.2f", cpi);
+      /*
+      if (p->count(pc) == 0 || cpi < 0.01) wprintw(win, " %-5s", "");
+      else if (p->cycle(pc) == p->count(pc))  wprintw(win, " %-5s", " 1");
+      else */                                    wprintw(win, " %5.2f", cpi);
       char buf[1024];
       char* b = buf;
-      b+=fmtpercent(b, perf.imiss(pc, corenum), perf.count(pc, corenum));
-      b+=fmtpercent(b, perf.dmiss(pc, corenum), perf.count(pc, corenum));
+      b+=fmtpercent(b, p->imiss(pc), p->count(pc));
+      b+=fmtpercent(b, p->dmiss(pc), p->count(pc));
       //      b+=sprintf(b , " %8ld", *icm);
       //      b+=sprintf(b , " %8ld", *dcm);
       b+=sprintf(b, " ");
@@ -227,9 +231,9 @@ void resize_histos()
   histo_delete(&local);
   assembly_delete(&assembly);
   histo_create(&global, LINES, global_width, 0, 0);
-  histo_compute(corenum, &global, code.base(), code.limit());
+  histo_compute(cur_core, &global, code.base(), code.limit());
   histo_create(&local, LINES, local_width, 0, global_width);
-  histo_compute(corenum, &local, 0, 0);
+  histo_compute(cur_core, &local, 0, 0);
   assembly_create(&assembly, LINES, COLS-global_width-local_width, 0, global_width+local_width);
   assembly.base = 0;
   doupdate();
@@ -240,14 +244,13 @@ void interactive()
   struct timeval t1, t2;
   for (;;) {
     gettimeofday(&t1, 0);
-    histo_compute(corenum, &global, code.base(), code.limit());
-    histo_compute(corenum, &local, local.base, local.bound);
-    assembly_paint(corenum, &assembly);
+    histo_compute(cur_core, &global, code.base(), code.limit());
+    histo_compute(cur_core, &local, local.base, local.bound);
     histo_paint(&global, "Global", local.base, local.bound);
     histo_paint(&local, "Local", assembly.base, assembly.bound);
+    assembly_paint(cur_core, &assembly);
     doupdate();
-    int ch = wgetch(stdscr);
-    switch (ch) {
+    switch (wgetch(stdscr)) {
     case ERR:
       {
 	gettimeofday(&t2, 0);
@@ -256,8 +259,8 @@ void interactive()
 	usleep((1000/FRAMERATE - msec) * 1000);
       }
       break;
-      //case KEY_F(1):
 #if 0
+      //case KEY_F(1):
     case KEY_RESIZE:
       resizeterm(LINES, COLS);
       resize_histos();
@@ -283,11 +286,13 @@ void interactive()
 	    assembly.base = npc;
 	}
       }
+      /*
       else if (wenclose(summary, event.y, event.x)) {
 	if (event.bstate & BUTTON1_PRESSED) {
 	  corenum = event.y;
 	}
       }
+      */
       else if (wenclose(global.win, event.y, event.x)) {
 	if (event.bstate & BUTTON1_PRESSED) {
 	  local.base = global.base + (event.y-1)*global.range;
@@ -316,15 +321,14 @@ void interactive()
 	  local.base  += scroll;
 	  local.bound += scroll;
 	}
-	
 	if (local.base < code.limit())
 	  local.base = code.base();
 	if (local.bound > code.limit())
 	  local.bound = code.limit();
 	local.range = (local.bound-local.base)/local.bins;
       }
-      //break;
-    }
+      break;
+    } // switch
   }
 }
 
@@ -354,9 +358,13 @@ int main(int argc, const char** argv)
   parse_options(argc, argv, "erised: real-time viewer for caveat");
   if (argc == 0)
     help_exit();
-  long entry = load_elf_binary(argv[0], 0);
-  code.init(low_bound, high_bound);
-  perf = perf_t("caveat");
+  code.loadelf(argv[0]);
+  perf_t::open("caveat");
+  perf = new perf_t*[perf_t::cores()];
+  for (int i=0; i<perf_t::cores(); i++) {
+    perf[i] = new perf_t(i);
+  }
+  cur_core = perf[0];
 
   initscr();			/* Start curses mode */
   start_color();		/* Start the color functionality */

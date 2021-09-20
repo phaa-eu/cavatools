@@ -1,7 +1,12 @@
 #
 #  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 #
-#  Environment variables RVTOOLS and CAVA must be defined
+ifndef RVTOOLS
+RVTOOLS := /opt/riscv-tools
+endif
+ifndef CAVA
+CAVA := $(HOME)
+endif
 
 MINUS_O := -Ofast
 #MINUS_O := -O0 -DDEBUG
@@ -12,7 +17,7 @@ I := -I$B/build -I$B/riscv -I$B/fesvr -I$B/softfloat -I$B/riscv/insns
 L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 
 # Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
-HEADERS := options.h opcodes.h uspike.h mmu.h cpu.h
+HEADERS := options.h opcodes.h uspike.h instructions.h mmu.h hart.h
 
 # Collect all the opcodes
 RVOPS = $(RVTOOLS)/riscv-opcodes
@@ -29,7 +34,7 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 # Compiling options
 
-libfiles := options.o opcodes.o elf_loader.o proxy_syscall.o interpreter.o cpu.o memory.o
+libfiles := options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o hart.o
 bins := main.o gdblink.o $(libfiles)
 
 CXXFLAGS := $I -g $(MINUS_O)
@@ -46,13 +51,13 @@ $(CAVA)/lib/libcava.a:  mmu.h
 
 # Dependencies
 
-main.o opcodes.o interpreter.o: uspike.h opcodes.h
+main.o instructions.o interpreter.o: uspike.h opcodes.h instructions.h
 main.o options.o: options.h
-opcodes.o: decoder.h constants.h 
+instructions.o: decoder.h constants.h 
 elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h
-interpreter.o:  dispatch_table.h fastops.h cpu.h
-cpu.o: cpu.h
-cpu.o decoder.h dispatch_table.h fastops.h: opcodes.h cpu.h
+interpreter.o:  dispatch_table.h fastops.h hart.h
+hart.o: hart.h
+hart.o decoder.h dispatch_table.h fastops.h: opcodes.h hart.h
 proxy_syscall.o: ecall_nums.h
 
 # Python scripts to create various files
@@ -76,10 +81,13 @@ RV_bits.tmp: parse_opcodes
 
 # Cleanup & installation
 
-clean:
+clean: tidy
 	rm -f *.o *~ ./#*# *.tmp
 	rm -f insns/*.o insns/*.cc insns/*~ insns/#*#
-	rm -f uspike opcodes.h decoder.h dispatch_table.h constants.h ecall_nums.h fastops.h libcava.a
+
+tidy:
+	rm -f uspike opcodes.h decoder.h dispatch_table.h constants.h ecall_nums.h fastops.h
+	rm -f $(CAVA)/lib/libcava.a
 
 install: uspike
 	cp uspike $(CAVA)/bin/.

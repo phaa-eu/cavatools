@@ -11,6 +11,11 @@ struct lru_fsm_t {
   unsigned short next_state;	// number if hit 
 };
 
+struct tag_t {
+  bool dirty : 1;
+  long addr : 63;
+};
+
 class cache_t {		        // cache descriptor 
   const char* name;		// for printing 
   struct lru_fsm_t* fsm;	// LRU state transitions [ways!][ways] 
@@ -20,7 +25,7 @@ class cache_t {		        // cache descriptor
   long lg_line, lg_rows;	// specified in log-base-2 units 
   long tag_mask;		// = ~((1<<lg_line)-1) 
   long row_mask;		// row index mask = ((1<<lg_rows)-1) << dc->lg_line 
-  long** tags;			// cache tag array [ways][rows]
+  tag_t** tags;			// cache tag array [ways][rows]
   unsigned short* states;	// LRU state vector [rows] 
   long* evicted;		// tag of evicted line, 0 if clean, NULL if unwritable 
   long _penalty;		// cycles to refill line 
@@ -49,25 +54,18 @@ inline bool cache_t::lookup(long addr, bool write)
   unsigned short* state = states + index;
   struct lru_fsm_t* p = fsm + *state; // recall fsm points to [-1] 
   struct lru_fsm_t* end = p + ways;	 // hence +ways = last entry 
-  struct long* tag;
-  bool missed = false;
+  struct tag_t* tag;
+  bool hit = true;
   do {
     p++;
     tag = tags[p->way] + index;
     //    tag = tags + index*ways + p->way;
-    if (addr == *tag)
+    if (addr == tag->addr)
       goto cache_hit;
   } while (p < end);
-  missed = true;
-  *tag = addr;
+  hit = false;
+  tag->addr = addr;
   _misses++;
- cache_hit:
-  *state = p->next_state;	// already multiplied by ways
-  return missed;
-}
-  
-  
-#if 0
   if (tag->dirty) {
     *evicted = tag->addr;	// will SEGV if not cache not writable 
     _evictions++;		// can conveniently point to your location 
@@ -76,7 +74,6 @@ inline bool cache_t::lookup(long addr, bool write)
   else if (evicted)
     *evicted = 0;
   tag->addr = addr;
-  tag->ready = when_miss_arrive;
   
  cache_hit:
   *state = p->next_state;	// already multiplied by ways
@@ -84,9 +81,8 @@ inline bool cache_t::lookup(long addr, bool write)
     tag->dirty = 1;
     _updates++;
   }
-  return tag->ready;
+  return hit;
 }
-#endif
 
 
 void flush_cache();

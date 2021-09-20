@@ -2,13 +2,18 @@
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 #include <unistd.h>
+#include <errno.h>
 #include <signal.h>
 #include <setjmp.h>
 
 #include "options.h"
 #include "uspike.h"
+#include "instructions.h"
 #include "mmu.h"
-#include "cpu.h"
+#include "hart.h"
+
+option<long> conf_show("show",		0, 				"Trace execution after N gdb continue");
+option<>     conf_gdb("gdb",		0, "localhost:1234", 		"Remote GDB on socket");
 
 void exit_func()
 {
@@ -37,7 +42,10 @@ int main(int argc, const char* argv[], const char* envp[])
   if (argc == 0)
     help_exit();
   start_time();
-  cpu_t* mycpu = new cpu_t(argc, argv, envp, new mmu_t());
+  code.loadelf(argv[0]);
+  long sp = initialize_stack(argc, argv, envp);
+  hart_t* mycpu = new hart_t(new mmu_t());
+  mycpu->write_reg(2, sp);	// x2 is stack pointer
 
   //#ifdef DEBUG
 #if 0
@@ -58,7 +66,6 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
 
   dieif(atexit(exit_func), "atexit failed");
-  long next_status_report = conf_stat*1000000L;
   //  enum stop_reason reason;
   if (conf_gdb) {
     gdb_pc = mycpu->ptr_pc();
@@ -77,7 +84,7 @@ int main(int argc, const char* argv[], const char* envp[])
 #if 1
       while (1) {
 	long oldpc = mycpu->read_pc();
-	if (!mycpu->single_step())
+	if (!mycpu->interpreter(1))
 	  break;
 	if (gdbNumContinue > conf_show)
 	  show(mycpu, oldpc);
@@ -90,8 +97,56 @@ int main(int argc, const char* argv[], const char* envp[])
       ProcessGdbException();
     }
   }
-  else
-    interpreter(mycpu);
+  else {
+    while (1) {
+      mycpu->interpreter(conf_stat*1000000L);
+      status_report();
+    }
+  }
   return 0;
 }
 
+extern "C" {
+
+#define poolsize  (1<<30)	/* size of simulation memory pool */
+
+static char simpool[poolsize];	/* base of memory pool */
+static volatile char* pooltop = simpool; /* current allocation address */
+
+void *malloc(size_t size)
+{
+  char volatile *rv, *newtop;
+  do {
+    volatile char* after = pooltop + size + 16; /* allow for alignment */
+    if (after > simpool+poolsize) {
+      fprintf(stderr, " failed\n");
+      return 0;
+    }
+    rv = pooltop;
+    newtop = (char*)((unsigned long)after & ~0xfL); /* always align to 16 bytes */
+  } while (!__sync_bool_compare_and_swap(&pooltop, rv, newtop));
+      
+  return (void*)rv;
+}
+
+void free(void *ptr)
+{
+  /* we don't free stuff */
+}
+
+void *calloc(size_t nmemb, size_t size)
+{
+  return malloc(nmemb * size);
+}
+
+void *realloc(void *ptr, size_t size)
+{
+  return 0;
+}
+
+void *reallocarray(void *ptr, size_t nmemb, size_t size)
+{
+  return 0;
+}
+
+};

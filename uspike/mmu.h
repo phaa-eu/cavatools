@@ -11,7 +11,8 @@ class mmu_t {
   
  public:
   mmu_t() { }
-  virtual long jump_model(long npc, long pc) { return npc;} 
+  virtual void insn_model(long pc) { }
+  virtual long jump_model(long npc, long pc) { return npc; }
 
   uint8_t  load_uint8( long a, long pc) { return *(uint8_t* )load_model(a, pc); }
   uint16_t load_uint16(long a, long pc) { return *(uint16_t*)load_model(a, pc); }

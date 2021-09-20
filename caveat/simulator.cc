@@ -6,48 +6,108 @@
 #include <sys/syscall.h>
 #include <linux/futex.h>
 
-#include "cache.h"
-#include "perf.h"
 #include "options.h"
 #include "uspike.h"
+#include "instructions.h"
 #include "mmu.h"
-#include "cpu.h"
+#include "hart.h"
+#include "cache.h"
+#include "perf.h"
+
+using namespace std;
+void* operator new(size_t size);
+void operator delete(void*) noexcept;
 
 option<long> conf_Jump("jump",	2,		"Taken branch pipeline flush cycles");
-option<int> conf_Dmiss("dmiss",	20,		"Data cache miss penalty");
+
+option<int> conf_Imiss("imiss",	15,		"Instruction cache miss penalty");
+option<int> conf_Iways("iways", 4,		"Instruction cache number of ways associativity");
+option<int> conf_Iline("iline",	6,		"Instruction cache log-base-2 line size");
+option<int> conf_Irows("irows",	6,		"Instruction cache log-base-2 number of rows");
+
+option<int> conf_Dmiss("dmiss",	15,		"Data cache miss penalty");
 option<int> conf_Dways("dways", 4,		"Data cache number of ways associativity");
 option<int> conf_Dline("dline",	6,		"Data cache log-base-2 line size");
 option<int> conf_Drows("drows",	6,		"Data cache log-base-2 number of rows");
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
+
 option<>    conf_perf( "perf",	"caveat",	"Name of shared memory segment");
 
-class mem_t : public mmu_t {
+class mem_t : public mmu_t, public perf_t {
 public:
   long local_time;
-  long begin_pc;		// of sequence before current event
-  mem_t();
-  void timing_model(long event_pc);
-  long jump_model(long npc, long pc) { timing_model(pc);                          local_time += conf_Jump;    return npc; }
-  long load_model( long a,  long pc) { timing_model(pc); if (!dc.lookup(a      )) local_time += dc.penalty(); return a; }
-  long store_model(long a,  long pc) { timing_model(pc); if (!dc.lookup(a, true)) local_time += dc.penalty(); return a; }
-  void amo_model(  long a,  long pc) { timing_model(pc); if (!dc.lookup(a, true)) local_time += dc.penalty();           }
+  mem_t(long n);
+  void insn_model(long pc);
+  long jump_model(long npc, long pc);
+  long load_model( long a,  long pc);
+  long store_model(long a,  long pc);
+  void amo_model(  long a,  long pc);
   cache_t* dcache() { return &dc; }
   long clock() { return local_time; }
   void print();
 private:
+  cache_t ic;
   cache_t dc;
 };
 
-class core_t : public mem_t, public cpu_t {
+inline void mem_t::insn_model(long pc)
+{
+  if (!ic.lookup(pc)) {
+    local_time += ic.penalty();
+    inc_imiss(pc);
+    inc_cycle(pc, ic.penalty());
+  }
+  inc_count(pc);
+  inc_cycle(pc);
+  local_time += 1;
+}
+
+inline long mem_t::jump_model(long npc, long pc)
+{
+  local_time += conf_Jump;
+  inc_cycle(npc, conf_Jump);
+  return npc;
+}
+
+inline long mem_t::load_model(long a, long pc)
+{
+  if (!dc.lookup(a)) {
+    inc_dmiss(pc);
+    local_time += dc.penalty();
+    inc_cycle(pc, dc.penalty());
+  }
+  return a;
+}
+
+inline long mem_t::store_model(long a, long pc)
+{
+  if (!dc.lookup(a, true)) {
+    inc_dmiss(pc);
+    local_time += dc.penalty();
+    inc_cycle(pc, dc.penalty());
+  }
+  return a;
+}
+
+inline void mem_t::amo_model(long a, long pc)
+{
+  if (!dc.lookup(a, true)) {
+    inc_dmiss(pc);
+    local_time += dc.penalty();
+    inc_cycle(pc, dc.penalty());
+  }
+}
+
+class core_t : public mem_t, public hart_t {
   static volatile long global_time;
 public:
+  core_t();
   core_t(core_t* p);
-  core_t(int argc, const char* argv[], const char* envp[]);
   core_t* newcore() { return new core_t(this); }
   void proxy_syscall(long sysnum);
   
-  static core_t* list() { return (core_t*)cpu_t::list(); }
-  core_t* next() { return (core_t*)cpu_t::next(); }
+  static core_t* list() { return (core_t*)hart_t::list(); }
+  core_t* next() { return (core_t*)hart_t::next(); }
   mem_t* mem() { return static_cast<mem_t*>(this); }
   cache_t* dcache() { return mem()->dcache(); }
 
@@ -58,33 +118,28 @@ public:
 
 volatile long core_t::global_time;
 
-inline void mem_t::timing_model(long event_pc)
-{
-  while (begin_pc < event_pc) {
-    local_time++;
-    begin_pc += code.at(begin_pc).opcode() <= Last_Compressed_Opcode ? 2 : 4;
-  }
-}
-
-mem_t::mem_t() : dc("Data cache", conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true)
+mem_t::mem_t(long n)
+  : perf_t(n),
+    ic("Instruction", conf_Imiss, conf_Iways, conf_Iline, conf_Irows, false),
+    dc("Data",        conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true)
+		 
 {
   local_time = 0;
 }
 
 void mem_t::print()
 {
+  ic.print();
   dc.print();
 }
 
-core_t::core_t(core_t* p) : cpu_t(p, mem())
+core_t::core_t() : hart_t(mem()), mem_t(number())
 {
-  local_time = p->local_time;
-  begin_pc = p->read_pc();
 }
 
-core_t::core_t(int argc, const char* argv[], const char* envp[]) : cpu_t(argc, argv, envp, mem())
+core_t::core_t(core_t* p) : hart_t(p, mem()), mem_t(number())
 {
-  begin_pc = read_pc();
+  local_time = p->local_time;
 }
 
 
@@ -104,7 +159,7 @@ void core_t::proxy_syscall(long sysnum)
   }
   local_time = LONG_MAX;
   */
-  cpu_t::proxy_syscall(sysnum);
+  hart_t::proxy_syscall(sysnum);
   /*
   global_time += SYSCALL_OVERHEAD;
   local_time = global_time;
@@ -127,7 +182,6 @@ void core_t::update_time()
 
 void start_time();
 double elapse_time();
-void interpreter(cpu_t* cpu);
 void status_report();
 
 void exitfunc()
@@ -158,17 +212,21 @@ void signal_handler(int nSIGnum)
 }
 #endif
 
-perf_t perf;
-
 int main(int argc, const char* argv[], const char* envp[])
 {
   parse_options(argc, argv, "caveat: user-mode RISC-V parallel simulator");
   if (argc == 0)
     help_exit();
   start_time();
-  core_t* mycpu = new core_t(argc, argv, envp);
+  code.loadelf(argv[0]);
+  perf_t::create(code.base(), code.limit(), conf_cores, conf_perf);
+  for (int i=0; i<perf_t::cores(); i++)
+    new perf_t(i);
+  long sp = initialize_stack(argc, argv, envp);
+  core_t* mycpu = new core_t();
+  mycpu->write_reg(2, sp);	// x2 is stack pointer
+  
   atexit(exitfunc);
-  perf = perf_t(code.base(), code.limit(), conf_cores, conf_perf);
 
 #ifdef DEBUG
   static struct sigaction action;
@@ -180,13 +238,58 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
 
   while (1) {
-    mycpu->run_epoch(10000000L);
+    mycpu->interpreter(10000000L);
     double realtime = elapse_time();
     fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS IPC", core_t::total_count(), realtime, core_t::total_count()/1e6/realtime);
     char separator = '=';
     for (core_t* p=core_t::list(); p; p=p->next()) {
-      fprintf(stderr, "%c%4.2f", separator, (double)p->count()/p->local_clock());
+      fprintf(stderr, "%c%4.2f", separator, (double)p->executed()/p->local_clock());
       separator = ',';
     }
   }
 }
+
+extern "C" {
+
+#define poolsize  (1<<30)	/* size of simulation memory pool */
+
+static char simpool[poolsize];	/* base of memory pool */
+static volatile char* pooltop = simpool; /* current allocation address */
+
+void *malloc(size_t size)
+{
+  char volatile *rv, *newtop;
+  do {
+    volatile char* after = pooltop + size + 16; /* allow for alignment */
+    if (after > simpool+poolsize) {
+      fprintf(stderr, " failed\n");
+      return 0;
+    }
+    rv = pooltop;
+    newtop = (char*)((unsigned long)after & ~0xfL); /* always align to 16 bytes */
+  } while (!__sync_bool_compare_and_swap(&pooltop, rv, newtop));
+      
+  return (void*)rv;
+}
+
+void free(void *ptr)
+{
+  /* we don't free stuff */
+}
+
+void *calloc(size_t nmemb, size_t size)
+{
+  return malloc(nmemb * size);
+}
+
+void *realloc(void *ptr, size_t size)
+{
+  return 0;
+}
+
+void *reallocarray(void *ptr, size_t nmemb, size_t size)
+{
+  return 0;
+}
+
+};
