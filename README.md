@@ -2,82 +2,60 @@
 RISC-V instruction set simulator and performance analysis tools
 ===============================================================
 
-An instruction-set interpretator that produces execution trace in shared memory,
-and an example collection of simulators and analysis programs for pipeline and cache
-performance evaluation.  You can write your own simulation/analysis programs.
-Cavatools can also be retargetted to other RISC-like architectures.
+Cavatools simulates a multi-core RISC-V machine.  The simulator runs on X86 Linux host and presents a user-mode multi-threaded Linux interface to the guest program.  Standard RISC-V tool chain (GNU or LLVM) with GLIBC is used to compile the guest program.  All host Linux system calls are available to the guest program.  Multi-threaded guest programs compiled with Pthead and OpenMP are supported.  Cavatools has several parts:
+*  **uspike** is a RISC-V instruction set interpreter.  Python scripts extract instruction bit encoding and execution semantics from the official GitHub repository.
+*  **caveat** is a performance simulator.  Currently it models a multicore chip with single-issue in-order pipelines and private instruction and data level-1 caches.
+*  **erised** is a real-time performance viewer for caveat while the guest program is running.  For each static instruction erised shows the execution frequency, cycles per instruction, instruction and cache misses while the program is running.
 
+###  Prerequisites
+
+Environment variable RVTOOLS should be path to the riscv-tools tree.  The subtrees are:
+
+    riscv-tools/riscv-opcodes       [from https://github.com/riscv/riscv-opcodes]
+    riscv-tools/riscv-isa-sim       [from https://github.com/riscv-software-src/riscv-isa-sim]
+    riscv-tools/riscv-pk            [from https://github.com/riscv-software-src/riscv-pk]
+    riscv-tools/riscv-gnu-toolchain [from https://github.com/riscv-collab/riscv-gnu-toolchain]
+
+You need to build at least riscv-isa-sim (spike) because uspike links to libraries there.  RVTOOLS defaults to /opt/riscv-tools.
 
 ###  Getting the sources
 
 The repository is on GitHub:
-    $ git clone https://github.com/pete2222/cavatools
 
-
-
-###  Prerequisites
-
-The Berkeley Softfloat-3e package has been included in this repository.
-Make install expects ~/bin, ~/lib, ~/include to exit.
-
-
+    $ git clone https://github.com/phaa-eu/cavatools
 
 ###  Installation
 
-To build Cavatools:
-```
+Environment variable CAVA is installation path, default to home directory $(HOME).  To build Cavatools:
+
     $ cd cavatools
     $ make install
-```
 
-will create the following files:
-```
-    ~/bin/caveat       - instruction set interpreter
-    ~/bin/traceinfo    - prints and summarizes trace from caveat
-    ~/bin/pipesim      - very simple pipelined machine simulator
-    ~/bin/cachesim     - general cache simulator, can be L1, L2, I, D, I+D...
-```
+The following files are installed:
 
-In addition, header files are installed in
-```
-    ~/include/cava/
-```
-and the caveat trace handling library in
-```
-    ~/lib/libcava.a
-```
+    uspike, caveat, erised in $(CAVA)/bin/
+    libcava.a in $(CAVA)/lib/
+    several .h files in $(CAVA)/include/cava
 
+Include $(CAVA)/bin in $(PATH) to run Cavatools programs.
 
 ###  Running Cavatools
 
-Programs should be compiled -static using riscv-gnu-toolchain Linux libc:
-```
+Programs should be compiled -static using the Linux/glibc riscv-gnu-toolchain:
+
     $ riscv64-unknown-linux-gnu-gcc -static ... testpgm.c -o testpgm
-```
 
-To run without tracing:
-```
+To execute a RISC-V program without simulation:
+
+    $ uspike testpgm <any number of flags and arguments to testpgm>
+
+To see instruction execution performance in real time run in one window:
+
     $ caveat testpgm <any number of flags and arguments to testpgm>
-```
 
-To see instruction trace run this in one window:
-```
-    $ caveat --out=bufname testpgm <any number of flags and arguments to testpgm>
-```
 and this in another window:
-```
-    $ traceinfo --in=bufname --list testpgm
-```
-The shared memory buffer 'bufname' appears in /dev/shm while processes are running.
 
-There is a pipeline simulator and a cache simulator.  Run the following command lines in separate windows for more clarity:
-```
-    $ caveat --trace=b1 testpgm &
-    $ pipesim --in=b1 --out=b2 --visible testpgm &
-    $ cachesim --in=b2 --out=b3 --filter=rw &
-    $ traceinfo --in=b3 --paraver=10000 --cutoff=3 testgpm > trace.prv
-```
-produces a BSC Paraver trace of 10000 cycles with instruction stall events of 3 or more cycles, plus all cache misses.  In this simulation pipesim has a built-in L1 data cache, and cachesim is modeling an L2 cache, all with default parameters.
+    $ erised testpgm
 
-In the future there will be a presentation slide deck and a brief paper describing
-how to use the example analysis tools.
+Shared memory segment /dev/shm/caveat (filename can be changed with option) containing counters is created.  Erised passively reads /dev/shm/caveat and displays performance data in its window, controlled interactively by mouse.
+
