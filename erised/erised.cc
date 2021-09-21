@@ -22,7 +22,7 @@
 #include "../caveat/perf.h"
 
 
-#define FRAMERATE    60		/* frames per second */
+#define FRAMERATE    30		/* frames per second */
 #define PERSISTENCE  30		/* frames per color decay */
 #define HOT_COLOR  (7-2)
 
@@ -233,7 +233,7 @@ void resize_histos()
   histo_create(&global, LINES, global_width, 0, 0);
   histo_compute(cur_core, &global, code.base(), code.limit());
   histo_create(&local, LINES, local_width, 0, global_width);
-  histo_compute(cur_core, &local, 0, 0);
+  histo_compute(cur_core, &local, code.base(), code.limit());
   assembly_create(&assembly, LINES, COLS-global_width-local_width, 0, global_width+local_width);
   assembly.base = 0;
   doupdate();
@@ -250,13 +250,15 @@ void interactive()
     histo_paint(&local, "Local", assembly.base, assembly.bound);
     assembly_paint(cur_core, &assembly);
     doupdate();
-    switch (wgetch(stdscr)) {
+    //    switch (wgetch(stdscr)) {
+    switch (getch()) {
     case ERR:
       {
 	gettimeofday(&t2, 0);
-	double msec = (t2.tv_sec - t1.tv_sec)*1000;
+	double msec = (t2.tv_sec - t1.tv_sec)*1000.0;
 	msec += (t2.tv_usec - t1.tv_usec)/1000.0;
-	usleep((1000/FRAMERATE - msec) * 1000);
+	if (msec < 1000.0/FRAMERATE)
+	  usleep((1000.0/FRAMERATE - msec) * 1000.0);
       }
       break;
 #if 0
@@ -274,16 +276,16 @@ void interactive()
       dieif(getmouse(&event) != OK, "Got bad mouse event.");
       if (wenclose(assembly.win, event.y, event.x)) {
 	if (event.bstate & BUTTON4_PRESSED) {
-	  if (assembly.base > code.base()) {
-	    assembly.base -= 2;
-	    if (code.at(assembly.base).opcode() == Op_ZERO)
-	      assembly.base -= 2;
-	  }
+	  assembly.base -= code.at(assembly.base-2).opcode() != Op_ZERO ? 2 : 4;
+	  if (assembly.base < code.base())
+	    assembly.base = code.base();
+	  assembly.bound -= code.at(assembly.bound-2).opcode() != Op_ZERO ? 2 : 4;
 	}
 	else if (event.bstate & BUTTON5_PRESSED) {
-	  long npc = assembly.base + code.at(assembly.base).compressed() ? 2 : 4;
-	  if (npc < code.limit())
-	    assembly.base = npc;
+	  assembly.bound += code.at(assembly.bound).compressed() ? 2 : 4;
+	  if (assembly.bound > code.limit())
+	    assembly.bound = code.limit();
+	  assembly.base += code.at(assembly.base).compressed() ? 2 : 4;
 	}
       }
       /*
@@ -321,14 +323,18 @@ void interactive()
 	  local.base  += scroll;
 	  local.bound += scroll;
 	}
-	if (local.base < code.limit())
-	  local.base = code.base();
-	if (local.bound > code.limit())
-	  local.bound = code.limit();
-	local.range = (local.bound-local.base)/local.bins;
       }
       break;
     } // switch
+    if (local.base < code.base())
+      local.base = code.base();
+    if (local.bound > code.limit())
+      local.bound = code.limit();
+    local.range = (local.bound-local.base)/local.bins;
+    if (assembly.base < code.base())
+      assembly.base = code.base();
+    if (assembly.bound > code.limit())
+      assembly.bound = code.limit();
   }
 }
 
@@ -367,10 +373,19 @@ int main(int argc, const char** argv)
   cur_core = perf[0];
 
   initscr();			/* Start curses mode */
-  start_color();		/* Start the color functionality */
+  keypad(stdscr, true);		/* Need all keys */
+  nonl();
   cbreak();			/* Line buffering disabled */
   noecho();
-  keypad(stdscr, TRUE);		/* Need all keys */
+
+  start_color();		/* Start the color functionality */
+  init_pair(2, COLOR_MAGENTA, COLOR_BLACK);
+  init_pair(3, COLOR_BLUE,    COLOR_BLACK);
+  init_pair(4, COLOR_CYAN,    COLOR_BLACK);
+  init_pair(5, COLOR_GREEN,   COLOR_BLACK);
+  init_pair(6, COLOR_YELLOW,  COLOR_BLACK);
+  init_pair(7, COLOR_RED,     COLOR_BLACK);
+  
   mouseinterval(0);	   /* no mouse clicks, just button up/down */
   // Don't mask any mouse events
   mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
@@ -378,19 +393,6 @@ int main(int argc, const char** argv)
   
   nodelay(stdscr, TRUE);
   //timeout(100);
-
-  if (has_colors() == FALSE) {
-    endwin();
-    puts("Your terminal does not support color");
-    exit(1);
-  }
-  start_color();
-  init_pair(2, COLOR_MAGENTA, COLOR_BLACK);
-  init_pair(3, COLOR_BLUE,    COLOR_BLACK);
-  init_pair(4, COLOR_CYAN,    COLOR_BLACK);
-  init_pair(5, COLOR_GREEN,   COLOR_BLACK);
-  init_pair(6, COLOR_YELLOW,  COLOR_BLACK);
-  init_pair(7, COLOR_RED,     COLOR_BLACK);
 
   resize_histos();
   interactive();
