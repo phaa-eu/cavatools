@@ -19,7 +19,6 @@
 
 option<>     conf_isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
 option<>     conf_vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
-option<long> conf_stat("stat",		100,				"Status every M instructions");
 option<bool> conf_ecall("ecall",	false, true,			"Show system calls");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
 
@@ -34,22 +33,25 @@ struct syscall_map_t rv_to_host[] = {
 };
 const int highest_ecall_num = HIGHEST_ECALL_NUM;
 
-void status_report()
+void hart_t::status_report()
 {
   if (conf_quiet)
     return;
+  char buf[4096];
+  char* b = buf;
   double realtime = elapse_time();
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", hart_t::total_count(), realtime, hart_t::total_count()/1e6/realtime);
+  b += sprintf(b, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", hart_t::total_count(), realtime, hart_t::total_count()/1e6/realtime);
   if (hart_t::threads() <= 16) {
     char separator = '(';
     for (hart_t* p=hart_t::list(); p; p=p->next()) {
-      fprintf(stderr, "%c%1ld%%", separator, 100*p->executed()/hart_t::total_count());
+      b += sprintf(b, "%c%1ld%%", separator, 100*p->executed()/hart_t::total_count());
       separator = ',';
     }
-    fprintf(stderr, ")");
+    b += sprintf(b, ")");
   }
   else if (hart_t::threads() > 1)
-    fprintf(stderr, "(%d cores)", hart_t::threads());
+    b += sprintf(b, "(%d cores)", hart_t::threads());
+  fputs(buf, stderr);
 }
 
 /* RISCV-V clone() system call arguments not same as X86_64:
@@ -109,7 +111,7 @@ bool hart_t::interpreter(long how_many)
     oldpc = pc;
     debug.insert(executed()+insns+1, pc);
 #endif
-    mmu()->insn_model(pc);
+    //mmu()->insn_model(pc);
     Insn_t i = code.at(pc);
     switch (i.opcode()) {
 #include "fastops.h"

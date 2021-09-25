@@ -79,6 +79,9 @@ static struct syscall_map_t rv_to_host[] = {
 #include "ecall_nums.h"
 };
 
+extern option<bool> conf_ecall;
+extern option<long> conf_report;
+
 void hart_t::proxy_ecall(long insns)
 {
   incr_count(insns);		// make _count correct for inspection/exit
@@ -100,7 +103,7 @@ void hart_t::proxy_ecall(long insns)
     }
   }
   if (conf_ecall)
-    fprintf(stderr, "Ecall %s\n", name);
+    fprintf(stderr, "Ecall[%ld] %s\n", tid(), name);
   proxy_syscall(sysnum);
   incr_count(-insns);		// put back old value
 }
@@ -118,10 +121,7 @@ int thread_interpreter(void* arg)
   newcpu->set_tid();
   oldcpu->clone_lock = 0;
   futex(&oldcpu->clone_lock, FUTEX_WAKE, 1);
-  while (1) {
-    newcpu->interpreter(conf_stat*1000000L);
-    status_report();
-  }
+  newcpu->run_thread();
   return 0;
 }
 

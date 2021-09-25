@@ -48,11 +48,13 @@ public:
   int number() { return _number; }
   long executed() { return _executed; }
   void incr_count(long n);
-  static long total_count() { return total_insns; }
+  static volatile long total_count() { return total_insns; }
   long tid() { return my_tid; }
   void set_tid();
   static hart_t* find(int tid);
   bool interpreter(long how_many);
+  virtual void run_thread();
+  static void status_report();
   
   class processor_t* spike() { return spike_cpu; }
   class mmu_t* mmu() { return caveat_mmu; }

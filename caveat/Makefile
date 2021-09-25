@@ -27,7 +27,7 @@ clean:
 
 
 caveat:  simulator.o cache.o perf.o $(CAVA)/lib/libcava.a
-	g++ -o caveat $^ $(LDFLAGS) $L -ldl -lrt
+	$(CXX) $(CXXFLAGS) -o caveat $^ $(LDFLAGS) $L -ldl -lrt
 
 cache.o simulator.o:  cache.h
 perf.o simulator.o: perf.h

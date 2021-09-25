@@ -107,7 +107,7 @@ void histo_compute(perf_t* p, struct histogram_t* histo, long base, long bound)
       end = bound;
     while (pc < end) {
       mcount += p->count(pc);
-      pc += code.at(pc).compressed() ? 2 : 4;
+      pc += code.at(pc).bytes();
     }
     if (mcount != histo->bin[i])
       histo->decay[i] = HOT_COLOR*PERSISTENCE;
@@ -217,7 +217,7 @@ void assembly_paint(perf_t* p, struct assembly_t* assembly)
       b+=sdisasm(b, pc);
       wprintw(win, "%s\n", buf);
       if (dim)  wattroff(win, A_DIM);
-      pc += code.at(pc).compressed() ? 2 : 4;
+      pc += code.at(pc).bytes();
     }
   }
   assembly->bound = pc;
@@ -282,10 +282,10 @@ void interactive()
 	  assembly.bound -= code.at(assembly.bound-2).opcode() != Op_ZERO ? 2 : 4;
 	}
 	else if (event.bstate & BUTTON5_PRESSED) {
-	  assembly.bound += code.at(assembly.bound).compressed() ? 2 : 4;
+	  assembly.bound += code.at(assembly.bound).bytes();
 	  if (assembly.bound > code.limit())
 	    assembly.bound = code.limit();
-	  assembly.base += code.at(assembly.base).compressed() ? 2 : 4;
+	  assembly.base += code.at(assembly.base).bytes();
 	}
       }
       /*

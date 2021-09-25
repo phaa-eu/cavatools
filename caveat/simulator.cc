@@ -18,6 +18,8 @@ using namespace std;
 void* operator new(size_t size);
 void operator delete(void*) noexcept;
 
+#define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
+
 option<long> conf_Jump("jump",	2,		"Taken branch pipeline flush cycles");
 
 option<int> conf_Imiss("imiss",	15,		"Instruction cache miss penalty");
@@ -32,91 +34,209 @@ option<int> conf_Drows("drows",	6,		"Data cache log-base-2 number of rows");
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
 option<>    conf_perf( "perf",	"caveat",	"Name of shared memory segment");
+option<long> conf_report("report", 10,		"Status report every N million instructions");
+
+volatile long system_clock;
 
 class mem_t : public mmu_t, public perf_t {
 public:
-  long local_time;
+  long last_pc;
+  long cycles_run;
   mem_t(long n);
-  void insn_model(long pc);
+  void sync_system_clock();
+  void icache_lookup(long pc);
+  void insn_model(long end_pc);
   long jump_model(long npc, long pc);
   long load_model( long a,  long pc);
   long store_model(long a,  long pc);
   void amo_model(  long a,  long pc);
   cache_t* dcache() { return &dc; }
-  long clock() { return local_time; }
+  long cycles() { return cycles_run; }
   void print();
 private:
   cache_t ic;
   cache_t dc;
 };
 
-inline void mem_t::insn_model(long pc)
-{
-  if (!ic.lookup(pc)) {
-    local_time += ic.penalty();
-    inc_imiss(pc);
-    inc_cycle(pc, ic.penalty());
-  }
-  inc_count(pc);
-  inc_cycle(pc);
-  local_time += 1;
-}
-
-inline long mem_t::jump_model(long npc, long pc)
-{
-  local_time += conf_Jump;
-  inc_cycle(npc, conf_Jump);
-  return npc;
-}
-
-inline long mem_t::load_model(long a, long pc)
-{
-  if (!dc.lookup(a)) {
-    inc_dmiss(pc);
-    local_time += dc.penalty();
-    inc_cycle(pc, dc.penalty());
-  }
-  return a;
-}
-
-inline long mem_t::store_model(long a, long pc)
-{
-  if (!dc.lookup(a, true)) {
-    inc_dmiss(pc);
-    local_time += dc.penalty();
-    inc_cycle(pc, dc.penalty());
-  }
-  return a;
-}
-
-inline void mem_t::amo_model(long a, long pc)
-{
-  if (!dc.lookup(a, true)) {
-    inc_dmiss(pc);
-    local_time += dc.penalty();
-    inc_cycle(pc, dc.penalty());
-  }
-}
-
 class core_t : public mem_t, public hart_t {
-  static volatile long global_time;
+  long start_time;
+  long stall_time;
+  long saved_local_time;
+  void init() { cycles_run=start_time=system_clock; stall_time=0; }
 public:
-  core_t();
+  core_t(long entry);
   core_t(core_t* p);
   core_t* newcore() { return new core_t(this); }
   void proxy_syscall(long sysnum);
+  void run_thread();
   
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
   mem_t* mem() { return static_cast<mem_t*>(this); }
   cache_t* dcache() { return mem()->dcache(); }
 
-  long system_clock() { return global_time; }
-  long local_clock() { return mem()->clock(); }
-  void update_time();
+  long local_clock() { return cycles_run==LONG_MAX ? saved_local_time : cycles_run; }
+  long run_time() { return local_clock() - start_time; }
+  long run_cycles() { return run_time() - stall_time; }
+  static void status_report();
 };
 
-volatile long core_t::global_time;
+
+void update_time()
+{
+  long last_local = LONG_MAX;
+  //char buffer[4096], *b=buffer;
+  //b += sprintf(b, "cycles_run =");
+  for (core_t* p=core_t::list(); p; p=p->next()) {
+    //b += sprintf(b, " %ld", p->cycles_run);
+    if (p->cycles_run < last_local)
+      last_local = p->cycles_run;
+  }
+  //b += sprintf(b, "\n");
+  //fputs(buffer, stderr);
+  if (last_local < LONG_MAX) {
+    //__atomic_store(&global_time, &last_local, __ATOMIC_RELAXED);
+    system_clock = last_local;
+    futex((int*)&system_clock, FUTEX_WAKE, INT_MAX);
+  }
+}
+
+void mem_t::sync_system_clock()
+{
+  update_time();
+  // wait until system_time catches up to our local_time
+  for (long t=system_clock; t<cycles_run; t=system_clock) {
+    //fprintf(stderr, "Me at %ld, %ld=system_clock\n", cycles_run, system_clock);
+    futex((int*)&system_clock, FUTEX_WAIT, (int)t);
+  }
+}
+
+#define SYSCALL_OVERHEAD 100
+void core_t::proxy_syscall(long sysnum)
+{
+  
+#if 0
+  char buf[4096], *b=buf;
+  b += sprintf(b, "ecall[%ld] system=%ld local", tid(), system_clock());
+  for (core_t* p=core_t::list(); p; p=p->next()) {
+    if (p->local_clock() == LONG_MAX)
+      b += sprintf(b, " stalled");
+    else
+      b += sprintf(b, " +%ld", p->local_clock()-system_clock());
+  }
+  b += sprintf(b, "\n");
+  fputs(buf, stderr);
+#endif
+
+  update_time();
+  sync_system_clock();
+  long t0 = system_clock;
+  saved_local_time = cycles_run;
+  cycles_run = LONG_MAX;	// indicate we are stalled
+  update_time();
+  hart_t::proxy_syscall(sysnum);
+  cycles_run = system_clock + SYSCALL_OVERHEAD;
+  //cycles_run = system_clock;
+  stall_time += cycles_run - t0; // accumulate stalled 
+  update_time();
+}
+
+
+
+void core_t::status_report()
+{
+  long insns = total_count();
+  double realtime = elapse_time();
+  char buf[4096];
+  char* b = buf;
+  //b += sprintf(b, "\r\33[2K%12ld cycles %3.1fs %3.1f MIPS IPC(util)", system_clock(), realtime, insns/1e6/realtime);
+  b += sprintf(b, "\r\33[2K%12ld cycles %3.1fs %3.1f MIPS IPC(util)", system_clock, realtime, insns/1e6/realtime);
+  char separator = '=';
+  for (core_t* p=core_t::list(); p; p=p->next()) {
+    b += sprintf(b, "%c%4.2f", separator, (double)p->executed()/p->run_cycles());
+    b += sprintf(b, "(%4.2f%%)", 100.0*p->run_cycles()/p->run_time());
+    //b += sprintf(b, "%c%ld/%ld", separator, p->executed(), p->run_cycles());
+    //b += sprintf(b, "(%ld/%ld)", p->run_cycles(), p->run_time());
+    separator = ',';
+  }
+  fputs(buf, stderr);
+}
+
+
+
+inline void mem_t::icache_lookup(long pc)
+{
+  if (ic.lookup(pc))
+    return;
+  cycles_run += ic.penalty();
+  inc_imiss(pc);
+  inc_cycle(pc, ic.penalty());
+  //update_time();
+}
+
+inline void mem_t::insn_model(long end_pc)
+{
+  long pc = last_pc;
+  icache_lookup(pc);
+  pc = ic.linemask(pc) + ic.linesize();
+  while (pc <= end_pc) {
+    icache_lookup(pc);
+    pc += ic.linesize();
+  }
+  pc = last_pc;
+  while (pc <= end_pc) {
+    inc_count(pc);
+    inc_cycle(pc);
+    cycles_run += 1;
+    pc += code.at(pc).bytes();
+  }
+  last_pc = pc;
+}
+
+inline long mem_t::jump_model(long npc, long pc)
+{
+  insn_model(pc);
+  cycles_run += conf_Jump;
+  inc_cycle(npc, conf_Jump);
+  last_pc = npc;
+  return npc;
+}
+
+inline long mem_t::load_model(long a, long pc)
+{
+  insn_model(pc);
+  if (!dc.lookup(a)) {
+    inc_dmiss(pc);
+    cycles_run += dc.penalty();
+    inc_cycle(pc, dc.penalty());
+    //update_time();
+  }
+  return a;
+}
+
+inline long mem_t::store_model(long a, long pc)
+{
+  insn_model(pc);
+  if (!dc.lookup(a, true)) {
+    inc_dmiss(pc);
+    cycles_run += dc.penalty();
+    inc_cycle(pc, dc.penalty());
+    //update_time();
+  }
+  return a;
+}
+
+inline void mem_t::amo_model(long a, long pc)
+{
+  sync_system_clock();
+  insn_model(pc);
+  if (!dc.lookup(a, true)) {
+    inc_dmiss(pc);
+    cycles_run += dc.penalty();
+    inc_cycle(pc, dc.penalty());
+    //update_time();
+  }
+}
 
 mem_t::mem_t(long n)
   : perf_t(n),
@@ -124,7 +244,7 @@ mem_t::mem_t(long n)
     dc("Data",        conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true)
 		 
 {
-  local_time = 0;
+  cycles_run = 0;
 }
 
 void mem_t::print()
@@ -133,56 +253,34 @@ void mem_t::print()
   dc.print();
 }
 
-core_t::core_t() : hart_t(mem()), mem_t(number())
+core_t::core_t(long entry) : hart_t(mem()), mem_t(number())
 {
+  init();
+  last_pc = entry;
 }
 
 core_t::core_t(core_t* p) : hart_t(p, mem()), mem_t(number())
 {
-  local_time = p->local_time;
+  init();
+  last_pc = p->last_pc;
 }
 
-
-#define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
-
-#define SYSCALL_OVERHEAD 100
-void core_t::proxy_syscall(long sysnum)
+void core_t::run_thread()
 {
-  /*
-  update_time();
-  long t = global_time;
-  fprintf(stderr, "local=%ld %ld=global\n", local_time, t);
-  while (t < local_time) {
-    futex((int*)&global_time, FUTEX_WAIT, (int)t);
-    t = global_time;
-    fprintf(stderr, "local=%ld %ld=global\n", local_time, t);
+  fprintf(stderr, "Running [%ld]\n", tid());
+  while (1) {
+    interpreter(conf_report*1000000);
+    update_time();
+    status_report();
   }
-  local_time = LONG_MAX;
-  */
-  hart_t::proxy_syscall(sysnum);
-  /*
-  global_time += SYSCALL_OVERHEAD;
-  local_time = global_time;
-  update_time();
-  futex((int*)&global_time, FUTEX_WAKE, INT_MAX);
-  */
 }
+  
+  
 
-void core_t::update_time()
-{
-  long last_local = LONG_MAX;
-  for (core_t* p=core_t::list(); p; p=p->next()) {
-    if (p->local_time < last_local)
-      last_local = p->local_time;
-  }
-  dieif(last_local<global_time, "local %ld < %ld global", last_local, global_time);
-  global_time = last_local;
-}
 
 
 void start_time();
 double elapse_time();
-void status_report();
 
 void exitfunc()
 {
@@ -192,11 +290,12 @@ void exitfunc()
     p->mem()->print();
   }
   fprintf(stderr, "\n");
-  status_report();
-  fprintf(stderr, "\n");
+  core_t::status_report();
+  fprintf(stderr, "\ncaveat exited normally");
 }
 
-#ifdef DEBUG
+//#ifdef DEBUG
+#if 0
 void signal_handler(int nSIGnum)
 {
   fprintf(stderr, "signal_handler");
@@ -223,12 +322,13 @@ int main(int argc, const char* argv[], const char* envp[])
   for (int i=0; i<perf_t::cores(); i++)
     new perf_t(i);
   long sp = initialize_stack(argc, argv, envp);
-  core_t* mycpu = new core_t();
+  core_t* mycpu = new core_t(code.entry());
   mycpu->write_reg(2, sp);	// x2 is stack pointer
   
   atexit(exitfunc);
 
-#ifdef DEBUG
+#if 0
+  //#ifdef DEBUG
   static struct sigaction action;
   sigemptyset(&action.sa_mask);
   sigemptyset(&action.sa_mask);
@@ -237,16 +337,7 @@ int main(int argc, const char* argv[], const char* envp[])
   sigaction(SIGSEGV, &action, NULL);
 #endif
 
-  while (1) {
-    mycpu->interpreter(10000000L);
-    double realtime = elapse_time();
-    fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS IPC", core_t::total_count(), realtime, core_t::total_count()/1e6/realtime);
-    char separator = '=';
-    for (core_t* p=core_t::list(); p; p=p->next()) {
-      fprintf(stderr, "%c%4.2f", separator, (double)p->executed()/p->local_clock());
-      separator = ',';
-    }
-  }
+  mycpu->run_thread();
 }
 
 extern "C" {

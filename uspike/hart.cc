@@ -128,6 +128,9 @@ long* hart_t::ptr_pc()
   return (long*)&STATE.pc;
 }
 
+extern option<> conf_isa;
+extern option<> conf_vec;
+
 hart_t::hart_t(mmu_t* m)
 {
   processor_t* p = new processor_t(conf_isa, "mu", conf_vec, 0, 0, false, stdout);
@@ -152,6 +155,15 @@ hart_t::hart_t(mmu_t* m)
 hart_t::hart_t(hart_t* from, mmu_t* m) : hart_t(m)
 {
   memcpy(spike()->get_state(), from->spike()->get_state(), sizeof(state_t));
+}
+
+void hart_t::run_thread()
+{
+  extern option<long> conf_report;
+  while (1) {
+    interpreter(conf_report*1000000L);
+    status_report();
+  }
 }
 
 void hart_t::set_tid()

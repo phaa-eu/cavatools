@@ -12,15 +12,15 @@
 #include "mmu.h"
 #include "hart.h"
 
+option<long> conf_report("report",	100,				"Status report every N million instructions");
 option<long> conf_show("show",		0, 				"Trace execution after N gdb continue");
 option<>     conf_gdb("gdb",		0, "localhost:1234", 		"Remote GDB on socket");
 
 void exit_func()
 {
   fprintf(stderr, "\n");
-  fprintf(stderr, "EXIT_FUNC() called\n\n");
-  status_report();
-  fprintf(stderr, "\n");
+  hart_t::status_report();
+  fprintf(stderr, "\nuspike terminated normally\n");
 }  
 
 extern "C" {
@@ -35,6 +35,15 @@ extern "C" {
   extern long gdbNumContinue;
 };
 
+#ifdef DEBUG
+void dump_trace_handler(int nSIGnum)
+{
+  fprintf(stderr, "Killed by signal %d\n", nSIGnum);
+  hart_t* mycpu = hart_t::find(gettid());
+  mycpu->debug.print();
+  exit(-1);
+}
+#endif
 
 int main(int argc, const char* argv[], const char* envp[])
 {
@@ -47,26 +56,7 @@ int main(int argc, const char* argv[], const char* envp[])
   hart_t* mycpu = new hart_t(new mmu_t());
   mycpu->write_reg(2, sp);	// x2 is stack pointer
 
-  //#ifdef DEBUG
-#if 0
-  static struct sigaction action;
-  memset(&action, 0, sizeof(struct sigaction));
-  sigemptyset(&action.sa_mask);
-  sigemptyset(&action.sa_mask);
-  action.sa_flags = 0;
-  action.sa_sigaction = signal_handler;
-  sigaction(SIGSEGV, &action, NULL);
-  sigaction(SIGABRT, &action, NULL);
-  sigaction(SIGINT,  &action, NULL);
-  //  if (setjmp(return_to_top_level) != 0) {
-  //    fprintf(stderr, "SIGSEGV signal was caught\n");
-  //    debug.print();
-  //    exit(-1);
-  //  }
-#endif
-
   dieif(atexit(exit_func), "atexit failed");
-  //  enum stop_reason reason;
   if (conf_gdb) {
     gdb_pc = mycpu->ptr_pc();
     gdb_reg = mycpu->reg_file();
@@ -74,14 +64,10 @@ int main(int argc, const char* argv[], const char* envp[])
     signal(SIGABRT, signal_handler);
     signal(SIGFPE,  signal_handler);
     signal(SIGSEGV, signal_handler);
-    //    signal(SIGILL,  signal_handler);
-    //    signal(SIGINT,  signal_handler);
-    //    signal(SIGTERM, signal_handler);
     while (1) {
       if (setjmp(mainGdbJmpBuf))
 	ProcessGdbException();
       ProcessGdbCommand();
-#if 1
       while (1) {
 	long oldpc = mycpu->read_pc();
 	if (!mycpu->interpreter(1))
@@ -89,19 +75,23 @@ int main(int argc, const char* argv[], const char* envp[])
 	if (gdbNumContinue > conf_show)
 	  show(mycpu, oldpc);
       }
-#else
-      while (mycpu->single_step())
-	/* pass */ ;
-#endif
       lastGdbSignal = SIGTRAP;
       ProcessGdbException();
     }
   }
   else {
-    while (1) {
-      mycpu->interpreter(conf_stat*1000000L);
-      status_report();
-    }
+#ifdef DEBUG
+    struct sigaction action;
+    memset(&action, 0, sizeof(struct sigaction));
+    sigemptyset(&action.sa_mask);
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    action.sa_handler = dump_trace_handler;
+    sigaction(SIGSEGV, &action, NULL);
+    sigaction(SIGABRT, &action, NULL);
+    sigaction(SIGINT,  &action, NULL);
+#endif
+    mycpu->run_thread();
   }
   return 0;
 }

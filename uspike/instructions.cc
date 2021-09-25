@@ -25,7 +25,7 @@ void insnSpace_t::loadelf(const char* elfname)
   long pc = _base;
   while (pc < _limit) {
     Insn_t i = code.set(pc, decoder(code.image(pc), pc));
-    pc += i.compressed() ? 2 : 4;
+    pc += i.bytes();
   }
   substitute_cas(_base, _limit);
 }
@@ -124,7 +124,7 @@ int sdisasm(char* buf, long pc)
     i = decoder(code.image(pc), pc);
   uint32_t b = code.image(pc);
   int n = 0;
-  if (i.compressed())
+  if (i.bytes() == 2)
     n += sprintf(buf+n, "    %04x  ", b&0xFFFF);
   else
     n += sprintf(buf+n, "%08x  ",     b);
@@ -152,7 +152,7 @@ void substitute_cas(long lo, long hi)
 {
   // look for compare-and-swap pattern
   long possible=0, replaced=0;
-  for (long pc=lo; pc<hi; pc+=code.at(pc).compressed()?2:4) {
+  for (long pc=lo; pc<hi; pc+=code.at(pc).bytes()) {
     Insn_t i = code.at(pc);
     if (!(i.opcode() == Op_lr_w || i.opcode() == Op_lr_d))
       continue;

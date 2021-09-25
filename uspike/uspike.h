@@ -27,14 +27,6 @@ extern "C" {
   void redecode(long pc);
 };
 
-extern option<>     conf_isa;
-extern option<>     conf_vec;
-extern option<long> conf_stat;
-extern option<bool> conf_ecall;
-extern option<bool> conf_quiet;
-//extern option<long> conf_show;
-//extern option<>     conf_gdb;
-
 void status_report();
 class hart_t* initial_cpu(long entry, long sp);
 void show_insn(long pc, int tid);

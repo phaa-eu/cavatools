@@ -42,7 +42,7 @@ public:
   int rs2() { return op.rs2; }
   int rs3() { return op.rs3; }
   long immed() { return (op.imm&0x1) ? op.imm>>3 : op_longimm; }
-  bool compressed() { return op_code <= Last_Compressed_Opcode; }
+  int bytes() { return (op_code <= Last_Compressed_Opcode) ? 2 : 4; }
   bool longimmed() { return (op.imm & 0x1) == 0; }
   friend Insn_t reg1insn( Opcode_t code, int8_t rd, int8_t rs1);
   friend Insn_t reg2insn( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2);
