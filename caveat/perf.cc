@@ -15,7 +15,7 @@ perf_header_t* perf_t::h;
 
 perf_t::perf_t(long n)
 {
-  if (n >= h->_cores)
+  if (n > h->_cores)
     fprintf(stderr, "perf_t(%ld) greater than allocated cores=%ld\n", n, h->_cores);
   else {
     volatile char* ptr = h->arrays + n*h->parcels*(sizeof(count_t)+2*sizeof(long));

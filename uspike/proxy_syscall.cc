@@ -82,9 +82,8 @@ static struct syscall_map_t rv_to_host[] = {
 extern option<bool> conf_ecall;
 extern option<long> conf_report;
 
-void hart_t::proxy_ecall(long insns)
+void hart_t::proxy_ecall()
 {
-  incr_count(insns);		// make _count correct for inspection/exit
   long rvnum = read_reg(17);
   if (rvnum<0 || rvnum>HIGHEST_ECALL_NUM || !rv_to_host[rvnum].name) {
     fprintf(stderr, "Illegal ecall number %ld\n", rvnum);
@@ -105,7 +104,6 @@ void hart_t::proxy_ecall(long insns)
   if (conf_ecall)
     fprintf(stderr, "Ecall[%ld] %s\n", tid(), name);
   proxy_syscall(sysnum);
-  incr_count(-insns);		// put back old value
 }
 
 #define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
@@ -121,8 +119,8 @@ int thread_interpreter(void* arg)
   newcpu->set_tid();
   oldcpu->clone_lock = 0;
   futex(&oldcpu->clone_lock, FUTEX_WAKE, 1);
-  newcpu->run_thread();
-  return 0;
+  newcpu->interpreter();
+  die("thread should never get here!\n");
 }
 
 void hart_t::proxy_syscall(long sysnum)

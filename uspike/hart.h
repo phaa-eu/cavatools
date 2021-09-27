@@ -29,10 +29,7 @@ class hart_t {
   static volatile hart_t* cpu_list;	// for find() using thread id
   hart_t* link;				// list of hart_t
   int my_tid;				// my Linux thread number
-  static volatile int num_threads;	// allocated
-  int _number;				// index of this hart
-  static volatile long total_insns;	// instructions executed all threads
-  long _executed;			// executed this thread
+  volatile long _executed;		// executed this thread
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
 public:
@@ -40,21 +37,16 @@ public:
   hart_t(hart_t* p, mmu_t* m);
   virtual hart_t* newcore() { return new hart_t(this, new mmu_t); }
   virtual void proxy_syscall(long sysnum);
-  void proxy_ecall(long insns);
+  void proxy_ecall();
   
   static class hart_t* list() { return (class hart_t*)cpu_list; }
   class hart_t* next() { return link; }
-  static int threads() { return num_threads; }
-  int number() { return _number; }
   long executed() { return _executed; }
-  void incr_count(long n);
-  static volatile long total_count() { return total_insns; }
   long tid() { return my_tid; }
   void set_tid();
   static hart_t* find(int tid);
-  bool interpreter(long how_many);
-  virtual void run_thread();
-  static void status_report();
+  bool single_step();
+  void interpreter();
   
   class processor_t* spike() { return spike_cpu; }
   class mmu_t* mmu() { return caveat_mmu; }

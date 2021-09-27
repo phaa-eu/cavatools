@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <setjmp.h>
+#include <sched.h>
 
 #include "options.h"
 #include "uspike.h"
@@ -16,10 +17,43 @@ option<long> conf_report("report",	100,				"Status report every N million instru
 option<long> conf_show("show",		0, 				"Trace execution after N gdb continue");
 option<>     conf_gdb("gdb",		0, "localhost:1234", 		"Remote GDB on socket");
 
+static void print_status()
+{
+  char buf[4096];
+  char* b = buf;
+  double realtime = elapse_time();
+  long threads = 0;
+  long total = 0;  
+  for (hart_t* p=hart_t::list(); p; p=p->next()) {
+    threads++;
+    total += p->executed();
+  }
+  b += sprintf(b, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
+  if (threads <= 16) {
+    char separator = '(';
+    for (hart_t* p=hart_t::list(); p; p=p->next()) {
+      b += sprintf(b, "%c%1ld%%", separator, 100*p->executed()/total);
+      separator = ',';
+    }
+    b += sprintf(b, ")");
+  }
+  else if (threads > 1)
+    b += sprintf(b, "(%ld cores)", threads);
+  fputs(buf, stderr);
+}
+
+int status_function(void* arg)
+{
+  while (1) {
+    sleep(1);
+    print_status();
+  }
+}
+
 void exit_func()
 {
   fprintf(stderr, "\n");
-  hart_t::status_report();
+  print_status();
   fprintf(stderr, "\nuspike terminated normally\n");
 }  
 
@@ -70,7 +104,7 @@ int main(int argc, const char* argv[], const char* envp[])
       ProcessGdbCommand();
       while (1) {
 	long oldpc = mycpu->read_pc();
-	if (!mycpu->interpreter(1))
+	if (!mycpu->single_step())
 	  break;
 	if (gdbNumContinue > conf_show)
 	  show(mycpu, oldpc);
@@ -91,9 +125,20 @@ int main(int argc, const char* argv[], const char* envp[])
     sigaction(SIGABRT, &action, NULL);
     sigaction(SIGINT,  &action, NULL);
 #endif
-    mycpu->run_thread();
+    // spawn status report thread
+    extern option<bool> conf_quiet;
+    if (!conf_quiet) {
+#define STATUS_STACK_SIZE  (1<<16)
+      char* stack = new char[STATUS_STACK_SIZE];
+      stack += STATUS_STACK_SIZE;
+      if (clone(status_function, stack, CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM, 0) == -1) {
+	perror("clone failed");
+	exit(-1);
+      }
+    }
+    mycpu->interpreter();
+    die("Breakpoint executed, should never happen!");
   }
-  return 0;
 }
 
 extern "C" {
@@ -101,22 +146,14 @@ extern "C" {
 #define poolsize  (1<<30)	/* size of simulation memory pool */
 
 static char simpool[poolsize];	/* base of memory pool */
-static volatile char* pooltop = simpool; /* current allocation address */
+static char* pooltop = simpool; /* current allocation address */
 
 void *malloc(size_t size)
 {
-  char volatile *rv, *newtop;
-  do {
-    volatile char* after = pooltop + size + 16; /* allow for alignment */
-    if (after > simpool+poolsize) {
-      fprintf(stderr, " failed\n");
-      return 0;
-    }
-    rv = pooltop;
-    newtop = (char*)((unsigned long)after & ~0xfL); /* always align to 16 bytes */
-  } while (!__sync_bool_compare_and_swap(&pooltop, rv, newtop));
-      
-  return (void*)rv;
+  size = (size + 15) & ~15;	// always allocate aligned objects
+  if (pooltop+size > simpool+poolsize)
+    return 0;
+  return __sync_fetch_and_add(&pooltop, size);
 }
 
 void free(void *ptr)

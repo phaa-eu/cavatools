@@ -35,7 +35,6 @@ static inline bool find_symbol(const char* name, long &begin, long &end) { retur
 static inline const char* find_pc(long pc, long &offset) { return elf_find_pc(pc, &offset); }
 
 void show(hart_t* cpu, long pc, FILE* f =stderr);
-
 void start_time();
 double elapse_time();
-double simulated_time(long cycles);
+void status_report();

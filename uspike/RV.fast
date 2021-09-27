@@ -84,5 +84,5 @@
   "cas10.w"	: { "fast":"if (!cas<int32_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
   "cas10.d"	: { "fast":"if (!cas<int64_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
 
-  "ecall"	: { "fast":"write_pc(pc); proxy_ecall(insns);" }
+  "ecall"	: { "fast":"write_pc(pc); proxy_ecall();" }
 }

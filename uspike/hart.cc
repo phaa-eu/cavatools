@@ -12,8 +12,6 @@
 #include "hart.h"
 
 volatile hart_t* hart_t::cpu_list =0;
-volatile long hart_t::total_insns =0;
-volatile int hart_t::num_threads =0;
 
 hart_t* hart_t::find(int tid)
 {
@@ -21,15 +19,6 @@ hart_t* hart_t::find(int tid)
     if (p->my_tid == tid)
       return p;
   return 0;
-}
-
-void hart_t::incr_count(long n)
-{
-  _executed += n;
-  long oldtotal;
-  do {
-    oldtotal = total_insns;
-  } while (!__sync_bool_compare_and_swap(&total_insns, oldtotal, oldtotal+n));
 }
 
 #ifdef DEBUG
@@ -142,28 +131,15 @@ hart_t::hart_t(mmu_t* m)
   spike_cpu = p;
   caveat_mmu = m;
   _executed = 0;
+  // atomically add this to head of list
   do {
     link = list();
   } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
-  int old_n;			// atomically increment thread count
-  do {
-    old_n = num_threads;
-  } while (!__sync_bool_compare_and_swap(&num_threads, old_n, old_n+1));
-  _number = old_n;		// after loop in case of race
 }
 
 hart_t::hart_t(hart_t* from, mmu_t* m) : hart_t(m)
 {
   memcpy(spike()->get_state(), from->spike()->get_state(), sizeof(state_t));
-}
-
-void hart_t::run_thread()
-{
-  extern option<long> conf_report;
-  while (1) {
-    interpreter(conf_report*1000000L);
-    status_report();
-  }
 }
 
 void hart_t::set_tid()

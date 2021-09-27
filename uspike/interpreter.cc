@@ -33,27 +33,6 @@ struct syscall_map_t rv_to_host[] = {
 };
 const int highest_ecall_num = HIGHEST_ECALL_NUM;
 
-void hart_t::status_report()
-{
-  if (conf_quiet)
-    return;
-  char buf[4096];
-  char* b = buf;
-  double realtime = elapse_time();
-  b += sprintf(b, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", hart_t::total_count(), realtime, hart_t::total_count()/1e6/realtime);
-  if (hart_t::threads() <= 16) {
-    char separator = '(';
-    for (hart_t* p=hart_t::list(); p; p=p->next()) {
-      b += sprintf(b, "%c%1ld%%", separator, 100*p->executed()/hart_t::total_count());
-      separator = ',';
-    }
-    b += sprintf(b, ")");
-  }
-  else if (hart_t::threads() > 1)
-    b += sprintf(b, "(%d cores)", hart_t::threads());
-  fputs(buf, stderr);
-}
-
 /* RISCV-V clone() system call arguments not same as X86_64:
    a0 = flags
    a1 = child_stack
@@ -89,51 +68,60 @@ template<class T> bool hart_t::cas(long pc)
 
 extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* p);
 
+bool hart_t::single_step()
+{
+  long pc = read_pc();
+  Insn_t i = code.at(pc);
+  try {
+    write_pc(golden[i.opcode()](read_pc(), *mmu(), spike()));
+  } catch (trap_breakpoint& e) {
+    return true;
+  }
+  _executed++;
+  return false;
+}  
+
+void hart_t::interpreter()
+{
+  processor_t* p = spike();
+  long* xpr = reg_file();
+  long pc = read_pc();
+#ifdef DEBUG
+  long oldpc;
+#endif
+  while (1) {
+#ifdef DEBUG
+    dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
+    oldpc = pc;
+    debug.insert(executed()+insns+1, pc);
+#endif
+    Insn_t i = code.at(pc);
+    switch (i.opcode()) {
+
 #define wrd(e)	xpr[i.rd()]=(e)
 #define r1	xpr[i.rs1()]
 #define r2	xpr[i.rs2()]
 #define imm	i.immed()
 #define MMU	(*mmu())
 #define wpc(npc)  pc=MMU.jump_model(npc, pc)
-
-bool hart_t::interpreter(long how_many)
-{
-  processor_t* p = spike();
-  long* xpr = reg_file();
-  long pc = read_pc();
-  long insns = 0;
-#ifdef DEBUG
-  long oldpc;
-#endif
-  do {
-#ifdef DEBUG
-    dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
-    oldpc = pc;
-    debug.insert(executed()+insns+1, pc);
-#endif
-    //mmu()->insn_model(pc);
-    Insn_t i = code.at(pc);
-    switch (i.opcode()) {
 #include "fastops.h"
+      
     default:
       try {
 	pc = golden[i.opcode()](pc, *mmu(), spike());
       } catch (trap_breakpoint& e) {
 	write_pc(pc);
-	incr_count(insns);
-	return true;
+	return;
       }
     } // switch (i.opcode())
     xpr[0] = 0;
+    _executed++;
 #ifdef DEBUG
     i = code.at(oldpc);
     int rn = i.rd()==NOREG ? i.rs2() : i.rd();
     debug.addval(i.rd(), read_reg(rn));
 #endif
-  } while (++insns < how_many);
-  write_pc(pc);
-  incr_count(insns);
-  return false;
+  }
 }
 
 #undef MMU
