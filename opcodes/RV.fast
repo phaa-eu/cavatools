@@ -6,19 +6,22 @@
   "c.sd"	: { "fast":"MMU.store_int64(r1+imm, r2)" },
   "c.addi"	: { "fast":"wrd(r1 + imm)" },
   "c.addiw"	: { "fast":"wrd(int32_t(r1) + int32_t(imm))" },
-
   "c.li"	: { "fast":"wrd(imm)" },
   "c.addi16sp"	: { "fast":"wrd(r1+imm)" },
   "c.lui"	: { "fast":"wrd(imm)" },
   "c.srli"	: { "fast":"wrd(uint64_t(r1) >> imm)" },
   "c.srai"	: { "fast":"wrd( int64_t(r1) >> imm)" },
   "c.andi"	: { "fast":"wrd(r1 & imm)" },
+  "c.sub"	: { "fast":"wrd(r1 - r2)" },
+  "c.xor"	: { "fast":"wrd(r1 ^ r2)" },
+  "c.or"	: { "fast":"wrd(r1 | r2)" },
+  "c.and"	: { "fast":"wrd(r1 & r2)" },
   "c.subw"	: { "fast":"wrd(int32_t(r1) - int32_t(r2))" },
-
   "c.addw"	: { "fast":"wrd(int32_t(r1) + int32_t(r2))" },
   "c.j"		: { "fast":"wpc(pc+imm); break" },
   "c.beqz"	: { "fast":"if (r1==0) { wpc(pc+imm); break; }" },
   "c.bnez"	: { "fast":"if (r1!=0) { wpc(pc+imm); break; }" },
+  
   "c.slli"	: { "fast":"wrd(uint64_t(r1) << imm)" },
   "c.lwsp"	: { "fast":"wrd(MMU.load_int32(r1+imm))" },
   "c.ldsp"	: { "fast":"wrd(MMU.load_int64(r1+imm))" },
@@ -79,10 +82,5 @@
   "srlw"	: { "fast":"wrd(uint32_t(r1) >> uint32_t(r2))" },
   "sraw"	: { "fast":"wrd( int32_t(r1) >>  int32_t(r2))" },
   
-  "cas12.w"	: { "fast":"if (!cas<int32_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":12 },
-  "cas12.d"	: { "fast":"if (!cas<int64_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":12 },
-  "cas10.w"	: { "fast":"if (!cas<int32_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
-  "cas10.d"	: { "fast":"if (!cas<int64_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }", "len":10 },
-
   "ecall"	: { "fast":"write_pc(pc); proxy_ecall();" }
 }

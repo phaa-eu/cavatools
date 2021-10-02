@@ -79,12 +79,21 @@ bool hart_t::single_step()
   }
   _executed++;
   return false;
-}  
+}
+
+union fpreg_t { 
+  uint32_t p[4];		// p[1]=~0  NAN-boxes float to double
+  uint64_t q[2];		// q[1]=~0L NAN-boxes double to quad
+  float s;
+  double d;
+};
+static_assert(sizeof(fpreg_t) == 16);
 
 void hart_t::interpreter()
 {
   processor_t* p = spike();
   long* xpr = reg_file();
+  fpreg_t* fpr = (fpreg_t*)freg_file();
   long pc = read_pc();
 #ifdef DEBUG
   long oldpc;
@@ -93,7 +102,7 @@ void hart_t::interpreter()
 #ifdef DEBUG
     dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
     oldpc = pc;
-    debug.insert(executed()+insns+1, pc);
+    debug.insert(executed()+1, pc);
 #endif
     Insn_t i = code.at(pc);
     switch (i.opcode()) {
@@ -104,11 +113,57 @@ void hart_t::interpreter()
 #define imm	i.immed()
 #define MMU	(*mmu())
 #define wpc(npc)  pc=MMU.jump_model(npc, pc)
+
+#define wfs(e)  { fpr[i.fd()].s=(e); fpr[i.fd()].p[1]=~0; fpr[i.fd()].q[1]=~0L; }
+#define wfd(e)  { fpr[i.fd()].d=(e);                      fpr[i.fd()].q[1]=~0L; }
+#define f1	fpr[i.fs1()].s
+#define d1	fpr[i.fs1()].d
+#define f2	fpr[i.fs2()].s
+#define d2	fpr[i.fs2()].d
+#define f3	fpr[i.fs3()].s
+#define d3	fpr[i.fs3()].d
+      
 #include "fastops.h"
+
+    case Op_cas12_w:
+      if (!cas<int32_t>(pc)) {
+	wpc(pc+code.at(pc+4).immed()+4);
+	break;
+      }
+      pc += 12;
+      break;
+
+    case Op_cas12_d:
+      if (!cas<int64_t>(pc)) {
+	wpc(pc+code.at(pc+4).immed()+4);
+	break;
+      }
+      pc += 12;
+      break;
+
+    case Op_cas10_w:
+      if (!cas<int32_t>(pc)) {
+	wpc(pc+code.at(pc+4).immed()+4);
+	break;
+      }
+      pc += 10;
+      break;
+
+    case Op_cas10_d:
+      if (!cas<int64_t>(pc)) {
+	wpc(pc+code.at(pc+4).immed()+4);
+	break;
+      }
+      pc += 10;
+      break;
       
     default:
       try {
 	pc = golden[i.opcode()](pc, *mmu(), spike());
+      } catch (trap_user_ecall& e) {
+	write_pc(pc);
+	proxy_ecall();
+	pc += 4;
       } catch (trap_breakpoint& e) {
 	write_pc(pc);
 	return;

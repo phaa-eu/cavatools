@@ -1,0 +1,1455 @@
+{
+    "ZERO": {},
+    "c.addi4spn": {
+        "bits": "000         {5:4|9:6|2|3}    crd 00",
+        "len": 2,
+        "decode": "e003 0 x(2,3)+8+GPREG;2;NOREG;NOREG x(5,1)<<3|x(6,1)<<2|x(7,4)<<6|x(11,2)<<4 0",
+        "exec": "require_extension('C');\nrequire(insn.rvc_addi4spn_imm() != 0);\nWRITE_RVC_RS2S(sext_xlen(RVC_SP + insn.rvc_addi4spn_imm()));\n",
+        "fast": "wrd(r1+imm)"
+    },
+    "c.fld": {
+        "flags": "type_c,isa_C,isa_D,fp,mmu",
+        "bits": "001 {5:3}       cs1 {7:6}    cfd 00",
+        "len": 2,
+        "decode": "e003 2000 x(2,3)+8+FPREG;x(7,3)+8+GPREG;NOREG;NOREG x(5,2)<<6|x(10,3)<<3 0",
+        "exec": "require_extension('C');\nrequire_extension('D');\nrequire_fp;\nWRITE_RVC_FRS2S(f64(MMU.load_uint64(RVC_RS1S + insn.rvc_ld_imm())));\n"
+    },
+    "c.lw": {
+        "flags": "type_c,isa_C,mmu",
+        "bits": "010 {5:3}       cs1 {2|6}    crd 00",
+        "len": 2,
+        "decode": "e003 4000 x(2,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(5,1)<<6|x(6,1)<<2|x(10,3)<<3 0",
+        "exec": "require_extension('C');\nWRITE_RVC_RS2S(MMU.load_int32(RVC_RS1S + insn.rvc_lw_imm()));\n",
+        "fast": "wrd(MMU.load_int32(r1+imm))"
+    },
+    "c.ld": {
+        "flags": "type_c,isa_C,isa_F,fp,mmu",
+        "bits": "011 {5:3}       cs1 {7:6}    crd 00",
+        "len": 2,
+        "decode": "e003 6000 x(2,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(5,2)<<6|x(10,3)<<3 0",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  require_extension('F');\n  require_fp;\n  WRITE_RVC_FRS2S(f32(MMU.load_uint32(RVC_RS1S + insn.rvc_lw_imm())));\n} else { // c.ld\n  WRITE_RVC_RS2S(MMU.load_int64(RVC_RS1S + insn.rvc_ld_imm()));\n}\n",
+        "fast": "wrd(MMU.load_int64(r1+imm))"
+    },
+    "c.fsd": {
+        "flags": "type_c,isa_C,isa_D,fp,mmu",
+        "bits": "101 {5:3}       cs1 {7:6}    ds2 00",
+        "len": 2,
+        "decode": "e003 a000 NOREG;x(7,3)+8+GPREG;x(2,3)+8+FPREG;NOREG x(5,2)<<6|x(10,3)<<3 0",
+        "exec": "require_extension('C');\nrequire_extension('D');\nrequire_fp;\nMMU.store_uint64(RVC_RS1S + insn.rvc_ld_imm(), RVC_FRS2S.v[0]);\n"
+    },
+    "c.sw": {
+        "flags": "type_c,isa_C,mmu",
+        "bits": "110 {5:3}       cs1 {2|6}    cs2 00",
+        "len": 2,
+        "decode": "e003 c000 NOREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG x(5,1)<<6|x(6,1)<<2|x(10,3)<<3 0",
+        "exec": "require_extension('C');\nMMU.store_uint32(RVC_RS1S + insn.rvc_lw_imm(), RVC_RS2S);\n",
+        "fast": "MMU.store_int32(r1+imm, r2)"
+    },
+    "c.sd": {
+        "flags": "type_c,isa_C,isa_F,fp,mmu",
+        "bits": "111 {5:3}       cs1 {7:6}    cs2 00",
+        "len": 2,
+        "decode": "e003 e000 NOREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG x(5,2)<<6|x(10,3)<<3 0",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  require_extension('F');\n  require_fp;\n  MMU.store_uint32(RVC_RS1S + insn.rvc_lw_imm(), RVC_FRS2S.v[0]);\n} else { // c.sd\n  MMU.store_uint64(RVC_RS1S + insn.rvc_ld_imm(), RVC_RS2S);\n}\n",
+        "fast": "MMU.store_int64(r1+imm, r2)"
+    },
+    "c.addi": {
+        "bits": "000  {-5}       rd1        {4:0} 01",
+        "len": 2,
+        "decode": "e003 1 x(7,5)+GPREG;x(7,5)+GPREG;NOREG;NOREG x(2,5)|xs(12,1)<<5 0",
+        "exec": "require_extension('C');\nWRITE_RD(sext_xlen(RVC_RS1 + insn.rvc_imm()));\n",
+        "fast": "wrd(r1 + imm)"
+    },
+    "c.addiw": {
+        "flags": "type_c,isa_C,pc",
+        "bits": "001  {-5}       rd1        {4:0} 01",
+        "len": 2,
+        "decode": "e003 2001 x(7,5)+GPREG;x(7,5)+GPREG;NOREG;NOREG x(2,5)|xs(12,1)<<5 0",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  reg_t tmp = npc;\n  set_pc(pc + insn.rvc_j_imm());\n  WRITE_REG(X_RA, tmp);\n} else { // c.addiw\n  require(insn.rvc_rd() != 0);\n  WRITE_RD(sext32(RVC_RS1 + insn.rvc_imm()));\n}\n",
+        "fast": "wrd(int32_t(r1) + int32_t(imm))"
+    },
+    "c.li": {
+        "bits": "010  {-5}        rd        {4:0} 01",
+        "len": 2,
+        "decode": "e003 4001 x(7,5)+GPREG;NOREG;NOREG;NOREG x(2,5)|xs(12,1)<<5 0",
+        "exec": "require_extension('C');\nWRITE_RD(insn.rvc_imm());\n",
+        "fast": "wrd(imm)"
+    },
+    "c.addi16sp": {
+        "bits": "011  {-9}     00010  {4|6|8:7|5} 01",
+        "len": 2,
+        "decode": "ef83 6101 2;2;NOREG;NOREG x(2,1)<<5|x(3,2)<<7|x(5,1)<<6|x(6,1)<<4|xs(12,1)<<9 0",
+        "exec": "require_extension('C');\nif (insn.rvc_rd() == 2) { // c.addi16sp\n  require(insn.rvc_addi16sp_imm() != 0);\n  WRITE_REG(X_SP, sext_xlen(RVC_SP + insn.rvc_addi16sp_imm()));\n} else {\n  require(insn.rvc_imm() != 0);\n  WRITE_RD(insn.rvc_imm() << 12);\n}\n",
+        "fast": "wrd(r1+imm)"
+    },
+    "c.lui": {
+        "bits": "011 {-17}        rd      {16:12} 01",
+        "len": 2,
+        "decode": "e003 6001 x(7,5)+GPREG;NOREG;NOREG;NOREG x(2,5)<<12|xs(12,1)<<17 1",
+        "exec": "require_extension('C');\nif (insn.rvc_rd() == 2) { // c.addi16sp\n  require(insn.rvc_addi16sp_imm() != 0);\n  WRITE_REG(X_SP, sext_xlen(RVC_SP + insn.rvc_addi16sp_imm()));\n} else {\n  require(insn.rvc_imm() != 0);\n  WRITE_RD(insn.rvc_imm() << 12);\n}\n",
+        "fast": "wrd(imm)"
+    },
+    "c.srli": {
+        "bits": "100   {5} 00    cd1        {4:0} 01",
+        "len": 2,
+        "decode": "ec03 8001 x(7,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,5)|x(12,1)<<5 0",
+        "exec": "require_extension('C');\nrequire(insn.rvc_zimm() < xlen);\nWRITE_RVC_RS1S(sext_xlen(zext_xlen(RVC_RS1S) >> insn.rvc_zimm()));\n",
+        "fast": "wrd(uint64_t(r1) >> imm)"
+    },
+    "c.srai": {
+        "bits": "100   {5} 01    cd1        {4:0} 01",
+        "len": 2,
+        "decode": "ec03 8401 x(7,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,5)|x(12,1)<<5 0",
+        "exec": "require_extension('C');\nrequire(insn.rvc_zimm() < xlen);\nWRITE_RVC_RS1S(sext_xlen(sext_xlen(RVC_RS1S) >> insn.rvc_zimm()));\n",
+        "fast": "wrd( int64_t(r1) >> imm)"
+    },
+    "c.andi": {
+        "bits": "100  {-5} 10    cd1        {4:0} 01",
+        "len": 2,
+        "decode": "ec03 8801 x(7,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,5)|xs(12,1)<<5 0",
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(RVC_RS1S & insn.rvc_imm());\n",
+        "fast": "wrd(r1 & imm)"
+    },
+    "c.sub": {
+        "bits": "100     0 11    cd1    00    cs2 01",
+        "len": 2,
+        "decode": "fc63 8c01 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(sext_xlen(RVC_RS1S - RVC_RS2S));\n",
+        "fast": "wrd(r1 - r2)"
+    },
+    "c.xor": {
+        "bits": "100     0 11    cd1    01    cs2 01",
+        "len": 2,
+        "decode": "fc63 8c21 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(RVC_RS1S ^ RVC_RS2S);\n",
+        "fast": "wrd(r1 ^ r2)"
+    },
+    "c.or": {
+        "bits": "100     0 11    cd1    10    cs2 01",
+        "len": 2,
+        "decode": "fc63 8c41 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(RVC_RS1S | RVC_RS2S);\n",
+        "fast": "wrd(r1 | r2)"
+    },
+    "c.and": {
+        "bits": "100     0 11    cd1    11    cs2 01",
+        "len": 2,
+        "decode": "fc63 8c61 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(RVC_RS1S & RVC_RS2S);\n",
+        "fast": "wrd(r1 & r2)"
+    },
+    "c.subw": {
+        "bits": "100     1 11    cd1    00    cs2 01",
+        "len": 2,
+        "decode": "fc63 9c01 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nrequire_rv64;\nWRITE_RVC_RS1S(sext32(RVC_RS1S - RVC_RS2S));\n",
+        "fast": "wrd(int32_t(r1) - int32_t(r2))"
+    },
+    "c.addw": {
+        "bits": "100     1 11    cd1    01    cs2 01",
+        "len": 2,
+        "decode": "fc63 9c21 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nrequire_rv64;\nWRITE_RVC_RS1S(sext32(RVC_RS1S + RVC_RS2S));\n",
+        "fast": "wrd(int32_t(r1) + int32_t(r2))"
+    },
+    "c.j": {
+        "flags": "type_c,isa_C,pc",
+        "bits": "101     {-11|4|9:8|10|6|7|3:1|5} 01",
+        "len": 2,
+        "decode": "e003 a001 NOREG;NOREG;NOREG;NOREG x(2,1)<<5|x(3,3)<<1|x(6,1)<<7|x(7,1)<<6|x(8,1)<<10|x(9,2)<<8|x(11,1)<<4|xs(12,1)<<11 0",
+        "exec": "require_extension('C');\nset_pc(pc + insn.rvc_j_imm());\n",
+        "fast": "wpc(pc+imm); break"
+    },
+    "c.beqz": {
+        "flags": "type_c,isa_C,pc",
+        "bits": "110 {-8|4:3}    cs1  {7:6|2:1|5} 01",
+        "len": 2,
+        "decode": "e003 c001 NOREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,1)<<5|x(3,2)<<1|x(5,2)<<6|x(10,2)<<3|xs(12,1)<<8 0",
+        "exec": "require_extension('C');\nif (RVC_RS1S == 0)\n  set_pc(pc + insn.rvc_b_imm());\n",
+        "fast": "if (r1==0) { wpc(pc+imm); break; }"
+    },
+    "c.bnez": {
+        "flags": "type_c,isa_C,pc",
+        "bits": "111 {-8|4:3}    cs1  {7:6|2:1|5} 01",
+        "len": 2,
+        "decode": "e003 e001 NOREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,1)<<5|x(3,2)<<1|x(5,2)<<6|x(10,2)<<3|xs(12,1)<<8 0",
+        "exec": "require_extension('C');\nif (RVC_RS1S != 0)\n  set_pc(pc + insn.rvc_b_imm());\n",
+        "fast": "if (r1!=0) { wpc(pc+imm); break; }"
+    },
+    "c.slli": {
+        "bits": "000   {5}       rd1        {4:0} 10",
+        "len": 2,
+        "decode": "e003 2 x(7,5)+GPREG;x(7,5)+GPREG;NOREG;NOREG x(2,5)|x(12,1)<<5 0",
+        "exec": "require_extension('C');\nrequire(insn.rvc_zimm() < xlen);\nWRITE_RD(sext_xlen(RVC_RS1 << insn.rvc_zimm()));\n",
+        "fast": "wrd(uint64_t(r1) << imm)"
+    },
+    "c.fldsp": {
+        "flags": "type_csl,isa_C,isa_D,fp,mmu",
+        "bits": "001   {5}        fd    {4:3|8:6} 10",
+        "len": 2,
+        "decode": "e003 2002 x(7,5)+FPREG;2;NOREG;NOREG x(2,3)<<6|x(5,2)<<3|x(12,1)<<5 0",
+        "exec": "require_extension('C');\nrequire_extension('D');\nrequire_fp;\nWRITE_FRD(f64(MMU.load_uint64(RVC_SP + insn.rvc_ldsp_imm())));\n"
+    },
+    "c.lwsp": {
+        "flags": "type_csl,isa_C,mmu",
+        "bits": "010   {5}        rd    {4:2|7:6} 10",
+        "len": 2,
+        "decode": "e003 4002 x(7,5)+GPREG;2;NOREG;NOREG x(2,2)<<6|x(4,3)<<2|x(12,1)<<5 0",
+        "exec": "require_extension('C');\nrequire(insn.rvc_rd() != 0);\nWRITE_RD(MMU.load_int32(RVC_SP + insn.rvc_lwsp_imm()));\n",
+        "fast": "wrd(MMU.load_int32(r1+imm))"
+    },
+    "c.ldsp": {
+        "flags": "type_csl,isa_C,isa_F,fp,mmu",
+        "bits": "011   {5}        rd    {4:3|8:6} 10",
+        "len": 2,
+        "decode": "e003 6002 x(7,5)+GPREG;2;NOREG;NOREG x(2,3)<<6|x(5,2)<<3|x(12,1)<<5 0",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  require_extension('F');\n  require_fp;\n  WRITE_FRD(f32(MMU.load_uint32(RVC_SP + insn.rvc_lwsp_imm())));\n} else { // c.ldsp\n  require(insn.rvc_rd() != 0);\n  WRITE_RD(MMU.load_int64(RVC_SP + insn.rvc_ldsp_imm()));\n}\n",
+        "fast": "wrd(MMU.load_int64(r1+imm))"
+    },
+    "c.jr": {
+        "flags": "type_c,isa_C,pc",
+        "bits": "100     0       rs5        00000 10",
+        "len": 2,
+        "decode": "f07f 8002 NOREG;x(7,5)+GPREG;NOREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nrequire(insn.rvc_rs1() != 0);\nset_pc(RVC_RS1 & ~reg_t(1));\n",
+        "fast": "wpc(r1); break"
+    },
+    "c.mv": {
+        "bits": "100     0        rd          rs4 10",
+        "len": 2,
+        "decode": "f003 8002 x(7,5)+GPREG;NOREG;x(2,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nrequire(insn.rvc_rs2() != 0);\nWRITE_RD(RVC_RS2);\n",
+        "fast": "wrd(r2)"
+    },
+    "c.ebreak": {
+        "bits": "100     1     00000        00000 10",
+        "len": 2,
+        "decode": "ffff 9002 NOREG;NOREG;NOREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nthrow trap_breakpoint(pc);\n"
+    },
+    "c.jalr": {
+        "flags": "type_cjl,isa_C,pc",
+        "bits": "100     1       rs5        00000 10",
+        "len": 2,
+        "decode": "f07f 9002 1;x(7,5)+GPREG;NOREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nrequire(insn.rvc_rs1() != 0);\nreg_t tmp = npc;\nset_pc(RVC_RS1 & ~reg_t(1));\nWRITE_REG(X_RA, tmp);\n",
+        "fast": "{ long t=pc+2; wpc(r1); wrd(t); break; }"
+    },
+    "c.add": {
+        "bits": "100     1       rd1          rs4 10",
+        "len": 2,
+        "decode": "f003 9002 x(7,5)+GPREG;x(7,5)+GPREG;x(2,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('C');\nrequire(insn.rvc_rs2() != 0);\nWRITE_RD(sext_xlen(RVC_RS1 + RVC_RS2));\n",
+        "fast": "wrd(r1 + r2)"
+    },
+    "c.fsdsp": {
+        "flags": "type_css,isa_C,isa_D,fp,mmu",
+        "bits": "101       {5:3|8:6}          fs4 10",
+        "len": 2,
+        "decode": "e003 a002 NOREG;2;x(2,5)+FPREG;NOREG x(7,3)<<6|x(10,3)<<3 0",
+        "exec": "require_extension('C');\nrequire_extension('D');\nrequire_fp;\nMMU.store_uint64(RVC_SP + insn.rvc_sdsp_imm(), RVC_FRS2.v[0]);\n"
+    },
+    "c.swsp": {
+        "flags": "type_css,isa_C,mmu",
+        "bits": "110       {5:2|7:6}          rs4 10",
+        "len": 2,
+        "decode": "e003 c002 NOREG;2;x(2,5)+GPREG;NOREG x(7,2)<<6|x(9,4)<<2 0",
+        "exec": "require_extension('C');\nMMU.store_uint32(RVC_SP + insn.rvc_swsp_imm(), RVC_RS2);\n",
+        "fast": "MMU.store_int32(r1+imm, r2)"
+    },
+    "c.sdsp": {
+        "flags": "type_css,isa_C,isa_F,fp,mmu",
+        "bits": "111       {5:3|8:6}          rs4 10",
+        "len": 2,
+        "decode": "e003 e002 NOREG;2;x(2,5)+GPREG;NOREG x(7,3)<<6|x(10,3)<<3 0",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  require_extension('F');\n  require_fp;\n  MMU.store_uint32(RVC_SP + insn.rvc_swsp_imm(), RVC_FRS2.v[0]);\n} else { // c.sdsp\n  MMU.store_uint64(RVC_SP + insn.rvc_sdsp_imm(), RVC_RS2);\n}\n",
+        "fast": "MMU.store_int64(r1+imm, r2)"
+    },
+    "fmadd_dyn.s": {
+        "bits": "fs3  00  fs2   fs1  111  fd  10000 11",
+        "len": 4,
+        "decode": "600707f 7043 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0",
+        "fast": "wfs( (f1 * f2) + f3)"
+    },
+    "fmsub_dyn.s": {
+        "bits": "fs3  00  fs2   fs1  111  fd  10001 11",
+        "len": 4,
+        "decode": "600707f 7047 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0",
+        "fast": "wfs( (f1 * f2) - f3)"
+    },
+    "fnmsub_dyn.s": {
+        "bits": "fs3  00  fs2   fs1  111  fd  10010 11",
+        "len": 4,
+        "decode": "600707f 704b x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0",
+        "fast": "wfs(-(f1 * f2) - f3)"
+    },
+    "fnmadd_dyn.s": {
+        "bits": "fs3  00  fs2   fs1  111  fd  10011 11",
+        "len": 4,
+        "decode": "600707f 704f x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0",
+        "fast": "wfs(-(f1 * f2) + f3)"
+    },
+    "fadd_dyn.s": {
+        "bits": "0000000  fs2   fs1  111  fd  10100 11",
+        "len": 4,
+        "decode": "fe00707f 7053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "fast": "wfs(f1+f2)"
+    },
+    "fsub_dyn.s": {
+        "bits": "0000100  fs2   fs1  111  fd  10100 11",
+        "len": 4,
+        "decode": "fe00707f 8007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "fast": "wfs(f1-f2)"
+    },
+    "fmul_dyn.s": {
+        "bits": "0001000  fs2   fs1  111  fd  10100 11",
+        "len": 4,
+        "decode": "fe00707f 10007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "fast": "wfs(f1*f2)"
+    },
+    "fmadd_dyn.d": {
+        "bits": "fs3  01  fs2   fs1  111  fd  10000 11",
+        "len": 4,
+        "decode": "600707f 2007043 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0",
+        "fast": "wfs( (d1 * d2) + d3)"
+    },
+    "fmsub_dyn.d": {
+        "bits": "fs3  01  fs2   fs1  111  fd  10001 11",
+        "len": 4,
+        "decode": "600707f 2007047 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0",
+        "fast": "wfs( (d1 * d2) - d3)"
+    },
+    "fnmsub_dyn.d": {
+        "bits": "fs3  01  fs2   fs1  111  fd  10010 11",
+        "len": 4,
+        "decode": "600707f 200704b x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0",
+        "fast": "wfs(-(d1 * d2) - d3)"
+    },
+    "fnmadd_dyn.d": {
+        "bits": "fs3  01  fs2   fs1  111  fd  10011 11",
+        "len": 4,
+        "decode": "600707f 200704f x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0",
+        "fast": "wfs(-(d1 * d2) + d3)"
+    },
+    "fadd_dyn.d": {
+        "bits": "0000001  fs2   fs1  111  fd  10100 11",
+        "len": 4,
+        "decode": "fe00707f 2007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "fast": "wfs(d1+d2)"
+    },
+    "fsub_dyn.d": {
+        "bits": "0000101  fs2   fs1  111  fd  10100 11",
+        "len": 4,
+        "decode": "fe00707f a007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "fast": "wfs(d1-d2)"
+    },
+    "fmul_dyn.d": {
+        "bits": "0001001  fs2   fs1  111  fd  10100 11",
+        "len": 4,
+        "decode": "fe00707f 12007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "fast": "wfs(d1*d2)"
+    },
+    "beq": {
+        "flags": "type_sb,isa_I,pc",
+        "bits": "{-12|10:5} rs2 rs1 000 {4:1|11} 1100011",
+        "len": 4,
+        "decode": "707f 63 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0",
+        "exec": "if(RS1 == RS2)\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if ( int64_t(r1)== int64_t(r2)) { wpc(pc+imm); break; }"
+    },
+    "bne": {
+        "flags": "type_sb,isa_I,pc",
+        "bits": "{-12|10:5} rs2 rs1 001 {4:1|11} 1100011",
+        "len": 4,
+        "decode": "707f 1063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0",
+        "exec": "if(RS1 != RS2)\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if ( int64_t(r1)!= int64_t(r2)) { wpc(pc+imm); break; }"
+    },
+    "blt": {
+        "flags": "type_sb,isa_I,pc",
+        "bits": "{-12|10:5} rs2 rs1 100 {4:1|11} 1100011",
+        "len": 4,
+        "decode": "707f 4063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0",
+        "exec": "if(sreg_t(RS1) < sreg_t(RS2))\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if ( int64_t(r1)<  int64_t(r2)) { wpc(pc+imm); break; }"
+    },
+    "bge": {
+        "flags": "type_sb,isa_I,pc",
+        "bits": "{-12|10:5} rs2 rs1 101 {4:1|11} 1100011",
+        "len": 4,
+        "decode": "707f 5063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0",
+        "exec": "if(sreg_t(RS1) >= sreg_t(RS2))\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if ( int64_t(r1)>= int64_t(r2)) { wpc(pc+imm); break; }"
+    },
+    "bltu": {
+        "flags": "type_sb,isa_I,pc",
+        "bits": "{-12|10:5} rs2 rs1 110 {4:1|11} 1100011",
+        "len": 4,
+        "decode": "707f 6063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0",
+        "exec": "if(RS1 < RS2)\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if (uint64_t(r1)< uint64_t(r2)) { wpc(pc+imm); break; }"
+    },
+    "bgeu": {
+        "flags": "type_sb,isa_I,pc",
+        "bits": "{-12|10:5} rs2 rs1 111 {4:1|11} 1100011",
+        "len": 4,
+        "decode": "707f 7063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0",
+        "exec": "if(RS1 >= RS2)\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if (uint64_t(r1)>=uint64_t(r2)) { wpc(pc+imm); break; }"
+    },
+    "jalr": {
+        "flags": "type_i,isa_I,pc",
+        "bits": "{-11:0} rs1 000 rd 1100111",
+        "len": 4,
+        "decode": "707f 67 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "reg_t tmp = npc;\nset_pc((RS1 + insn.i_imm()) & ~reg_t(1));\nWRITE_RD(tmp);\n",
+        "fast": "{ long t=pc+4; wpc((r1+imm)&~1L); wrd(t); break; }"
+    },
+    "jal": {
+        "flags": "type_uj,isa_I,pc",
+        "bits": "{-20|10:1|11|19:12} rd 1101111",
+        "len": 4,
+        "decode": "7f 6f x(7,5)+GPREG;NOREG;NOREG;NOREG x(12,8)<<12|x(20,1)<<11|x(21,10)<<1|xs(31,1)<<20 1",
+        "exec": "reg_t tmp = npc;\nset_pc(JUMP_TARGET);\nWRITE_RD(tmp);\n",
+        "fast": "{ long t=pc+4; wpc(pc+imm);     wrd(t); break; }"
+    },
+    "lui": {
+        "bits": "{-31:12} rd 0110111",
+        "len": 4,
+        "decode": "7f 37 x(7,5)+GPREG;NOREG;NOREG;NOREG xs(12,20)<<12 1",
+        "exec": "WRITE_RD(insn.u_imm());\n",
+        "fast": "wrd(imm)"
+    },
+    "auipc": {
+        "bits": "{-31:12} rd 0010111",
+        "len": 4,
+        "decode": "7f 17 x(7,5)+GPREG;NOREG;NOREG;NOREG xs(12,20)<<12 1",
+        "exec": "WRITE_RD(sext_xlen(insn.u_imm() + pc));\n",
+        "fast": "wrd(pc + imm)"
+    },
+    "addi": {
+        "bits": "{-11:0} rs1 000 rd 0010011",
+        "len": 4,
+        "decode": "707f 13 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(sext_xlen(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(r1 + imm)"
+    },
+    "slti": {
+        "bits": "{-11:0} rs1 010 rd 0010011",
+        "len": 4,
+        "decode": "707f 2013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(sreg_t(RS1) < sreg_t(insn.i_imm()));\n",
+        "fast": "wrd( int64_t(r1) <  int64_t(imm))"
+    },
+    "sltiu": {
+        "bits": "{-11:0} rs1 011 rd 0010011",
+        "len": 4,
+        "decode": "707f 3013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(RS1 < reg_t(insn.i_imm()));\n",
+        "fast": "wrd(uint64_t(r1) < uint64_t(imm))"
+    },
+    "xori": {
+        "bits": "{-11:0} rs1 100 rd 0010011",
+        "len": 4,
+        "decode": "707f 4013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(insn.i_imm() ^ RS1);\n",
+        "fast": "wrd(r1 ^ imm)"
+    },
+    "ori": {
+        "bits": "{-11:0} rs1 110 rd 0010011",
+        "len": 4,
+        "decode": "707f 6013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(insn.i_imm() | RS1);\n",
+        "fast": "wrd(r1 | imm)"
+    },
+    "andi": {
+        "bits": "{-11:0} rs1 111 rd 0010011",
+        "len": 4,
+        "decode": "707f 7013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(insn.i_imm() & RS1);\n",
+        "fast": "wrd(r1 & imm)"
+    },
+    "add": {
+        "bits": "0000000 rs2 rs1 000 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 33 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(sext_xlen(RS1 + RS2));\n",
+        "fast": "wrd(r1 + r2)"
+    },
+    "sub": {
+        "bits": "0100000 rs2 rs1 000 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 40000033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(sext_xlen(RS1 - RS2));\n",
+        "fast": "wrd(r1 - r2)"
+    },
+    "sll": {
+        "bits": "0000000 rs2 rs1 001 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 1033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(sext_xlen(RS1 << (RS2 & (xlen-1))));\n",
+        "fast": "wrd(uint64_t(r1) << uint64_t(r2))"
+    },
+    "slt": {
+        "bits": "0000000 rs2 rs1 010 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 2033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(sreg_t(RS1) < sreg_t(RS2));\n",
+        "fast": "wrd( int64_t(r1) <   int64_t(r2))"
+    },
+    "sltu": {
+        "bits": "0000000 rs2 rs1 011 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 3033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(RS1 < RS2);\n",
+        "fast": "wrd(uint64_t(r1) <  uint64_t(r2))"
+    },
+    "xor": {
+        "bits": "0000000 rs2 rs1 100 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 4033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(RS1 ^ RS2);\n",
+        "fast": "wrd(r1 ^ r2)"
+    },
+    "srl": {
+        "bits": "0000000 rs2 rs1 101 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 5033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(sext_xlen(zext_xlen(RS1) >> (RS2 & (xlen-1))));\n",
+        "fast": "wrd(uint64_t(r1) >> uint64_t(r2))"
+    },
+    "sra": {
+        "bits": "0100000 rs2 rs1 101 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 40005033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(sext_xlen(sext_xlen(RS1) >> (RS2 & (xlen-1))));\n",
+        "fast": "wrd( int64_t(r1) >>  int64_t(r2))"
+    },
+    "or": {
+        "bits": "0000000 rs2 rs1 110 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 6033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(RS1 | RS2);\n",
+        "fast": "wrd(r1 | r2)"
+    },
+    "and": {
+        "bits": "0000000 rs2 rs1 111 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 7033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "WRITE_RD(RS1 & RS2);\n",
+        "fast": "wrd(r1 & r2)"
+    },
+    "lb": {
+        "flags": "type_i,isa_I,mmu",
+        "bits": "{-11:0} rs1 000 rd 0000011",
+        "len": 4,
+        "decode": "707f 3 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(MMU.load_int8(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_int8  (r1+imm))"
+    },
+    "lh": {
+        "flags": "type_i,isa_I,mmu",
+        "bits": "{-11:0} rs1 001 rd 0000011",
+        "len": 4,
+        "decode": "707f 1003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(MMU.load_int16(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_int16 (r1+imm))"
+    },
+    "lw": {
+        "flags": "type_i,isa_I,mmu",
+        "bits": "{-11:0} rs1 010 rd 0000011",
+        "len": 4,
+        "decode": "707f 2003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(MMU.load_int32(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_int32 (r1+imm))"
+    },
+    "lbu": {
+        "flags": "type_i,isa_I,mmu",
+        "bits": "{-11:0} rs1 100 rd 0000011",
+        "len": 4,
+        "decode": "707f 4003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(MMU.load_uint8(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_uint8 (r1+imm))"
+    },
+    "lhu": {
+        "flags": "type_i,isa_I,mmu",
+        "bits": "{-11:0} rs1 101 rd 0000011",
+        "len": 4,
+        "decode": "707f 5003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "WRITE_RD(MMU.load_uint16(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_uint16(r1+imm))"
+    },
+    "sb": {
+        "flags": "type_s,isa_I,mmu",
+        "bits": "{-11:5} rs2 rs1 000 {4:0} 0100011",
+        "len": 4,
+        "decode": "707f 23 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,5)|xs(25,7)<<5 0",
+        "exec": "MMU.store_uint8(RS1 + insn.s_imm(), RS2);\n",
+        "fast": "MMU.store_int8 (r1+imm, r2)"
+    },
+    "sh": {
+        "flags": "type_s,isa_I,mmu",
+        "bits": "{-11:5} rs2 rs1 001 {4:0} 0100011",
+        "len": 4,
+        "decode": "707f 1023 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,5)|xs(25,7)<<5 0",
+        "exec": "MMU.store_uint16(RS1 + insn.s_imm(), RS2);\n",
+        "fast": "MMU.store_int16(r1+imm, r2)"
+    },
+    "sw": {
+        "flags": "type_s,isa_I,mmu",
+        "bits": "{-11:5} rs2 rs1 010 {4:0} 0100011",
+        "len": 4,
+        "decode": "707f 2023 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,5)|xs(25,7)<<5 0",
+        "exec": "MMU.store_uint32(RS1 + insn.s_imm(), RS2);\n",
+        "fast": "MMU.store_int32(r1+imm, r2)"
+    },
+    "ecall": {
+        "bits": "000000000000 00000 000 00000 1110011",
+        "len": 4,
+        "decode": "ffffffff 73 NOREG;NOREG;NOREG;NOREG NONE 0",
+        "exec": "switch (STATE.prv)\n{\n  case PRV_U: throw trap_user_ecall();\n  case PRV_S:\n    if (STATE.v)\n      throw trap_virtual_supervisor_ecall();\n    else\n      throw trap_supervisor_ecall();\n  case PRV_M: throw trap_machine_ecall();\n  default: abort();\n}\n",
+        "fast": "write_pc(pc); proxy_ecall();"
+    },
+    "addiw": {
+        "bits": "{-11:0} rs1 000 rd 0011011",
+        "len": 4,
+        "decode": "707f 1b x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "require_rv64;\nWRITE_RD(sext32(insn.i_imm() + RS1));\n",
+        "fast": "wrd( int32_t(r1) +  int32_t(imm))"
+    },
+    "slliw": {
+        "bits": "0000000 {4:0} rs1 001 rd 0011011",
+        "len": 4,
+        "decode": "fe00707f 101b x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,5) 0",
+        "exec": "require_rv64;\nWRITE_RD(sext32(RS1 << SHAMT));\n",
+        "fast": "wrd(uint32_t(r1) << imm)"
+    },
+    "srliw": {
+        "bits": "0000000 {4:0} rs1 101 rd 0011011",
+        "len": 4,
+        "decode": "fe00707f 501b x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,5) 0",
+        "exec": "require_rv64;\nWRITE_RD(sext32((uint32_t)RS1 >> SHAMT));\n",
+        "fast": "wrd(uint32_t(r1) >> imm)"
+    },
+    "sraiw": {
+        "bits": "0100000 {4:0} rs1 101 rd 0011011",
+        "len": 4,
+        "decode": "fe00707f 4000501b x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,5) 0",
+        "exec": "require_rv64;\nWRITE_RD(sext32(int32_t(RS1) >> SHAMT));\n",
+        "fast": "wrd( int32_t(r1) >> imm)"
+    },
+    "addw": {
+        "bits": "0000000 rs2 rs1 000 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 3b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_rv64;\nWRITE_RD(sext32(RS1 + RS2));\n",
+        "fast": "wrd( int32_t(r1) +   int32_t(r2))"
+    },
+    "subw": {
+        "bits": "0100000 rs2 rs1 000 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 4000003b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_rv64;\nWRITE_RD(sext32(RS1 - RS2));\n\n",
+        "fast": "wrd( int32_t(r1) -   int32_t(r2))"
+    },
+    "sllw": {
+        "bits": "0000000 rs2 rs1 001 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 103b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_rv64;\nWRITE_RD(sext32(RS1 << (RS2 & 0x1F)));\n",
+        "fast": "wrd(uint32_t(r1) << uint32_t(r2))"
+    },
+    "srlw": {
+        "bits": "0000000 rs2 rs1 101 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 503b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_rv64;\nWRITE_RD(sext32((uint32_t)RS1 >> (RS2 & 0x1F)));\n",
+        "fast": "wrd(uint32_t(r1) >> uint32_t(r2))"
+    },
+    "sraw": {
+        "bits": "0100000 rs2 rs1 101 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 4000503b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_rv64;\nWRITE_RD(sext32(int32_t(RS1) >> (RS2 & 0x1F)));\n",
+        "fast": "wrd( int32_t(r1) >>  int32_t(r2))"
+    },
+    "ld": {
+        "flags": "type_i,isa_I,mmu",
+        "bits": "{-11:0} rs1 011 rd 0000011",
+        "len": 4,
+        "decode": "707f 3003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "require_rv64;\nWRITE_RD(MMU.load_int64(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_int64 (r1+imm))"
+    },
+    "lwu": {
+        "flags": "type_i,isa_I,mmu",
+        "bits": "{-11:0} rs1 110 rd 0000011",
+        "len": 4,
+        "decode": "707f 6003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "require_rv64;\nWRITE_RD(MMU.load_uint32(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_uint32(r1+imm))"
+    },
+    "sd": {
+        "flags": "type_s,isa_I,mmu",
+        "bits": "{-11:5} rs2 rs1 011 {4:0} 0100011",
+        "len": 4,
+        "decode": "707f 3023 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,5)|xs(25,7)<<5 0",
+        "exec": "require_rv64;\nMMU.store_uint64(RS1 + insn.s_imm(), RS2);\n",
+        "fast": "MMU.store_int64(r1+imm, r2)"
+    },
+    "slli": {
+        "bits": "000000 {5:0} rs1 001 rd 0010011",
+        "len": 4,
+        "decode": "fc00707f 1013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,6) 0",
+        "exec": "require(SHAMT < xlen);\nWRITE_RD(sext_xlen(RS1 << SHAMT));\n",
+        "fast": "wrd(uint64_t(r1) << imm)"
+    },
+    "srli": {
+        "bits": "000000 {5:0} rs1 101 rd 0010011",
+        "len": 4,
+        "decode": "fc00707f 5013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,6) 0",
+        "exec": "require(SHAMT < xlen);\nWRITE_RD(sext_xlen(zext_xlen(RS1) >> SHAMT));\n",
+        "fast": "wrd(uint64_t(r1) >> imm)"
+    },
+    "srai": {
+        "bits": "010000 {5:0} rs1 101 rd 0010011",
+        "len": 4,
+        "decode": "fc00707f 40005013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,6) 0",
+        "exec": "require(SHAMT < xlen);\nWRITE_RD(sext_xlen(sext_xlen(RS1) >> SHAMT));\n",
+        "fast": "wrd( int64_t(r1) >> imm)"
+    },
+    "fence": {
+        "bits": "{11:8} {7:4} {3:0} rs1 000 rd 0001111",
+        "len": 4,
+        "decode": "707f f x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,4)|x(24,4)<<4|x(28,4)<<8 0",
+        "exec": ""
+    },
+    "fence.i": {
+        "flags": "type_i,isa_I,mmu",
+        "bits": "{-11:0} rs1 001 rd 0001111",
+        "len": 4,
+        "decode": "707f 100f x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "MMU.flush_icache();\n"
+    },
+    "mul": {
+        "bits": "0000001 rs2 rs1 000 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 2000033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nWRITE_RD(sext_xlen(RS1 * RS2));\n"
+    },
+    "mulh": {
+        "bits": "0000001 rs2 rs1 001 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 2001033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nif (xlen == 64)\n  WRITE_RD(mulh(RS1, RS2));\nelse\n  WRITE_RD(sext32((sext32(RS1) * sext32(RS2)) >> 32));\n"
+    },
+    "mulhsu": {
+        "bits": "0000001 rs2 rs1 010 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 2002033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nif (xlen == 64)\n  WRITE_RD(mulhsu(RS1, RS2));\nelse\n  WRITE_RD(sext32((sext32(RS1) * reg_t((uint32_t)RS2)) >> 32));\n"
+    },
+    "mulhu": {
+        "bits": "0000001 rs2 rs1 011 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 2003033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nif (xlen == 64)\n  WRITE_RD(mulhu(RS1, RS2));\nelse\n  WRITE_RD(sext32(((uint64_t)(uint32_t)RS1 * (uint64_t)(uint32_t)RS2) >> 32));\n"
+    },
+    "div": {
+        "bits": "0000001 rs2 rs1 100 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 2004033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nsreg_t lhs = sext_xlen(RS1);\nsreg_t rhs = sext_xlen(RS2);\nif(rhs == 0)\n  WRITE_RD(UINT64_MAX);\nelse if(lhs == INT64_MIN && rhs == -1)\n  WRITE_RD(lhs);\nelse\n  WRITE_RD(sext_xlen(lhs / rhs));\n"
+    },
+    "divu": {
+        "bits": "0000001 rs2 rs1 101 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 2005033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nreg_t lhs = zext_xlen(RS1);\nreg_t rhs = zext_xlen(RS2);\nif(rhs == 0)\n  WRITE_RD(UINT64_MAX);\nelse\n  WRITE_RD(sext_xlen(lhs / rhs));\n"
+    },
+    "rem": {
+        "bits": "0000001 rs2 rs1 110 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 2006033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nsreg_t lhs = sext_xlen(RS1);\nsreg_t rhs = sext_xlen(RS2);\nif(rhs == 0)\n  WRITE_RD(lhs);\nelse if(lhs == INT64_MIN && rhs == -1)\n  WRITE_RD(0);\nelse\n  WRITE_RD(sext_xlen(lhs % rhs));\n"
+    },
+    "remu": {
+        "bits": "0000001 rs2 rs1 111 rd 0110011",
+        "len": 4,
+        "decode": "fe00707f 2007033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nreg_t lhs = zext_xlen(RS1);\nreg_t rhs = zext_xlen(RS2);\nif(rhs == 0)\n  WRITE_RD(sext_xlen(RS1));\nelse\n  WRITE_RD(sext_xlen(lhs % rhs));\n"
+    },
+    "amoadd.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "00000 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return lhs + RS2; })));\n"
+    },
+    "amoxor.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "00100 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 2000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return lhs ^ RS2; })));\n"
+    },
+    "amoor.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "01000 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 4000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return lhs | RS2; })));\n"
+    },
+    "amoand.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "01100 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 6000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return lhs & RS2; })));\n"
+    },
+    "amomin.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "10000 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 8000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](int32_t lhs) { return std::min(lhs, int32_t(RS2)); })));\n"
+    },
+    "amomax.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "10100 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f a000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](int32_t lhs) { return std::max(lhs, int32_t(RS2)); })));\n"
+    },
+    "amominu.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "11000 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f c000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return std::min(lhs, uint32_t(RS2)); })));\n"
+    },
+    "amomaxu.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "11100 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f e000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(RS2)); })));\n"
+    },
+    "amoswap.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "00001 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 800202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return RS2; })));\n"
+    },
+    "lr.w": {
+        "flags": "type_amo,isa_A,mmu,lrsc",
+        "bits": "00010 {1:0} 00000 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f9f0707f 1000202f x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nauto res = MMU.load_int32(RS1, true);\nMMU.acquire_load_reservation(RS1);\nWRITE_RD(res);\n"
+    },
+    "sc.w": {
+        "flags": "type_amo,isa_A,mmu,lrsc",
+        "bits": "00011 {1:0} rs2 rs1 010 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 1800202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\n\nbool have_reservation = MMU.check_load_reservation(RS1, 4);\n\nif (have_reservation)\n  MMU.store_uint32(RS1, RS2);\n\nMMU.yield_load_reservation();\n\nWRITE_RD(!have_reservation);\n"
+    },
+    "fadd.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0000000 fs2 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fe00007f 53 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_add(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fsub.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0000100 fs2 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fe00007f 8000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_sub(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fmul.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0001000 fs2 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fe00007f 10000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mul(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fdiv.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0001100 fs2 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fe00007f 18000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_div(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fsgnj.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0010000 fs2 fs1 000 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 20000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(fsgnj32(FRS1, FRS2, false, false));\n"
+    },
+    "fsgnjn.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0010000 fs2 fs1 001 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 20001053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(fsgnj32(FRS1, FRS2, true, false));\n"
+    },
+    "fsgnjx.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0010000 fs2 fs1 010 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 20002053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(fsgnj32(FRS1, FRS2, false, true));\n"
+    },
+    "fmin.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0010100 fs2 fs1 000 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 28000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nbool less = f32_lt_quiet(f32(FRS1), f32(FRS2)) ||\n            (f32_eq(f32(FRS1), f32(FRS2)) && (f32(FRS1).v & F32_SIGN));\nif (isNaNF32UI(f32(FRS1).v) && isNaNF32UI(f32(FRS2).v))\n  WRITE_FRD(f32(defaultNaNF32UI));\nelse\n  WRITE_FRD(less || isNaNF32UI(f32(FRS2).v) ? FRS1 : FRS2);\nset_fp_exceptions;\n"
+    },
+    "fmax.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0010100 fs2 fs1 001 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 28001053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nbool greater = f32_lt_quiet(f32(FRS2), f32(FRS1)) ||\n               (f32_eq(f32(FRS2), f32(FRS1)) && (f32(FRS2).v & F32_SIGN));\nif (isNaNF32UI(f32(FRS1).v) && isNaNF32UI(f32(FRS2).v))\n  WRITE_FRD(f32(defaultNaNF32UI));\nelse\n  WRITE_FRD(greater || isNaNF32UI(f32(FRS2).v) ? FRS1 : FRS2);\nset_fp_exceptions;\n"
+    },
+    "fsqrt.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "0101100 00000 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f 58000053 x(7,5)+FPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_sqrt(f32(FRS1)));\nset_fp_exceptions;\n"
+    },
+    "fle.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1010000 fs2 fs1 000 rd 1010011",
+        "len": 4,
+        "decode": "fe00707f a0000053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(f32_le(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "flt.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1010000 fs2 fs1 001 rd 1010011",
+        "len": 4,
+        "decode": "fe00707f a0001053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(f32_lt(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "feq.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1010000 fs2 fs1 010 rd 1010011",
+        "len": 4,
+        "decode": "fe00707f a0002053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(f32_eq(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fcvt.w.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1100000 00000 fs1 {2:0} rd 1010011",
+        "len": 4,
+        "decode": "fff0007f c0000053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(sext32(f32_to_i32(f32(FRS1), RM, true)));\nset_fp_exceptions;\n"
+    },
+    "fcvt.wu.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1100000 00001 fs1 {2:0} rd 1010011",
+        "len": 4,
+        "decode": "fff0007f c0100053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(sext32(f32_to_ui32(f32(FRS1), RM, true)));\nset_fp_exceptions;\n"
+    },
+    "fmv.x.w": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1110000 00000 fs1 000 rd 1010011",
+        "len": 4,
+        "decode": "fff0707f e0000053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(sext32(FRS1.v[0]));\n"
+    },
+    "fclass.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1110000 00000 fs1 001 rd 1010011",
+        "len": 4,
+        "decode": "fff0707f e0001053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(f32_classify(f32(FRS1)));\n"
+    },
+    "fcvt.s.w": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1101000 00000 rs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f d0000053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(i32_to_f32((int32_t)RS1));\nset_fp_exceptions;\n"
+    },
+    "fcvt.s.wu": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1101000 00001 rs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f d0100053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(ui32_to_f32((uint32_t)RS1));\nset_fp_exceptions;\n"
+    },
+    "fmv.w.x": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1111000 00000 rs1 000 fd 1010011",
+        "len": 4,
+        "decode": "fff0707f f0000053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG NONE 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(f32(RS1));\n"
+    },
+    "flw": {
+        "flags": "type_i,isa_F,fp,mmu",
+        "bits": "{-11:0} rs1 010 fd 0000111",
+        "len": 4,
+        "decode": "707f 2007 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(f32(MMU.load_uint32(RS1 + insn.i_imm())));\n"
+    },
+    "fsw": {
+        "flags": "type_s,isa_F,fp,mmu",
+        "bits": "{-11:5} fs2 rs1 010 {4:0} 0100111",
+        "len": 4,
+        "decode": "707f 2027 NOREG;x(15,5)+GPREG;x(20,5)+FPREG;NOREG x(7,5)|xs(25,7)<<5 0",
+        "exec": "require_extension('F');\nrequire_fp;\nMMU.store_uint32(RS1 + insn.s_imm(), FRS2.v[0]);\n"
+    },
+    "fmadd.s": {
+        "flags": "type_r4,isa_F,fp",
+        "bits": "fs3 00 fs2 fs1 {2:0} fd 1000011",
+        "len": 4,
+        "decode": "600007f 43 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mulAdd(f32(FRS1), f32(FRS2), f32(FRS3)));\nset_fp_exceptions;\n"
+    },
+    "fmsub.s": {
+        "flags": "type_r4,isa_F,fp",
+        "bits": "fs3 00 fs2 fs1 {2:0} fd 1000111",
+        "len": 4,
+        "decode": "600007f 47 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mulAdd(f32(FRS1), f32(FRS2), f32(f32(FRS3).v ^ F32_SIGN)));\nset_fp_exceptions;\n"
+    },
+    "fnmsub.s": {
+        "flags": "type_r4,isa_F,fp",
+        "bits": "fs3 00 fs2 fs1 {2:0} fd 1001011",
+        "len": 4,
+        "decode": "600007f 4b x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mulAdd(f32(f32(FRS1).v ^ F32_SIGN), f32(FRS2), f32(FRS3)));\nset_fp_exceptions;\n"
+    },
+    "fnmadd.s": {
+        "flags": "type_r4,isa_F,fp",
+        "bits": "fs3 00 fs2 fs1 {2:0} fd 1001111",
+        "len": 4,
+        "decode": "600007f 4f x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mulAdd(f32(f32(FRS1).v ^ F32_SIGN), f32(FRS2), f32(f32(FRS3).v ^ F32_SIGN)));\nset_fp_exceptions;\n"
+    },
+    "fadd.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0000001 fs2 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fe00007f 2000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_add(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fsub.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0000101 fs2 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fe00007f a000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_sub(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fmul.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0001001 fs2 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fe00007f 12000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mul(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fdiv.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0001101 fs2 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fe00007f 1a000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_div(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fsgnj.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0010001 fs2 fs1 000 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 22000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_FRD(fsgnj64(FRS1, FRS2, false, false));\n"
+    },
+    "fsgnjn.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0010001 fs2 fs1 001 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 22001053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_FRD(fsgnj64(FRS1, FRS2, true, false));\n"
+    },
+    "fsgnjx.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0010001 fs2 fs1 010 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 22002053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_FRD(fsgnj64(FRS1, FRS2, false, true));\n"
+    },
+    "fmin.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0010101 fs2 fs1 000 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 2a000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_fp;\nbool less = f64_lt_quiet(f64(FRS1), f64(FRS2)) ||\n            (f64_eq(f64(FRS1), f64(FRS2)) && (f64(FRS1).v & F64_SIGN));\nif (isNaNF64UI(f64(FRS1).v) && isNaNF64UI(f64(FRS2).v))\n  WRITE_FRD(f64(defaultNaNF64UI));\nelse\n  WRITE_FRD(less || isNaNF64UI(f64(FRS2).v) ? FRS1 : FRS2);\nset_fp_exceptions;\n"
+    },
+    "fmax.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0010101 fs2 fs1 001 fd 1010011",
+        "len": 4,
+        "decode": "fe00707f 2a001053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_fp;\nbool greater = f64_lt_quiet(f64(FRS2), f64(FRS1)) ||\n               (f64_eq(f64(FRS2), f64(FRS1)) && (f64(FRS2).v & F64_SIGN));\nif (isNaNF64UI(f64(FRS1).v) && isNaNF64UI(f64(FRS2).v))\n  WRITE_FRD(f64(defaultNaNF64UI));\nelse\n  WRITE_FRD(greater || isNaNF64UI(f64(FRS2).v) ? FRS1 : FRS2);\nset_fp_exceptions;\n"
+    },
+    "fcvt.s.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0100000 00001 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f 40100053 x(7,5)+FPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_to_f32(f64(FRS1)));\nset_fp_exceptions;\n"
+    },
+    "fcvt.d.s": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0100001 00000 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f 42000053 x(7,5)+FPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_to_f64(f32(FRS1)));\nset_fp_exceptions;\n"
+    },
+    "fsqrt.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "0101101 00000 fs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f 5a000053 x(7,5)+FPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_sqrt(f64(FRS1)));\nset_fp_exceptions;\n"
+    },
+    "fle.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1010001 fs2 fs1 000 rd 1010011",
+        "len": 4,
+        "decode": "fe00707f a2000053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_RD(f64_le(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "flt.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1010001 fs2 fs1 001 rd 1010011",
+        "len": 4,
+        "decode": "fe00707f a2001053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_RD(f64_lt(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "feq.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1010001 fs2 fs1 010 rd 1010011",
+        "len": 4,
+        "decode": "fe00707f a2002053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_RD(f64_eq(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n"
+    },
+    "fcvt.w.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1100001 00000 fs1 {2:0} rd 1010011",
+        "len": 4,
+        "decode": "fff0007f c2000053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(sext32(f64_to_i32(f64(FRS1), RM, true)));\nset_fp_exceptions;\n"
+    },
+    "fcvt.wu.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1100001 00001 fs1 {2:0} rd 1010011",
+        "len": 4,
+        "decode": "fff0007f c2100053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(sext32(f64_to_ui32(f64(FRS1), RM, true)));\nset_fp_exceptions;\n"
+    },
+    "fclass.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1110001 00000 fs1 001 rd 1010011",
+        "len": 4,
+        "decode": "fff0707f e2001053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_RD(f64_classify(f64(FRS1)));\n"
+    },
+    "fcvt.d.w": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1101001 00000 rs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f d2000053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(i32_to_f64((int32_t)RS1));\nset_fp_exceptions;\n"
+    },
+    "fcvt.d.wu": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1101001 00001 rs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f d2100053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(ui32_to_f64((uint32_t)RS1));\nset_fp_exceptions;\n"
+    },
+    "fld": {
+        "flags": "type_i,isa_D,fp,mmu",
+        "bits": "{-11:0} rs1 011 fd 0000111",
+        "len": 4,
+        "decode": "707f 3007 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_FRD(f64(MMU.load_uint64(RS1 + insn.i_imm())));\n"
+    },
+    "fsd": {
+        "flags": "type_s,isa_D,fp,mmu",
+        "bits": "{-11:5} fs2 rs1 011 {4:0} 0100111",
+        "len": 4,
+        "decode": "707f 3027 NOREG;x(15,5)+GPREG;x(20,5)+FPREG;NOREG x(7,5)|xs(25,7)<<5 0",
+        "exec": "require_extension('D');\nrequire_fp;\nMMU.store_uint64(RS1 + insn.s_imm(), FRS2.v[0]);\n"
+    },
+    "fmadd.d": {
+        "flags": "type_r4,isa_D,fp",
+        "bits": "fs3 01 fs2 fs1 {2:0} fd 1000011",
+        "len": 4,
+        "decode": "600007f 2000043 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mulAdd(f64(FRS1), f64(FRS2), f64(FRS3)));\nset_fp_exceptions;\n"
+    },
+    "fmsub.d": {
+        "flags": "type_r4,isa_D,fp",
+        "bits": "fs3 01 fs2 fs1 {2:0} fd 1000111",
+        "len": 4,
+        "decode": "600007f 2000047 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mulAdd(f64(FRS1), f64(FRS2), f64(f64(FRS3).v ^ F64_SIGN)));\nset_fp_exceptions;\n"
+    },
+    "fnmsub.d": {
+        "flags": "type_r4,isa_D,fp",
+        "bits": "fs3 01 fs2 fs1 {2:0} fd 1001011",
+        "len": 4,
+        "decode": "600007f 200004b x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mulAdd(f64(f64(FRS1).v ^ F64_SIGN), f64(FRS2), f64(FRS3)));\nset_fp_exceptions;\n"
+    },
+    "fnmadd.d": {
+        "flags": "type_r4,isa_D,fp",
+        "bits": "fs3 01 fs2 fs1 {2:0} fd 1001111",
+        "len": 4,
+        "decode": "600007f 200004f x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mulAdd(f64(f64(FRS1).v ^ F64_SIGN), f64(FRS2), f64(f64(FRS3).v ^ F64_SIGN)));\nset_fp_exceptions;\n"
+    },
+    "ebreak": {
+        "bits": "000000000001 00000 000 00000 1110011",
+        "len": 4,
+        "decode": "ffffffff 100073 NOREG;NOREG;NOREG;NOREG NONE 0",
+        "exec": "throw trap_breakpoint(pc);\n"
+    },
+    "dret": {
+        "flags": "type_r,isa_I,pc",
+        "bits": "0111101 10010 00000 000 00000 1110011",
+        "len": 4,
+        "decode": "ffffffff 7b200073 NOREG;NOREG;NOREG;NOREG NONE 0",
+        "exec": "require(STATE.debug_mode);\nset_pc_and_serialize(STATE.dpc);\np->set_privilege(STATE.dcsr.prv);\n\n/* We're not in Debug Mode anymore. */\nSTATE.debug_mode = false;\n\nif (STATE.dcsr.step)\n  STATE.single_step = STATE.STEP_STEPPING;\n"
+    },
+    "csrrw": {
+        "bits": "{11:0} rs1 001 rd 1110011",
+        "len": 4,
+        "decode": "707f 1073 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,12) 0",
+        "exec": "int csr = validate_csr(insn.csr(), true);\nreg_t old = p->get_csr(csr, insn, true);\np->set_csr(csr, RS1);\nWRITE_RD(sext_xlen(old));\nserialize();\n"
+    },
+    "csrrs": {
+        "bits": "{11:0} rs1 010 rd 1110011",
+        "len": 4,
+        "decode": "707f 2073 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,12) 0",
+        "exec": "bool write = insn.rs1() != 0;\nint csr = validate_csr(insn.csr(), write);\nreg_t old = p->get_csr(csr, insn, write);\nif (write) {\n  p->set_csr(csr, old | RS1);\n}\nWRITE_RD(sext_xlen(old));\nserialize();\n"
+    },
+    "csrrc": {
+        "bits": "{11:0} rs1 011 rd 1110011",
+        "len": 4,
+        "decode": "707f 3073 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,12) 0",
+        "exec": "bool write = insn.rs1() != 0;\nint csr = validate_csr(insn.csr(), write);\nreg_t old = p->get_csr(csr, insn, write);\nif (write) {\n  p->set_csr(csr, old & ~RS1);\n}\nWRITE_RD(sext_xlen(old));\nserialize();\n"
+    },
+    "csrrwi": {
+        "bits": "{11:0} {16:12} 101 rd 1110011",
+        "len": 4,
+        "decode": "707f 5073 x(7,5)+GPREG;NOREG;NOREG;NOREG x(15,5)<<12|x(20,12) 1",
+        "exec": "int csr = validate_csr(insn.csr(), true);\nreg_t old = p->get_csr(csr, insn, true);\np->set_csr(csr, insn.rs1());\nWRITE_RD(sext_xlen(old));\nserialize();\n"
+    },
+    "csrrsi": {
+        "bits": "{11:0} {16:12} 110 rd 1110011",
+        "len": 4,
+        "decode": "707f 6073 x(7,5)+GPREG;NOREG;NOREG;NOREG x(15,5)<<12|x(20,12) 1",
+        "exec": "bool write = insn.rs1() != 0;\nint csr = validate_csr(insn.csr(), write);\nreg_t old = p->get_csr(csr, insn, write);\nif (write) {\n  p->set_csr(csr, old | insn.rs1());\n}\nWRITE_RD(sext_xlen(old));\nserialize();\n"
+    },
+    "csrrci": {
+        "bits": "{11:0} {16:12} 111 rd 1110011",
+        "len": 4,
+        "decode": "707f 7073 x(7,5)+GPREG;NOREG;NOREG;NOREG x(15,5)<<12|x(20,12) 1",
+        "exec": "bool write = insn.rs1() != 0;\nint csr = validate_csr(insn.csr(), write);\nreg_t old = p->get_csr(csr, insn, write);\nif (write) {\n  p->set_csr(csr, old & ~(reg_t)insn.rs1());\n}\nWRITE_RD(sext_xlen(old));\nserialize();\n"
+    },
+    "mulw": {
+        "bits": "0000001 rs2 rs1 000 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 200003b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nrequire_rv64;\nWRITE_RD(sext32(RS1 * RS2));\n"
+    },
+    "divw": {
+        "bits": "0000001 rs2 rs1 100 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 200403b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nrequire_rv64;\nsreg_t lhs = sext32(RS1);\nsreg_t rhs = sext32(RS2);\nif(rhs == 0)\n  WRITE_RD(UINT64_MAX);\nelse\n  WRITE_RD(sext32(lhs / rhs));\n"
+    },
+    "divuw": {
+        "bits": "0000001 rs2 rs1 101 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 200503b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nrequire_rv64;\nreg_t lhs = zext32(RS1);\nreg_t rhs = zext32(RS2);\nif(rhs == 0)\n  WRITE_RD(UINT64_MAX);\nelse\n  WRITE_RD(sext32(lhs / rhs));\n"
+    },
+    "remw": {
+        "bits": "0000001 rs2 rs1 110 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 200603b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nrequire_rv64;\nsreg_t lhs = sext32(RS1);\nsreg_t rhs = sext32(RS2);\nif(rhs == 0)\n  WRITE_RD(lhs);\nelse\n  WRITE_RD(sext32(lhs % rhs));\n"
+    },
+    "remuw": {
+        "bits": "0000001 rs2 rs1 111 rd 0111011",
+        "len": 4,
+        "decode": "fe00707f 200703b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "exec": "require_extension('M');\nrequire_rv64;\nreg_t lhs = zext32(RS1);\nreg_t rhs = zext32(RS2);\nif(rhs == 0)\n  WRITE_RD(sext32(lhs));\nelse\n  WRITE_RD(sext32(lhs % rhs));\n"
+    },
+    "amoadd.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "00000 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return lhs + RS2; }));\n"
+    },
+    "amoxor.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "00100 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 2000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return lhs ^ RS2; }));\n"
+    },
+    "amoor.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "01000 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 4000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return lhs | RS2; }));\n"
+    },
+    "amoand.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "01100 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 6000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return lhs & RS2; }));\n"
+    },
+    "amomin.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "10000 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 8000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](int64_t lhs) { return std::min(lhs, int64_t(RS2)); }));\n"
+    },
+    "amomax.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "10100 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f a000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](int64_t lhs) { return std::max(lhs, int64_t(RS2)); }));\n"
+    },
+    "amominu.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "11000 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f c000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return std::min(lhs, RS2); }));\n"
+    },
+    "amomaxu.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "11100 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f e000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return std::max(lhs, RS2); }));\n"
+    },
+    "amoswap.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "bits": "00001 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 800302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return RS2; }));\n"
+    },
+    "lr.d": {
+        "flags": "type_amo,isa_A,mmu,lrsc",
+        "bits": "00010 {1:0} 00000 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f9f0707f 1000302f x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\nauto res = MMU.load_int64(RS1, true);\nMMU.acquire_load_reservation(RS1);\nWRITE_RD(res);\n"
+    },
+    "sc.d": {
+        "flags": "type_amo,isa_A,mmu,lrsc",
+        "bits": "00011 {1:0} rs2 rs1 011 rd 0101111",
+        "len": 4,
+        "decode": "f800707f 1800302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0",
+        "exec": "require_extension('A');\nrequire_rv64;\n\nbool have_reservation = MMU.check_load_reservation(RS1, 8);\n\nif (have_reservation)\n  MMU.store_uint64(RS1, RS2);\n\nMMU.yield_load_reservation();\n\nWRITE_RD(!have_reservation);\n"
+    },
+    "fcvt.l.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1100000 00010 fs1 {2:0} rd 1010011",
+        "len": 4,
+        "decode": "fff0007f c0200053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(f32_to_i64(f32(FRS1), RM, true));\nset_fp_exceptions;\n"
+    },
+    "fcvt.lu.s": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1100000 00011 fs1 {2:0} rd 1010011",
+        "len": 4,
+        "decode": "fff0007f c0300053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(f32_to_ui64(f32(FRS1), RM, true));\nset_fp_exceptions;\n"
+    },
+    "fcvt.s.l": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1101000 00010 rs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f d0200053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(i64_to_f32(RS1));\nset_fp_exceptions;\n"
+    },
+    "fcvt.s.lu": {
+        "flags": "type_r,isa_F,fp",
+        "bits": "1101000 00011 rs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f d0300053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('F');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(ui64_to_f32(RS1));\nset_fp_exceptions;\n"
+    },
+    "fcvt.l.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1100001 00010 fs1 {2:0} rd 1010011",
+        "len": 4,
+        "decode": "fff0007f c2200053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(f64_to_i64(f64(FRS1), RM, true));\nset_fp_exceptions;\n"
+    },
+    "fcvt.lu.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1100001 00011 fs1 {2:0} rd 1010011",
+        "len": 4,
+        "decode": "fff0007f c2300053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(f64_to_ui64(f64(FRS1), RM, true));\nset_fp_exceptions;\n"
+    },
+    "fmv.x.d": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1110001 00000 fs1 000 rd 1010011",
+        "len": 4,
+        "decode": "fff0707f e2000053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nWRITE_RD(FRS1.v[0]);\n"
+    },
+    "fcvt.d.l": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1101001 00010 rs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f d2200053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(i64_to_f64(RS1));\nset_fp_exceptions;\n"
+    },
+    "fcvt.d.lu": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1101001 00011 rs1 {2:0} fd 1010011",
+        "len": 4,
+        "decode": "fff0007f d2300053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(ui64_to_f64(RS1));\nset_fp_exceptions;\n"
+    },
+    "fmv.d.x": {
+        "flags": "type_r,isa_D,fp",
+        "bits": "1111001 00000 rs1 000 fd 1010011",
+        "len": 4,
+        "decode": "fff0707f f2000053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG NONE 0",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nWRITE_FRD(f64(RS1));\n"
+    },
+    "cas12.w": {},
+    "cas12.d": {},
+    "cas10.w": {},
+    "cas10.d": {},
+    "ILLEGAL": {},
+    "UNKNOWN": {}
+}

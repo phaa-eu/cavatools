@@ -69,7 +69,7 @@ diffcp('opcodes.h')
 
 with open('newcode.tmp', 'w') as f:
     for name in opcodes:
-        if 'bits' in opcodes[name]:
+        if 'exec' in opcodes[name]:
             f.write('long I_{:s}(long pc, mmu_t& MMU, class processor_t* cpu);\n'.format(name.replace('.','_')))
     f.write('\n')
     f.write('long (*golden[])(long pc, mmu_t& MMU, class processor_t* cpu) = {')
@@ -77,7 +77,7 @@ with open('newcode.tmp', 'w') as f:
     for name in opcodes:
         if i % 4 == 0:
             f.write('\n  ')
-        if name in opcodes and 'bits' in opcodes[name]:
+        if name in opcodes and 'exec' in opcodes[name]:
             f.write('&I_{:21s}'.format(name.replace('.','_')+','))
         else:
             f.write('{:24s}'.format('0,'))
@@ -96,29 +96,6 @@ with open('newcode.tmp', 'w') as f:
         i += 1
     f.write('\n};\n')
 diffcp('constants.h')
-
-if not os.path.exists('./insns'):
-    os.mkdir('./insns')
-
-for name in opcodes:
-    if 'exec' not in opcodes[name]:
-        continue
-    with open('newcode.tmp', 'w') as f:
-        opcode = opcodes[name]
-        f.write('#include "spike_link.h"\n')
-        f.write('long I_{:s}(long pc, mmu_t& MMU, class processor_t* p) {{\n'.format(name.replace('.','_')))
-        f.write('  insn_t insn = (long)(*(int{:d}_t*)pc);\n'.format(opcode['len']==2 and 16 or 32))
-        if 'flags' in opcode and 'pc' in opcode['flags']:
-            f.write('  long npc = pc + {:d};\n'.format(opcode['len']))
-        for line in opcode["exec"].split('\n'):
-            if line:
-                f.write('  {:s}\n'.format(line))
-        if 'flags' in opcode and 'pc' in opcode['flags']:
-            f.write('  return npc;\n')
-        else:
-            f.write('  return pc + {:d};\n'.format(opcode['len']))
-        f.write('}\n')
-    diffcp('./insns/{:s}.cc'.format(name.replace('.','_')))
 
 with open('newcode.tmp', 'w') as f:
     n = 0

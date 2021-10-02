@@ -6,6 +6,7 @@ B := $(RVTOOLS)/riscv-isa-sim
 I :=  -I$B/build -I$B/riscv -I$B/fesvr -I$B/softfloat -I$B/riscv/insns
 
 CXXFLAGS := -I.. $I -g -Ofast
+#CXXFLAGS := -I.. $I -g -O0 -DDEBUG
 
 insn_files := $(wildcard *.cc)
 obj_files := $(patsubst %.cc,%.o,$(insn_files))

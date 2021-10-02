@@ -131,6 +131,8 @@ void hart_t::proxy_syscall(long sysnum)
   case SYS_exit:
   case SYS_exit_group:
     exit(a0);
+    //case SYS_sched_yield:
+    //break;
   case SYS_clone:
     {
       char* interp_stack = new char[THREAD_STACK_SIZE];

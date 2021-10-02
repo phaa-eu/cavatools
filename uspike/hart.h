@@ -10,7 +10,7 @@ struct pctrace_t {
   int8_t rn;
 };
 
-#define PCTRACEBUFSZ  (1<<7)
+#define PCTRACEBUFSZ  (1<<9)
 struct Debug_t {
   pctrace_t trace[PCTRACEBUFSZ];
   int cursor;
@@ -53,6 +53,7 @@ public:
   long read_reg(int n);
   void write_reg(int n, long value);
   long* reg_file();
+  void* freg_file();
   long read_pc();
   void write_pc(long value);
   long* ptr_pc();

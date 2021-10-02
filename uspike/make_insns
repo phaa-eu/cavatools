@@ -1,0 +1,46 @@
+#!/usr/bin/env python
+
+from builtins import hex
+from builtins import range
+import math
+import sys
+import re
+import os
+import json
+from collections import OrderedDict
+
+def eprint(*args):
+    sys.stderr.write(' '.join(map(str,args)) + '\n')
+    
+def diffcp(fname):
+    if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
+        os.system('rm newcode.tmp')
+    else:
+        os.system('mv newcode.tmp '+fname)
+
+opcodes = OrderedDict()
+with open(sys.argv[1]) as f:
+    opcodes = json.load(f)
+
+if not os.path.exists('./insns'):
+    os.mkdir('./insns')
+
+for name in opcodes:
+    if 'exec' not in opcodes[name]:
+        continue
+    with open('newcode.tmp', 'w') as f:
+        opcode = opcodes[name]
+        f.write('#include "spike_link.h"\n')
+        f.write('long I_{:s}(long pc, mmu_t& MMU, class processor_t* p) {{\n'.format(name.replace('.','_')))
+        f.write('  insn_t insn = (long)(*(int{:d}_t*)pc);\n'.format(opcode['len']==2 and 16 or 32))
+        if 'flags' in opcode and 'pc' in opcode['flags']:
+            f.write('  long npc = pc + {:d};\n'.format(opcode['len']))
+        for line in opcode["exec"].split('\n'):
+            if line:
+                f.write('  {:s}\n'.format(line))
+        if 'flags' in opcode and 'pc' in opcode['flags']:
+            f.write('  return npc;\n')
+        else:
+            f.write('  return pc + {:d};\n'.format(opcode['len']))
+        f.write('}\n')
+    diffcp('./insns/{:s}.cc'.format(name.replace('.','_')))

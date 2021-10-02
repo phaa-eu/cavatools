@@ -1,0 +1,1248 @@
+{
+    "ZERO": {},
+    "c.addi4spn": {
+        "exec": "require_extension('C');\nrequire(insn.rvc_addi4spn_imm() != 0);\nWRITE_RVC_RS2S(sext_xlen(RVC_SP + insn.rvc_addi4spn_imm()));\n",
+        "fast": "wrd(r1+imm)",
+        "len": 2,
+        "decode": "e003 0 x(2,3)+8+GPREG;2;NOREG;NOREG x(5,1)<<3|x(6,1)<<2|x(7,4)<<6|x(11,2)<<4 0"
+    },
+    "c.fld": {
+        "flags": "type_c,isa_C,isa_D,fp,mmu",
+        "exec": "require_extension('C');\nrequire_extension('D');\nrequire_fp;\nWRITE_RVC_FRS2S(f64(MMU.load_uint64(RVC_RS1S + insn.rvc_ld_imm())));\n",
+        "len": 2,
+        "decode": "e003 2000 x(2,3)+8+FPREG;x(7,3)+8+GPREG;NOREG;NOREG x(5,2)<<6|x(10,3)<<3 0"
+    },
+    "c.lw": {
+        "flags": "type_c,isa_C,mmu",
+        "exec": "require_extension('C');\nWRITE_RVC_RS2S(MMU.load_int32(RVC_RS1S + insn.rvc_lw_imm()));\n",
+        "fast": "wrd(MMU.load_int32(r1+imm))",
+        "len": 2,
+        "decode": "e003 4000 x(2,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(5,1)<<6|x(6,1)<<2|x(10,3)<<3 0"
+    },
+    "c.ld": {
+        "flags": "type_c,isa_C,isa_F,fp,mmu",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  require_extension('F');\n  require_fp;\n  WRITE_RVC_FRS2S(f32(MMU.load_uint32(RVC_RS1S + insn.rvc_lw_imm())));\n} else { // c.ld\n  WRITE_RVC_RS2S(MMU.load_int64(RVC_RS1S + insn.rvc_ld_imm()));\n}\n",
+        "fast": "wrd(MMU.load_int64(r1+imm))",
+        "len": 2,
+        "decode": "e003 6000 x(2,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(5,2)<<6|x(10,3)<<3 0"
+    },
+    "c.fsd": {
+        "flags": "type_c,isa_C,isa_D,fp,mmu",
+        "exec": "require_extension('C');\nrequire_extension('D');\nrequire_fp;\nMMU.store_uint64(RVC_RS1S + insn.rvc_ld_imm(), RVC_FRS2S.v[0]);\n",
+        "len": 2,
+        "decode": "e003 a000 NOREG;x(7,3)+8+GPREG;x(2,3)+8+FPREG;NOREG x(5,2)<<6|x(10,3)<<3 0"
+    },
+    "c.sw": {
+        "flags": "type_c,isa_C,mmu",
+        "exec": "require_extension('C');\nMMU.store_uint32(RVC_RS1S + insn.rvc_lw_imm(), RVC_RS2S);\n",
+        "fast": "MMU.store_int32(r1+imm, r2)",
+        "len": 2,
+        "decode": "e003 c000 NOREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG x(5,1)<<6|x(6,1)<<2|x(10,3)<<3 0"
+    },
+    "c.sd": {
+        "flags": "type_c,isa_C,isa_F,fp,mmu",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  require_extension('F');\n  require_fp;\n  MMU.store_uint32(RVC_RS1S + insn.rvc_lw_imm(), RVC_FRS2S.v[0]);\n} else { // c.sd\n  MMU.store_uint64(RVC_RS1S + insn.rvc_ld_imm(), RVC_RS2S);\n}\n",
+        "fast": "MMU.store_int64(r1+imm, r2)",
+        "len": 2,
+        "decode": "e003 e000 NOREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG x(5,2)<<6|x(10,3)<<3 0"
+    },
+    "c.addi": {
+        "exec": "require_extension('C');\nWRITE_RD(sext_xlen(RVC_RS1 + insn.rvc_imm()));\n",
+        "fast": "wrd(r1 + imm)",
+        "len": 2,
+        "decode": "e003 1 x(7,5)+GPREG;x(7,5)+GPREG;NOREG;NOREG x(2,5)|xs(12,1)<<5 0"
+    },
+    "c.addiw": {
+        "flags": "type_c,isa_C,pc",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  reg_t tmp = npc;\n  set_pc(pc + insn.rvc_j_imm());\n  WRITE_REG(X_RA, tmp);\n} else { // c.addiw\n  require(insn.rvc_rd() != 0);\n  WRITE_RD(sext32(RVC_RS1 + insn.rvc_imm()));\n}\n",
+        "fast": "wrd(int32_t(r1) + int32_t(imm))",
+        "len": 2,
+        "decode": "e003 2001 x(7,5)+GPREG;x(7,5)+GPREG;NOREG;NOREG x(2,5)|xs(12,1)<<5 0"
+    },
+    "c.li": {
+        "exec": "require_extension('C');\nWRITE_RD(insn.rvc_imm());\n",
+        "fast": "wrd(imm)",
+        "len": 2,
+        "decode": "e003 4001 x(7,5)+GPREG;NOREG;NOREG;NOREG x(2,5)|xs(12,1)<<5 0"
+    },
+    "c.addi16sp": {
+        "exec": "require_extension('C');\nif (insn.rvc_rd() == 2) { // c.addi16sp\n  require(insn.rvc_addi16sp_imm() != 0);\n  WRITE_REG(X_SP, sext_xlen(RVC_SP + insn.rvc_addi16sp_imm()));\n} else {\n  require(insn.rvc_imm() != 0);\n  WRITE_RD(insn.rvc_imm() << 12);\n}\n",
+        "fast": "wrd(r1+imm)",
+        "len": 2,
+        "decode": "ef83 6101 2;2;NOREG;NOREG x(2,1)<<5|x(3,2)<<7|x(5,1)<<6|x(6,1)<<4|xs(12,1)<<9 0"
+    },
+    "c.lui": {
+        "exec": "require_extension('C');\nif (insn.rvc_rd() == 2) { // c.addi16sp\n  require(insn.rvc_addi16sp_imm() != 0);\n  WRITE_REG(X_SP, sext_xlen(RVC_SP + insn.rvc_addi16sp_imm()));\n} else {\n  require(insn.rvc_imm() != 0);\n  WRITE_RD(insn.rvc_imm() << 12);\n}\n",
+        "fast": "wrd(imm)",
+        "len": 2,
+        "decode": "e003 6001 x(7,5)+GPREG;NOREG;NOREG;NOREG x(2,5)<<12|xs(12,1)<<17 1"
+    },
+    "c.srli": {
+        "exec": "require_extension('C');\nrequire(insn.rvc_zimm() < xlen);\nWRITE_RVC_RS1S(sext_xlen(zext_xlen(RVC_RS1S) >> insn.rvc_zimm()));\n",
+        "fast": "wrd(uint64_t(r1) >> imm)",
+        "len": 2,
+        "decode": "ec03 8001 x(7,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,5)|x(12,1)<<5 0"
+    },
+    "c.srai": {
+        "exec": "require_extension('C');\nrequire(insn.rvc_zimm() < xlen);\nWRITE_RVC_RS1S(sext_xlen(sext_xlen(RVC_RS1S) >> insn.rvc_zimm()));\n",
+        "fast": "wrd( int64_t(r1) >> imm)",
+        "len": 2,
+        "decode": "ec03 8401 x(7,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,5)|x(12,1)<<5 0"
+    },
+    "c.andi": {
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(RVC_RS1S & insn.rvc_imm());\n",
+        "fast": "wrd(r1 & imm)",
+        "len": 2,
+        "decode": "ec03 8801 x(7,3)+8+GPREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,5)|xs(12,1)<<5 0"
+    },
+    "c.sub": {
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(sext_xlen(RVC_RS1S - RVC_RS2S));\n",
+        "fast": "wrd(r1 - r2)",
+        "len": 2,
+        "decode": "fc63 8c01 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0"
+    },
+    "c.xor": {
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(RVC_RS1S ^ RVC_RS2S);\n",
+        "fast": "wrd(r1 ^ r2)",
+        "len": 2,
+        "decode": "fc63 8c21 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0"
+    },
+    "c.or": {
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(RVC_RS1S | RVC_RS2S);\n",
+        "fast": "wrd(r1 | r2)",
+        "len": 2,
+        "decode": "fc63 8c41 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0"
+    },
+    "c.and": {
+        "exec": "require_extension('C');\nWRITE_RVC_RS1S(RVC_RS1S & RVC_RS2S);\n",
+        "fast": "wrd(r1 & r2)",
+        "len": 2,
+        "decode": "fc63 8c61 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0"
+    },
+    "c.subw": {
+        "exec": "require_extension('C');\nrequire_rv64;\nWRITE_RVC_RS1S(sext32(RVC_RS1S - RVC_RS2S));\n",
+        "fast": "wrd(int32_t(r1) - int32_t(r2))",
+        "len": 2,
+        "decode": "fc63 9c01 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0"
+    },
+    "c.addw": {
+        "exec": "require_extension('C');\nrequire_rv64;\nWRITE_RVC_RS1S(sext32(RVC_RS1S + RVC_RS2S));\n",
+        "fast": "wrd(int32_t(r1) + int32_t(r2))",
+        "len": 2,
+        "decode": "fc63 9c21 x(7,3)+8+GPREG;x(7,3)+8+GPREG;x(2,3)+8+GPREG;NOREG NONE 0"
+    },
+    "c.j": {
+        "flags": "type_c,isa_C,pc",
+        "exec": "require_extension('C');\nset_pc(pc + insn.rvc_j_imm());\n",
+        "fast": "wpc(pc+imm); break",
+        "len": 2,
+        "decode": "e003 a001 NOREG;NOREG;NOREG;NOREG x(2,1)<<5|x(3,3)<<1|x(6,1)<<7|x(7,1)<<6|x(8,1)<<10|x(9,2)<<8|x(11,1)<<4|xs(12,1)<<11 0"
+    },
+    "c.beqz": {
+        "flags": "type_c,isa_C,pc",
+        "exec": "require_extension('C');\nif (RVC_RS1S == 0)\n  set_pc(pc + insn.rvc_b_imm());\n",
+        "fast": "if (r1==0) { wpc(pc+imm); break; }",
+        "len": 2,
+        "decode": "e003 c001 NOREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,1)<<5|x(3,2)<<1|x(5,2)<<6|x(10,2)<<3|xs(12,1)<<8 0"
+    },
+    "c.bnez": {
+        "flags": "type_c,isa_C,pc",
+        "exec": "require_extension('C');\nif (RVC_RS1S != 0)\n  set_pc(pc + insn.rvc_b_imm());\n",
+        "fast": "if (r1!=0) { wpc(pc+imm); break; }",
+        "len": 2,
+        "decode": "e003 e001 NOREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,1)<<5|x(3,2)<<1|x(5,2)<<6|x(10,2)<<3|xs(12,1)<<8 0"
+    },
+    "c.slli": {
+        "exec": "require_extension('C');\nrequire(insn.rvc_zimm() < xlen);\nWRITE_RD(sext_xlen(RVC_RS1 << insn.rvc_zimm()));\n",
+        "fast": "wrd(uint64_t(r1) << imm)",
+        "len": 2,
+        "decode": "e003 2 x(7,5)+GPREG;x(7,5)+GPREG;NOREG;NOREG x(2,5)|x(12,1)<<5 0"
+    },
+    "c.fldsp": {
+        "flags": "type_csl,isa_C,isa_D,fp,mmu",
+        "exec": "require_extension('C');\nrequire_extension('D');\nrequire_fp;\nWRITE_FRD(f64(MMU.load_uint64(RVC_SP + insn.rvc_ldsp_imm())));\n",
+        "len": 2,
+        "decode": "e003 2002 x(7,5)+FPREG;2;NOREG;NOREG x(2,3)<<6|x(5,2)<<3|x(12,1)<<5 0"
+    },
+    "c.lwsp": {
+        "flags": "type_csl,isa_C,mmu",
+        "exec": "require_extension('C');\nrequire(insn.rvc_rd() != 0);\nWRITE_RD(MMU.load_int32(RVC_SP + insn.rvc_lwsp_imm()));\n",
+        "fast": "wrd(MMU.load_int32(r1+imm))",
+        "len": 2,
+        "decode": "e003 4002 x(7,5)+GPREG;2;NOREG;NOREG x(2,2)<<6|x(4,3)<<2|x(12,1)<<5 0"
+    },
+    "c.ldsp": {
+        "flags": "type_csl,isa_C,isa_F,fp,mmu",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  require_extension('F');\n  require_fp;\n  WRITE_FRD(f32(MMU.load_uint32(RVC_SP + insn.rvc_lwsp_imm())));\n} else { // c.ldsp\n  require(insn.rvc_rd() != 0);\n  WRITE_RD(MMU.load_int64(RVC_SP + insn.rvc_ldsp_imm()));\n}\n",
+        "fast": "wrd(MMU.load_int64(r1+imm))",
+        "len": 2,
+        "decode": "e003 6002 x(7,5)+GPREG;2;NOREG;NOREG x(2,3)<<6|x(5,2)<<3|x(12,1)<<5 0"
+    },
+    "c.jr": {
+        "flags": "type_c,isa_C,pc",
+        "exec": "require_extension('C');\nrequire(insn.rvc_rs1() != 0);\nset_pc(RVC_RS1 & ~reg_t(1));\n",
+        "fast": "wpc(r1); break",
+        "len": 2,
+        "decode": "f07f 8002 NOREG;x(7,5)+GPREG;NOREG;NOREG NONE 0"
+    },
+    "c.mv": {
+        "exec": "require_extension('C');\nrequire(insn.rvc_rs2() != 0);\nWRITE_RD(RVC_RS2);\n",
+        "fast": "wrd(r2)",
+        "len": 2,
+        "decode": "f003 8002 x(7,5)+GPREG;NOREG;x(2,5)+GPREG;NOREG NONE 0"
+    },
+    "c.ebreak": {
+        "exec": "require_extension('C');\nthrow trap_breakpoint(pc);\n",
+        "len": 2,
+        "decode": "ffff 9002 NOREG;NOREG;NOREG;NOREG NONE 0"
+    },
+    "c.jalr": {
+        "flags": "type_cjl,isa_C,pc",
+        "exec": "require_extension('C');\nrequire(insn.rvc_rs1() != 0);\nreg_t tmp = npc;\nset_pc(RVC_RS1 & ~reg_t(1));\nWRITE_REG(X_RA, tmp);\n",
+        "fast": "{ long t=pc+2; wpc(r1); wrd(t); break; }",
+        "len": 2,
+        "decode": "f07f 9002 1;x(7,5)+GPREG;NOREG;NOREG NONE 0"
+    },
+    "c.add": {
+        "exec": "require_extension('C');\nrequire(insn.rvc_rs2() != 0);\nWRITE_RD(sext_xlen(RVC_RS1 + RVC_RS2));\n",
+        "fast": "wrd(r1 + r2)",
+        "len": 2,
+        "decode": "f003 9002 x(7,5)+GPREG;x(7,5)+GPREG;x(2,5)+GPREG;NOREG NONE 0"
+    },
+    "c.fsdsp": {
+        "flags": "type_css,isa_C,isa_D,fp,mmu",
+        "exec": "require_extension('C');\nrequire_extension('D');\nrequire_fp;\nMMU.store_uint64(RVC_SP + insn.rvc_sdsp_imm(), RVC_FRS2.v[0]);\n",
+        "len": 2,
+        "decode": "e003 a002 NOREG;2;x(2,5)+FPREG;NOREG x(7,3)<<6|x(10,3)<<3 0"
+    },
+    "c.swsp": {
+        "flags": "type_css,isa_C,mmu",
+        "exec": "require_extension('C');\nMMU.store_uint32(RVC_SP + insn.rvc_swsp_imm(), RVC_RS2);\n",
+        "fast": "MMU.store_int32(r1+imm, r2)",
+        "len": 2,
+        "decode": "e003 c002 NOREG;2;x(2,5)+GPREG;NOREG x(7,2)<<6|x(9,4)<<2 0"
+    },
+    "c.sdsp": {
+        "flags": "type_css,isa_C,isa_F,fp,mmu",
+        "exec": "require_extension('C');\nif (xlen == 32) {\n  require_extension('F');\n  require_fp;\n  MMU.store_uint32(RVC_SP + insn.rvc_swsp_imm(), RVC_FRS2.v[0]);\n} else { // c.sdsp\n  MMU.store_uint64(RVC_SP + insn.rvc_sdsp_imm(), RVC_RS2);\n}\n",
+        "fast": "MMU.store_int64(r1+imm, r2)",
+        "len": 2,
+        "decode": "e003 e002 NOREG;2;x(2,5)+GPREG;NOREG x(7,3)<<6|x(10,3)<<3 0"
+    },
+    "fmadd_dyn.s": {
+        "fast": "wfs( (f1 * f2) + f3)",
+        "len": 4,
+        "decode": "600707f 7043 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0"
+    },
+    "fmsub_dyn.s": {
+        "fast": "wfs( (f1 * f2) - f3)",
+        "len": 4,
+        "decode": "600707f 7047 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0"
+    },
+    "fnmsub_dyn.s": {
+        "fast": "wfs(-(f1 * f2) - f3)",
+        "len": 4,
+        "decode": "600707f 704b x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0"
+    },
+    "fnmadd_dyn.s": {
+        "fast": "wfs(-(f1 * f2) + f3)",
+        "len": 4,
+        "decode": "600707f 704f x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0"
+    },
+    "fadd_dyn.s": {
+        "fast": "wfs(f1+f2)",
+        "len": 4,
+        "decode": "fe00707f 7053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fsub_dyn.s": {
+        "fast": "wfs(f1-f2)",
+        "len": 4,
+        "decode": "fe00707f 8007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fmul_dyn.s": {
+        "fast": "wfs(f1*f2)",
+        "len": 4,
+        "decode": "fe00707f 10007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fmadd_dyn.d": {
+        "fast": "wfs( (d1 * d2) + d3)",
+        "len": 4,
+        "decode": "600707f 2007043 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0"
+    },
+    "fmsub_dyn.d": {
+        "fast": "wfs( (d1 * d2) - d3)",
+        "len": 4,
+        "decode": "600707f 2007047 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0"
+    },
+    "fnmsub_dyn.d": {
+        "fast": "wfs(-(d1 * d2) - d3)",
+        "len": 4,
+        "decode": "600707f 200704b x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0"
+    },
+    "fnmadd_dyn.d": {
+        "fast": "wfs(-(d1 * d2) + d3)",
+        "len": 4,
+        "decode": "600707f 200704f x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG NONE 0"
+    },
+    "fadd_dyn.d": {
+        "fast": "wfs(d1+d2)",
+        "len": 4,
+        "decode": "fe00707f 2007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fsub_dyn.d": {
+        "fast": "wfs(d1-d2)",
+        "len": 4,
+        "decode": "fe00707f a007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fmul_dyn.d": {
+        "fast": "wfs(d1*d2)",
+        "len": 4,
+        "decode": "fe00707f 12007053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "beq": {
+        "flags": "type_sb,isa_I,pc",
+        "exec": "if(RS1 == RS2)\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if ( int64_t(r1)== int64_t(r2)) { wpc(pc+imm); break; }",
+        "len": 4,
+        "decode": "707f 63 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
+    },
+    "bne": {
+        "flags": "type_sb,isa_I,pc",
+        "exec": "if(RS1 != RS2)\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if ( int64_t(r1)!= int64_t(r2)) { wpc(pc+imm); break; }",
+        "len": 4,
+        "decode": "707f 1063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
+    },
+    "blt": {
+        "flags": "type_sb,isa_I,pc",
+        "exec": "if(sreg_t(RS1) < sreg_t(RS2))\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if ( int64_t(r1)<  int64_t(r2)) { wpc(pc+imm); break; }",
+        "len": 4,
+        "decode": "707f 4063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
+    },
+    "bge": {
+        "flags": "type_sb,isa_I,pc",
+        "exec": "if(sreg_t(RS1) >= sreg_t(RS2))\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if ( int64_t(r1)>= int64_t(r2)) { wpc(pc+imm); break; }",
+        "len": 4,
+        "decode": "707f 5063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
+    },
+    "bltu": {
+        "flags": "type_sb,isa_I,pc",
+        "exec": "if(RS1 < RS2)\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if (uint64_t(r1)< uint64_t(r2)) { wpc(pc+imm); break; }",
+        "len": 4,
+        "decode": "707f 6063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
+    },
+    "bgeu": {
+        "flags": "type_sb,isa_I,pc",
+        "exec": "if(RS1 >= RS2)\n  set_pc(BRANCH_TARGET);\n",
+        "fast": "if (uint64_t(r1)>=uint64_t(r2)) { wpc(pc+imm); break; }",
+        "len": 4,
+        "decode": "707f 7063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
+    },
+    "jalr": {
+        "flags": "type_i,isa_I,pc",
+        "exec": "reg_t tmp = npc;\nset_pc((RS1 + insn.i_imm()) & ~reg_t(1));\nWRITE_RD(tmp);\n",
+        "fast": "{ long t=pc+4; wpc((r1+imm)&~1L); wrd(t); break; }",
+        "len": 4,
+        "decode": "707f 67 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "jal": {
+        "flags": "type_uj,isa_I,pc",
+        "exec": "reg_t tmp = npc;\nset_pc(JUMP_TARGET);\nWRITE_RD(tmp);\n",
+        "fast": "{ long t=pc+4; wpc(pc+imm);     wrd(t); break; }",
+        "len": 4,
+        "decode": "7f 6f x(7,5)+GPREG;NOREG;NOREG;NOREG x(12,8)<<12|x(20,1)<<11|x(21,10)<<1|xs(31,1)<<20 1"
+    },
+    "lui": {
+        "exec": "WRITE_RD(insn.u_imm());\n",
+        "fast": "wrd(imm)",
+        "len": 4,
+        "decode": "7f 37 x(7,5)+GPREG;NOREG;NOREG;NOREG xs(12,20)<<12 1"
+    },
+    "auipc": {
+        "exec": "WRITE_RD(sext_xlen(insn.u_imm() + pc));\n",
+        "fast": "wrd(pc + imm)",
+        "len": 4,
+        "decode": "7f 17 x(7,5)+GPREG;NOREG;NOREG;NOREG xs(12,20)<<12 1"
+    },
+    "addi": {
+        "exec": "WRITE_RD(sext_xlen(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(r1 + imm)",
+        "len": 4,
+        "decode": "707f 13 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "slti": {
+        "exec": "WRITE_RD(sreg_t(RS1) < sreg_t(insn.i_imm()));\n",
+        "fast": "wrd( int64_t(r1) <  int64_t(imm))",
+        "len": 4,
+        "decode": "707f 2013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "sltiu": {
+        "exec": "WRITE_RD(RS1 < reg_t(insn.i_imm()));\n",
+        "fast": "wrd(uint64_t(r1) < uint64_t(imm))",
+        "len": 4,
+        "decode": "707f 3013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "xori": {
+        "exec": "WRITE_RD(insn.i_imm() ^ RS1);\n",
+        "fast": "wrd(r1 ^ imm)",
+        "len": 4,
+        "decode": "707f 4013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "ori": {
+        "exec": "WRITE_RD(insn.i_imm() | RS1);\n",
+        "fast": "wrd(r1 | imm)",
+        "len": 4,
+        "decode": "707f 6013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "andi": {
+        "exec": "WRITE_RD(insn.i_imm() & RS1);\n",
+        "fast": "wrd(r1 & imm)",
+        "len": 4,
+        "decode": "707f 7013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "add": {
+        "exec": "WRITE_RD(sext_xlen(RS1 + RS2));\n",
+        "fast": "wrd(r1 + r2)",
+        "len": 4,
+        "decode": "fe00707f 33 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "sub": {
+        "exec": "WRITE_RD(sext_xlen(RS1 - RS2));\n",
+        "fast": "wrd(r1 - r2)",
+        "len": 4,
+        "decode": "fe00707f 40000033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "sll": {
+        "exec": "WRITE_RD(sext_xlen(RS1 << (RS2 & (xlen-1))));\n",
+        "fast": "wrd(uint64_t(r1) << uint64_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 1033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "slt": {
+        "exec": "WRITE_RD(sreg_t(RS1) < sreg_t(RS2));\n",
+        "fast": "wrd( int64_t(r1) <   int64_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 2033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "sltu": {
+        "exec": "WRITE_RD(RS1 < RS2);\n",
+        "fast": "wrd(uint64_t(r1) <  uint64_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 3033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "xor": {
+        "exec": "WRITE_RD(RS1 ^ RS2);\n",
+        "fast": "wrd(r1 ^ r2)",
+        "len": 4,
+        "decode": "fe00707f 4033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "srl": {
+        "exec": "WRITE_RD(sext_xlen(zext_xlen(RS1) >> (RS2 & (xlen-1))));\n",
+        "fast": "wrd(uint64_t(r1) >> uint64_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 5033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "sra": {
+        "exec": "WRITE_RD(sext_xlen(sext_xlen(RS1) >> (RS2 & (xlen-1))));\n",
+        "fast": "wrd( int64_t(r1) >>  int64_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 40005033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "or": {
+        "exec": "WRITE_RD(RS1 | RS2);\n",
+        "fast": "wrd(r1 | r2)",
+        "len": 4,
+        "decode": "fe00707f 6033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "and": {
+        "exec": "WRITE_RD(RS1 & RS2);\n",
+        "fast": "wrd(r1 & r2)",
+        "len": 4,
+        "decode": "fe00707f 7033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "lb": {
+        "flags": "type_i,isa_I,mmu",
+        "exec": "WRITE_RD(MMU.load_int8(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_int8  (r1+imm))",
+        "len": 4,
+        "decode": "707f 3 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "lh": {
+        "flags": "type_i,isa_I,mmu",
+        "exec": "WRITE_RD(MMU.load_int16(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_int16 (r1+imm))",
+        "len": 4,
+        "decode": "707f 1003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "lw": {
+        "flags": "type_i,isa_I,mmu",
+        "exec": "WRITE_RD(MMU.load_int32(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_int32 (r1+imm))",
+        "len": 4,
+        "decode": "707f 2003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "lbu": {
+        "flags": "type_i,isa_I,mmu",
+        "exec": "WRITE_RD(MMU.load_uint8(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_uint8 (r1+imm))",
+        "len": 4,
+        "decode": "707f 4003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "lhu": {
+        "flags": "type_i,isa_I,mmu",
+        "exec": "WRITE_RD(MMU.load_uint16(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_uint16(r1+imm))",
+        "len": 4,
+        "decode": "707f 5003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "sb": {
+        "flags": "type_s,isa_I,mmu",
+        "exec": "MMU.store_uint8(RS1 + insn.s_imm(), RS2);\n",
+        "fast": "MMU.store_int8 (r1+imm, r2)",
+        "len": 4,
+        "decode": "707f 23 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,5)|xs(25,7)<<5 0"
+    },
+    "sh": {
+        "flags": "type_s,isa_I,mmu",
+        "exec": "MMU.store_uint16(RS1 + insn.s_imm(), RS2);\n",
+        "fast": "MMU.store_int16(r1+imm, r2)",
+        "len": 4,
+        "decode": "707f 1023 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,5)|xs(25,7)<<5 0"
+    },
+    "sw": {
+        "flags": "type_s,isa_I,mmu",
+        "exec": "MMU.store_uint32(RS1 + insn.s_imm(), RS2);\n",
+        "fast": "MMU.store_int32(r1+imm, r2)",
+        "len": 4,
+        "decode": "707f 2023 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,5)|xs(25,7)<<5 0"
+    },
+    "ecall": {
+        "exec": "switch (STATE.prv)\n{\n  case PRV_U: throw trap_user_ecall();\n  case PRV_S:\n    if (STATE.v)\n      throw trap_virtual_supervisor_ecall();\n    else\n      throw trap_supervisor_ecall();\n  case PRV_M: throw trap_machine_ecall();\n  default: abort();\n}\n",
+        "fast": "write_pc(pc); proxy_ecall();",
+        "len": 4,
+        "decode": "ffffffff 73 NOREG;NOREG;NOREG;NOREG NONE 0"
+    },
+    "addiw": {
+        "exec": "require_rv64;\nWRITE_RD(sext32(insn.i_imm() + RS1));\n",
+        "fast": "wrd( int32_t(r1) +  int32_t(imm))",
+        "len": 4,
+        "decode": "707f 1b x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "slliw": {
+        "exec": "require_rv64;\nWRITE_RD(sext32(RS1 << SHAMT));\n",
+        "fast": "wrd(uint32_t(r1) << imm)",
+        "len": 4,
+        "decode": "fe00707f 101b x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,5) 0"
+    },
+    "srliw": {
+        "exec": "require_rv64;\nWRITE_RD(sext32((uint32_t)RS1 >> SHAMT));\n",
+        "fast": "wrd(uint32_t(r1) >> imm)",
+        "len": 4,
+        "decode": "fe00707f 501b x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,5) 0"
+    },
+    "sraiw": {
+        "exec": "require_rv64;\nWRITE_RD(sext32(int32_t(RS1) >> SHAMT));\n",
+        "fast": "wrd( int32_t(r1) >> imm)",
+        "len": 4,
+        "decode": "fe00707f 4000501b x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,5) 0"
+    },
+    "addw": {
+        "exec": "require_rv64;\nWRITE_RD(sext32(RS1 + RS2));\n",
+        "fast": "wrd( int32_t(r1) +   int32_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 3b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "subw": {
+        "exec": "require_rv64;\nWRITE_RD(sext32(RS1 - RS2));\n\n",
+        "fast": "wrd( int32_t(r1) -   int32_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 4000003b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "sllw": {
+        "exec": "require_rv64;\nWRITE_RD(sext32(RS1 << (RS2 & 0x1F)));\n",
+        "fast": "wrd(uint32_t(r1) << uint32_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 103b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "srlw": {
+        "exec": "require_rv64;\nWRITE_RD(sext32((uint32_t)RS1 >> (RS2 & 0x1F)));\n",
+        "fast": "wrd(uint32_t(r1) >> uint32_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 503b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "sraw": {
+        "exec": "require_rv64;\nWRITE_RD(sext32(int32_t(RS1) >> (RS2 & 0x1F)));\n",
+        "fast": "wrd( int32_t(r1) >>  int32_t(r2))",
+        "len": 4,
+        "decode": "fe00707f 4000503b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "ld": {
+        "flags": "type_i,isa_I,mmu",
+        "exec": "require_rv64;\nWRITE_RD(MMU.load_int64(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_int64 (r1+imm))",
+        "len": 4,
+        "decode": "707f 3003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "lwu": {
+        "flags": "type_i,isa_I,mmu",
+        "exec": "require_rv64;\nWRITE_RD(MMU.load_uint32(RS1 + insn.i_imm()));\n",
+        "fast": "wrd(MMU.load_uint32(r1+imm))",
+        "len": 4,
+        "decode": "707f 6003 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "sd": {
+        "flags": "type_s,isa_I,mmu",
+        "exec": "require_rv64;\nMMU.store_uint64(RS1 + insn.s_imm(), RS2);\n",
+        "fast": "MMU.store_int64(r1+imm, r2)",
+        "len": 4,
+        "decode": "707f 3023 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,5)|xs(25,7)<<5 0"
+    },
+    "slli": {
+        "exec": "require(SHAMT < xlen);\nWRITE_RD(sext_xlen(RS1 << SHAMT));\n",
+        "fast": "wrd(uint64_t(r1) << imm)",
+        "len": 4,
+        "decode": "fc00707f 1013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,6) 0"
+    },
+    "srli": {
+        "exec": "require(SHAMT < xlen);\nWRITE_RD(sext_xlen(zext_xlen(RS1) >> SHAMT));\n",
+        "fast": "wrd(uint64_t(r1) >> imm)",
+        "len": 4,
+        "decode": "fc00707f 5013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,6) 0"
+    },
+    "srai": {
+        "exec": "require(SHAMT < xlen);\nWRITE_RD(sext_xlen(sext_xlen(RS1) >> SHAMT));\n",
+        "fast": "wrd( int64_t(r1) >> imm)",
+        "len": 4,
+        "decode": "fc00707f 40005013 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,6) 0"
+    },
+    "fence": {
+        "exec": "",
+        "len": 4,
+        "decode": "707f f x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,4)|x(24,4)<<4|x(28,4)<<8 0"
+    },
+    "fence.i": {
+        "flags": "type_i,isa_I,mmu",
+        "exec": "MMU.flush_icache();\n",
+        "len": 4,
+        "decode": "707f 100f x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "mul": {
+        "exec": "require_extension('M');\nWRITE_RD(sext_xlen(RS1 * RS2));\n",
+        "len": 4,
+        "decode": "fe00707f 2000033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "mulh": {
+        "exec": "require_extension('M');\nif (xlen == 64)\n  WRITE_RD(mulh(RS1, RS2));\nelse\n  WRITE_RD(sext32((sext32(RS1) * sext32(RS2)) >> 32));\n",
+        "len": 4,
+        "decode": "fe00707f 2001033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "mulhsu": {
+        "exec": "require_extension('M');\nif (xlen == 64)\n  WRITE_RD(mulhsu(RS1, RS2));\nelse\n  WRITE_RD(sext32((sext32(RS1) * reg_t((uint32_t)RS2)) >> 32));\n",
+        "len": 4,
+        "decode": "fe00707f 2002033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "mulhu": {
+        "exec": "require_extension('M');\nif (xlen == 64)\n  WRITE_RD(mulhu(RS1, RS2));\nelse\n  WRITE_RD(sext32(((uint64_t)(uint32_t)RS1 * (uint64_t)(uint32_t)RS2) >> 32));\n",
+        "len": 4,
+        "decode": "fe00707f 2003033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "div": {
+        "exec": "require_extension('M');\nsreg_t lhs = sext_xlen(RS1);\nsreg_t rhs = sext_xlen(RS2);\nif(rhs == 0)\n  WRITE_RD(UINT64_MAX);\nelse if(lhs == INT64_MIN && rhs == -1)\n  WRITE_RD(lhs);\nelse\n  WRITE_RD(sext_xlen(lhs / rhs));\n",
+        "len": 4,
+        "decode": "fe00707f 2004033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "divu": {
+        "exec": "require_extension('M');\nreg_t lhs = zext_xlen(RS1);\nreg_t rhs = zext_xlen(RS2);\nif(rhs == 0)\n  WRITE_RD(UINT64_MAX);\nelse\n  WRITE_RD(sext_xlen(lhs / rhs));\n",
+        "len": 4,
+        "decode": "fe00707f 2005033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "rem": {
+        "exec": "require_extension('M');\nsreg_t lhs = sext_xlen(RS1);\nsreg_t rhs = sext_xlen(RS2);\nif(rhs == 0)\n  WRITE_RD(lhs);\nelse if(lhs == INT64_MIN && rhs == -1)\n  WRITE_RD(0);\nelse\n  WRITE_RD(sext_xlen(lhs % rhs));\n",
+        "len": 4,
+        "decode": "fe00707f 2006033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "remu": {
+        "exec": "require_extension('M');\nreg_t lhs = zext_xlen(RS1);\nreg_t rhs = zext_xlen(RS2);\nif(rhs == 0)\n  WRITE_RD(sext_xlen(RS1));\nelse\n  WRITE_RD(sext_xlen(lhs % rhs));\n",
+        "len": 4,
+        "decode": "fe00707f 2007033 x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "amoadd.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return lhs + RS2; })));\n",
+        "len": 4,
+        "decode": "f800707f 202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amoxor.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return lhs ^ RS2; })));\n",
+        "len": 4,
+        "decode": "f800707f 2000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amoor.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return lhs | RS2; })));\n",
+        "len": 4,
+        "decode": "f800707f 4000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amoand.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return lhs & RS2; })));\n",
+        "len": 4,
+        "decode": "f800707f 6000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amomin.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](int32_t lhs) { return std::min(lhs, int32_t(RS2)); })));\n",
+        "len": 4,
+        "decode": "f800707f 8000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amomax.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](int32_t lhs) { return std::max(lhs, int32_t(RS2)); })));\n",
+        "len": 4,
+        "decode": "f800707f a000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amominu.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return std::min(lhs, uint32_t(RS2)); })));\n",
+        "len": 4,
+        "decode": "f800707f c000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amomaxu.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(RS2)); })));\n",
+        "len": 4,
+        "decode": "f800707f e000202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amoswap.w": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nWRITE_RD(sext32(MMU.amo_uint32(RS1, [&](uint32_t lhs) { return RS2; })));\n",
+        "len": 4,
+        "decode": "f800707f 800202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "lr.w": {
+        "flags": "type_amo,isa_A,mmu,lrsc",
+        "exec": "require_extension('A');\nauto res = MMU.load_int32(RS1, true);\nMMU.acquire_load_reservation(RS1);\nWRITE_RD(res);\n",
+        "len": 4,
+        "decode": "f9f0707f 1000202f x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(25,2) 0"
+    },
+    "sc.w": {
+        "flags": "type_amo,isa_A,mmu,lrsc",
+        "exec": "require_extension('A');\n\nbool have_reservation = MMU.check_load_reservation(RS1, 4);\n\nif (have_reservation)\n  MMU.store_uint32(RS1, RS2);\n\nMMU.yield_load_reservation();\n\nWRITE_RD(!have_reservation);\n",
+        "len": 4,
+        "decode": "f800707f 1800202f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "fadd.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_add(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00007f 53 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0"
+    },
+    "fsub.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_sub(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00007f 8000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0"
+    },
+    "fmul.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mul(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00007f 10000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0"
+    },
+    "fdiv.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_div(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00007f 18000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0"
+    },
+    "fsgnj.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(fsgnj32(FRS1, FRS2, false, false));\n",
+        "len": 4,
+        "decode": "fe00707f 20000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fsgnjn.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(fsgnj32(FRS1, FRS2, true, false));\n",
+        "len": 4,
+        "decode": "fe00707f 20001053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fsgnjx.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(fsgnj32(FRS1, FRS2, false, true));\n",
+        "len": 4,
+        "decode": "fe00707f 20002053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fmin.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nbool less = f32_lt_quiet(f32(FRS1), f32(FRS2)) ||\n            (f32_eq(f32(FRS1), f32(FRS2)) && (f32(FRS1).v & F32_SIGN));\nif (isNaNF32UI(f32(FRS1).v) && isNaNF32UI(f32(FRS2).v))\n  WRITE_FRD(f32(defaultNaNF32UI));\nelse\n  WRITE_FRD(less || isNaNF32UI(f32(FRS2).v) ? FRS1 : FRS2);\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f 28000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fmax.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nbool greater = f32_lt_quiet(f32(FRS2), f32(FRS1)) ||\n               (f32_eq(f32(FRS2), f32(FRS1)) && (f32(FRS2).v & F32_SIGN));\nif (isNaNF32UI(f32(FRS1).v) && isNaNF32UI(f32(FRS2).v))\n  WRITE_FRD(f32(defaultNaNF32UI));\nelse\n  WRITE_FRD(greater || isNaNF32UI(f32(FRS2).v) ? FRS1 : FRS2);\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f 28001053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fsqrt.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_sqrt(f32(FRS1)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f 58000053 x(7,5)+FPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fle.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(f32_le(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f a0000053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "flt.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(f32_lt(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f a0001053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "feq.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(f32_eq(f32(FRS1), f32(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f a0002053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fcvt.w.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(sext32(f32_to_i32(f32(FRS1), RM, true)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f c0000053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.wu.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(sext32(f32_to_ui32(f32(FRS1), RM, true)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f c0100053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fmv.x.w": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(sext32(FRS1.v[0]));\n",
+        "len": 4,
+        "decode": "fff0707f e0000053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG NONE 0"
+    },
+    "fclass.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_RD(f32_classify(f32(FRS1)));\n",
+        "len": 4,
+        "decode": "fff0707f e0001053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG NONE 0"
+    },
+    "fcvt.s.w": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(i32_to_f32((int32_t)RS1));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f d0000053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.s.wu": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(ui32_to_f32((uint32_t)RS1));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f d0100053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fmv.w.x": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(f32(RS1));\n",
+        "len": 4,
+        "decode": "fff0707f f0000053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG NONE 0"
+    },
+    "flw": {
+        "flags": "type_i,isa_F,fp,mmu",
+        "exec": "require_extension('F');\nrequire_fp;\nWRITE_FRD(f32(MMU.load_uint32(RS1 + insn.i_imm())));\n",
+        "len": 4,
+        "decode": "707f 2007 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "fsw": {
+        "flags": "type_s,isa_F,fp,mmu",
+        "exec": "require_extension('F');\nrequire_fp;\nMMU.store_uint32(RS1 + insn.s_imm(), FRS2.v[0]);\n",
+        "len": 4,
+        "decode": "707f 2027 NOREG;x(15,5)+GPREG;x(20,5)+FPREG;NOREG x(7,5)|xs(25,7)<<5 0"
+    },
+    "fmadd.s": {
+        "flags": "type_r4,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mulAdd(f32(FRS1), f32(FRS2), f32(FRS3)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "600007f 43 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0"
+    },
+    "fmsub.s": {
+        "flags": "type_r4,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mulAdd(f32(FRS1), f32(FRS2), f32(f32(FRS3).v ^ F32_SIGN)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "600007f 47 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0"
+    },
+    "fnmsub.s": {
+        "flags": "type_r4,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mulAdd(f32(f32(FRS1).v ^ F32_SIGN), f32(FRS2), f32(FRS3)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "600007f 4b x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0"
+    },
+    "fnmadd.s": {
+        "flags": "type_r4,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_mulAdd(f32(f32(FRS1).v ^ F32_SIGN), f32(FRS2), f32(f32(FRS3).v ^ F32_SIGN)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "600007f 4f x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0"
+    },
+    "fadd.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_add(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00007f 2000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0"
+    },
+    "fsub.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_sub(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00007f a000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0"
+    },
+    "fmul.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mul(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00007f 12000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0"
+    },
+    "fdiv.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_div(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00007f 1a000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG x(12,3) 0"
+    },
+    "fsgnj.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_FRD(fsgnj64(FRS1, FRS2, false, false));\n",
+        "len": 4,
+        "decode": "fe00707f 22000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fsgnjn.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_FRD(fsgnj64(FRS1, FRS2, true, false));\n",
+        "len": 4,
+        "decode": "fe00707f 22001053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fsgnjx.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_FRD(fsgnj64(FRS1, FRS2, false, true));\n",
+        "len": 4,
+        "decode": "fe00707f 22002053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fmin.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nbool less = f64_lt_quiet(f64(FRS1), f64(FRS2)) ||\n            (f64_eq(f64(FRS1), f64(FRS2)) && (f64(FRS1).v & F64_SIGN));\nif (isNaNF64UI(f64(FRS1).v) && isNaNF64UI(f64(FRS2).v))\n  WRITE_FRD(f64(defaultNaNF64UI));\nelse\n  WRITE_FRD(less || isNaNF64UI(f64(FRS2).v) ? FRS1 : FRS2);\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f 2a000053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fmax.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nbool greater = f64_lt_quiet(f64(FRS2), f64(FRS1)) ||\n               (f64_eq(f64(FRS2), f64(FRS1)) && (f64(FRS2).v & F64_SIGN));\nif (isNaNF64UI(f64(FRS1).v) && isNaNF64UI(f64(FRS2).v))\n  WRITE_FRD(f64(defaultNaNF64UI));\nelse\n  WRITE_FRD(greater || isNaNF64UI(f64(FRS2).v) ? FRS1 : FRS2);\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f 2a001053 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fcvt.s.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_to_f32(f64(FRS1)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f 40100053 x(7,5)+FPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.d.s": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f32_to_f64(f32(FRS1)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f 42000053 x(7,5)+FPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fsqrt.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_sqrt(f64(FRS1)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f 5a000053 x(7,5)+FPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fle.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_RD(f64_le(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f a2000053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "flt.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_RD(f64_lt(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f a2001053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "feq.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_RD(f64_eq(f64(FRS1), f64(FRS2)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fe00707f a2002053 x(7,5)+GPREG;x(15,5)+FPREG;x(20,5)+FPREG;NOREG NONE 0"
+    },
+    "fcvt.w.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(sext32(f64_to_i32(f64(FRS1), RM, true)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f c2000053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.wu.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(sext32(f64_to_ui32(f64(FRS1), RM, true)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f c2100053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fclass.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_RD(f64_classify(f64(FRS1)));\n",
+        "len": 4,
+        "decode": "fff0707f e2001053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG NONE 0"
+    },
+    "fcvt.d.w": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(i32_to_f64((int32_t)RS1));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f d2000053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.d.wu": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(ui32_to_f64((uint32_t)RS1));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f d2100053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fld": {
+        "flags": "type_i,isa_D,fp,mmu",
+        "exec": "require_extension('D');\nrequire_fp;\nWRITE_FRD(f64(MMU.load_uint64(RS1 + insn.i_imm())));\n",
+        "len": 4,
+        "decode": "707f 3007 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
+    },
+    "fsd": {
+        "flags": "type_s,isa_D,fp,mmu",
+        "exec": "require_extension('D');\nrequire_fp;\nMMU.store_uint64(RS1 + insn.s_imm(), FRS2.v[0]);\n",
+        "len": 4,
+        "decode": "707f 3027 NOREG;x(15,5)+GPREG;x(20,5)+FPREG;NOREG x(7,5)|xs(25,7)<<5 0"
+    },
+    "fmadd.d": {
+        "flags": "type_r4,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mulAdd(f64(FRS1), f64(FRS2), f64(FRS3)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "600007f 2000043 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0"
+    },
+    "fmsub.d": {
+        "flags": "type_r4,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mulAdd(f64(FRS1), f64(FRS2), f64(f64(FRS3).v ^ F64_SIGN)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "600007f 2000047 x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0"
+    },
+    "fnmsub.d": {
+        "flags": "type_r4,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mulAdd(f64(f64(FRS1).v ^ F64_SIGN), f64(FRS2), f64(FRS3)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "600007f 200004b x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0"
+    },
+    "fnmadd.d": {
+        "flags": "type_r4,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(f64_mulAdd(f64(f64(FRS1).v ^ F64_SIGN), f64(FRS2), f64(f64(FRS3).v ^ F64_SIGN)));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "600007f 200004f x(7,5)+FPREG;x(15,5)+FPREG;x(20,5)+FPREG;x(27,5)+FPREG x(12,3) 0"
+    },
+    "ebreak": {
+        "exec": "throw trap_breakpoint(pc);\n",
+        "len": 4,
+        "decode": "ffffffff 100073 NOREG;NOREG;NOREG;NOREG NONE 0"
+    },
+    "dret": {
+        "flags": "type_r,isa_I,pc",
+        "exec": "require(STATE.debug_mode);\nset_pc_and_serialize(STATE.dpc);\np->set_privilege(STATE.dcsr.prv);\n\n/* We're not in Debug Mode anymore. */\nSTATE.debug_mode = false;\n\nif (STATE.dcsr.step)\n  STATE.single_step = STATE.STEP_STEPPING;\n",
+        "len": 4,
+        "decode": "ffffffff 7b200073 NOREG;NOREG;NOREG;NOREG NONE 0"
+    },
+    "csrrw": {
+        "exec": "int csr = validate_csr(insn.csr(), true);\nreg_t old = p->get_csr(csr, insn, true);\np->set_csr(csr, RS1);\nWRITE_RD(sext_xlen(old));\nserialize();\n",
+        "len": 4,
+        "decode": "707f 1073 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,12) 0"
+    },
+    "csrrs": {
+        "exec": "bool write = insn.rs1() != 0;\nint csr = validate_csr(insn.csr(), write);\nreg_t old = p->get_csr(csr, insn, write);\nif (write) {\n  p->set_csr(csr, old | RS1);\n}\nWRITE_RD(sext_xlen(old));\nserialize();\n",
+        "len": 4,
+        "decode": "707f 2073 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,12) 0"
+    },
+    "csrrc": {
+        "exec": "bool write = insn.rs1() != 0;\nint csr = validate_csr(insn.csr(), write);\nreg_t old = p->get_csr(csr, insn, write);\nif (write) {\n  p->set_csr(csr, old & ~RS1);\n}\nWRITE_RD(sext_xlen(old));\nserialize();\n",
+        "len": 4,
+        "decode": "707f 3073 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(20,12) 0"
+    },
+    "csrrwi": {
+        "exec": "int csr = validate_csr(insn.csr(), true);\nreg_t old = p->get_csr(csr, insn, true);\np->set_csr(csr, insn.rs1());\nWRITE_RD(sext_xlen(old));\nserialize();\n",
+        "len": 4,
+        "decode": "707f 5073 x(7,5)+GPREG;NOREG;NOREG;NOREG x(15,5)<<12|x(20,12) 1"
+    },
+    "csrrsi": {
+        "exec": "bool write = insn.rs1() != 0;\nint csr = validate_csr(insn.csr(), write);\nreg_t old = p->get_csr(csr, insn, write);\nif (write) {\n  p->set_csr(csr, old | insn.rs1());\n}\nWRITE_RD(sext_xlen(old));\nserialize();\n",
+        "len": 4,
+        "decode": "707f 6073 x(7,5)+GPREG;NOREG;NOREG;NOREG x(15,5)<<12|x(20,12) 1"
+    },
+    "csrrci": {
+        "exec": "bool write = insn.rs1() != 0;\nint csr = validate_csr(insn.csr(), write);\nreg_t old = p->get_csr(csr, insn, write);\nif (write) {\n  p->set_csr(csr, old & ~(reg_t)insn.rs1());\n}\nWRITE_RD(sext_xlen(old));\nserialize();\n",
+        "len": 4,
+        "decode": "707f 7073 x(7,5)+GPREG;NOREG;NOREG;NOREG x(15,5)<<12|x(20,12) 1"
+    },
+    "mulw": {
+        "exec": "require_extension('M');\nrequire_rv64;\nWRITE_RD(sext32(RS1 * RS2));\n",
+        "len": 4,
+        "decode": "fe00707f 200003b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "divw": {
+        "exec": "require_extension('M');\nrequire_rv64;\nsreg_t lhs = sext32(RS1);\nsreg_t rhs = sext32(RS2);\nif(rhs == 0)\n  WRITE_RD(UINT64_MAX);\nelse\n  WRITE_RD(sext32(lhs / rhs));\n",
+        "len": 4,
+        "decode": "fe00707f 200403b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "divuw": {
+        "exec": "require_extension('M');\nrequire_rv64;\nreg_t lhs = zext32(RS1);\nreg_t rhs = zext32(RS2);\nif(rhs == 0)\n  WRITE_RD(UINT64_MAX);\nelse\n  WRITE_RD(sext32(lhs / rhs));\n",
+        "len": 4,
+        "decode": "fe00707f 200503b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "remw": {
+        "exec": "require_extension('M');\nrequire_rv64;\nsreg_t lhs = sext32(RS1);\nsreg_t rhs = sext32(RS2);\nif(rhs == 0)\n  WRITE_RD(lhs);\nelse\n  WRITE_RD(sext32(lhs % rhs));\n",
+        "len": 4,
+        "decode": "fe00707f 200603b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "remuw": {
+        "exec": "require_extension('M');\nrequire_rv64;\nreg_t lhs = zext32(RS1);\nreg_t rhs = zext32(RS2);\nif(rhs == 0)\n  WRITE_RD(sext32(lhs));\nelse\n  WRITE_RD(sext32(lhs % rhs));\n",
+        "len": 4,
+        "decode": "fe00707f 200703b x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
+    "amoadd.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return lhs + RS2; }));\n",
+        "len": 4,
+        "decode": "f800707f 302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amoxor.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return lhs ^ RS2; }));\n",
+        "len": 4,
+        "decode": "f800707f 2000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amoor.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return lhs | RS2; }));\n",
+        "len": 4,
+        "decode": "f800707f 4000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amoand.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return lhs & RS2; }));\n",
+        "len": 4,
+        "decode": "f800707f 6000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amomin.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](int64_t lhs) { return std::min(lhs, int64_t(RS2)); }));\n",
+        "len": 4,
+        "decode": "f800707f 8000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amomax.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](int64_t lhs) { return std::max(lhs, int64_t(RS2)); }));\n",
+        "len": 4,
+        "decode": "f800707f a000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amominu.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return std::min(lhs, RS2); }));\n",
+        "len": 4,
+        "decode": "f800707f c000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amomaxu.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return std::max(lhs, RS2); }));\n",
+        "len": 4,
+        "decode": "f800707f e000302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "amoswap.d": {
+        "flags": "type_amo,isa_A,mmu,amo",
+        "exec": "require_extension('A');\nrequire_rv64;\nWRITE_RD(MMU.amo_uint64(RS1, [&](uint64_t lhs) { return RS2; }));\n",
+        "len": 4,
+        "decode": "f800707f 800302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "lr.d": {
+        "flags": "type_amo,isa_A,mmu,lrsc",
+        "exec": "require_extension('A');\nrequire_rv64;\nauto res = MMU.load_int64(RS1, true);\nMMU.acquire_load_reservation(RS1);\nWRITE_RD(res);\n",
+        "len": 4,
+        "decode": "f9f0707f 1000302f x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG x(25,2) 0"
+    },
+    "sc.d": {
+        "flags": "type_amo,isa_A,mmu,lrsc",
+        "exec": "require_extension('A');\nrequire_rv64;\n\nbool have_reservation = MMU.check_load_reservation(RS1, 8);\n\nif (have_reservation)\n  MMU.store_uint64(RS1, RS2);\n\nMMU.yield_load_reservation();\n\nWRITE_RD(!have_reservation);\n",
+        "len": 4,
+        "decode": "f800707f 1800302f x(7,5)+GPREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(25,2) 0"
+    },
+    "fcvt.l.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(f32_to_i64(f32(FRS1), RM, true));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f c0200053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.lu.s": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(f32_to_ui64(f32(FRS1), RM, true));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f c0300053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.s.l": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(i64_to_f32(RS1));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f d0200053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.s.lu": {
+        "flags": "type_r,isa_F,fp",
+        "exec": "require_extension('F');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(ui64_to_f32(RS1));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f d0300053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.l.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(f64_to_i64(f64(FRS1), RM, true));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f c2200053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.lu.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_RD(f64_to_ui64(f64(FRS1), RM, true));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f c2300053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fmv.x.d": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nWRITE_RD(FRS1.v[0]);\n",
+        "len": 4,
+        "decode": "fff0707f e2000053 x(7,5)+GPREG;x(15,5)+FPREG;NOREG;NOREG NONE 0"
+    },
+    "fcvt.d.l": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(i64_to_f64(RS1));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f d2200053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fcvt.d.lu": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nsoftfloat_roundingMode = RM;\nWRITE_FRD(ui64_to_f64(RS1));\nset_fp_exceptions;\n",
+        "len": 4,
+        "decode": "fff0007f d2300053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG x(12,3) 0"
+    },
+    "fmv.d.x": {
+        "flags": "type_r,isa_D,fp",
+        "exec": "require_extension('D');\nrequire_rv64;\nrequire_fp;\nWRITE_FRD(f64(RS1));\n",
+        "len": 4,
+        "decode": "fff0707f f2000053 x(7,5)+FPREG;x(15,5)+GPREG;NOREG;NOREG NONE 0"
+    },
+    "cas12.w": {},
+    "cas12.d": {},
+    "cas10.w": {},
+    "cas10.d": {},
+    "ILLEGAL": {},
+    "UNKNOWN": {}
+}

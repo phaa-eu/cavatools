@@ -99,6 +99,12 @@ long* hart_t::reg_file()
   return (long*)&p->get_state()->XPR[0];
 }
 
+void* hart_t::freg_file()
+{
+  processor_t* p = spike();
+  return (void*)&p->get_state()->FPR[0];
+}
+
 long hart_t::read_pc()
 {
   processor_t* p = spike();

@@ -1,0 +1,19 @@
+{
+
+  "fmadd_dyn.s"	: { "type":"qf", "bits":"fs3  00  fs2   fs1  111  fd  10000 11", "fast":"wfs( (f1 * f2) + f3)" },
+  "fmsub_dyn.s"	: { "type":"qf", "bits":"fs3  00  fs2   fs1  111  fd  10001 11", "fast":"wfs( (f1 * f2) - f3)" },
+  "fnmsub_dyn.s": { "type":"qf", "bits":"fs3  00  fs2   fs1  111  fd  10010 11", "fast":"wfs(-(f1 * f2) - f3)" },
+  "fnmadd_dyn.s": { "type":"qf", "bits":"fs3  00  fs2   fs1  111  fd  10011 11", "fast":"wfs(-(f1 * f2) + f3)" },
+  "fadd_dyn.s"	: { "type":"qf", "bits":"0000000  fs2   fs1  111  fd  10100 11", "fast":"wfs(f1+f2)"           },
+  "fsub_dyn.s"	: { "type":"qf", "bits":"0000100  fs2   fs1  111  fd  10100 11", "fast":"wfs(f1-f2)"           },
+  "fmul_dyn.s"	: { "type":"qf", "bits":"0001000  fs2   fs1  111  fd  10100 11", "fast":"wfs(f1*f2)"           },
+  
+  "fmadd_dyn.d"	: { "type":"qf", "bits":"fs3  01  fs2   fs1  111  fd  10000 11", "fast":"wfs( (d1 * d2) + d3)" },
+  "fmsub_dyn.d"	: { "type":"qf", "bits":"fs3  01  fs2   fs1  111  fd  10001 11", "fast":"wfs( (d1 * d2) - d3)" },
+  "fnmsub_dyn.d": { "type":"qf", "bits":"fs3  01  fs2   fs1  111  fd  10010 11", "fast":"wfs(-(d1 * d2) - d3)" },
+  "fnmadd_dyn.d": { "type":"qf", "bits":"fs3  01  fs2   fs1  111  fd  10011 11", "fast":"wfs(-(d1 * d2) + d3)" },
+  "fadd_dyn.d"	: { "type":"qf", "bits":"0000001  fs2   fs1  111  fd  10100 11", "fast":"wfs(d1+d2)"           },
+  "fsub_dyn.d"	: { "type":"qf", "bits":"0000101  fs2   fs1  111  fd  10100 11", "fast":"wfs(d1-d2)"           },
+  "fmul_dyn.d"	: { "type":"qf", "bits":"0001001  fs2   fs1  111  fd  10100 11", "fast":"wfs(d1*d2)"           }
+  
+}

@@ -105,10 +105,15 @@ for name in opcodes:
         registers[0] = '1'
     if type=='cds':
         registers[0] = '2'
-    if re.match('f\w+\.', name):
+    if name=='flw' or name=='fld':
+        opcodes[name]['bits'] = opcodes[name]['bits'].replace('rd', 'fd')
+    elif name=='fsw' or name=='fsd':
+        opcodes[name]['bits'] = opcodes[name]['bits'].replace('rs2', 'fs2')
+    elif re.match('f\w+\.', name):
         b = opcodes[name]['bits']
         if re.match('.*\.[wl]u?\.[sd]|(feq|flt|fle|fclass)\.[sd]|fmv\.x\.[wd]', name):
             b = b.replace('rs1', 'fs1')
+            b = b.replace('rs2', 'fs2')
         elif re.match('.*\.[sd]u?\.[wl]u?|fmv\.[wd]\.x', name):
             b = b.replace('rd', 'fd')
         elif re.match('f\w+\.[sd]', name):
@@ -175,7 +180,6 @@ for name in opcodes:
         immstr = 'NONE'
     opcodes[name]['decode'] = '{:x} {:x} {:s} {:s} {:d}'.format(mask, code, regstr, immstr, bigimm)
 
-newlist = OrderedDict()
 opcode_list = ['ZERO']
 # First come all the compressed instructions
 for name in opcodes:
@@ -192,11 +196,18 @@ for name in opcodes:
     if re.match('c\.', name):  continue
     if 'fast' not in opcodes[name]:
         opcode_list.append(name)
+opcode_list.append('cas12.w')
+opcode_list.append('cas12.d')
+opcode_list.append('cas10.w')
+opcode_list.append('cas10.d')
 opcode_list.append('ILLEGAL')
 opcode_list.append('UNKNOWN')
-    
+
+isa = OrderedDict()
+spike = OrderedDict()
 for name in opcode_list:
-    newlist[name] = {}
+    isa[name] = {}
+    spike[name] = {}
     if name not in opcodes:
         continue
     flags = []
@@ -212,16 +223,36 @@ for name in opcode_list:
     if 'flags' in opcodes[name]:
         for f in opcodes[name]['flags'].split(','):
             flags.append(f)
-        newlist[name]['flags'] = ','.join(flags)
+        isa[name]['flags'] = ','.join(flags)
+        spike[name]['flags'] = ','.join(flags)
     if 'bits' in opcodes[name]:
-        newlist[name]['bits'] = opcodes[name]['bits']
-    if 'exec' in opcodes[name]:
-        newlist[name]['exec'] = opcodes[name]['exec']
-    if 'fast' in opcodes[name]:
-        newlist[name]['fast'] = opcodes[name]['fast']
-    newlist[name]['len'] = opcodes[name]['len']
+        isa[name]['bits'] = opcodes[name]['bits']
+    isa[name]['len'] = opcodes[name]['len']
     if 'decode' in opcodes[name]:
-        newlist[name]['decode'] = opcodes[name]['decode']
+        isa[name]['decode'] = opcodes[name]['decode']
 
-json.dump(newlist, sys.stdout, indent=4)
+    if 'exec' in opcodes[name]:
+        isa[name]['exec'] = opcodes[name]['exec']
+        spike[name]['exec'] = opcodes[name]['exec']
+    if 'fast' in opcodes[name]:
+        isa[name]['fast'] = opcodes[name]['fast']
+        spike[name]['fast'] = opcodes[name]['fast']
+    isa[name]['len'] = opcodes[name]['len']
+    spike[name]['len'] = opcodes[name]['len']
+    if 'decode' in opcodes[name]:
+        spike[name]['decode'] = opcodes[name]['decode']
+    
+def diffcp(fname):
+    if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
+        os.system('rm newcode.tmp')
+    else:
+        os.system('mv newcode.tmp '+fname)
+
+with open('newcode.tmp', 'w') as f:
+    json.dump(isa, f, indent=4)
+diffcp('ISA.json')
+    
+with open('newcode.tmp', 'w') as f:
+    json.dump(spike, f, indent=4)
+diffcp('SPIKE.json')
 

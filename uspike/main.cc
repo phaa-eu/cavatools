@@ -5,7 +5,11 @@
 #include <errno.h>
 #include <signal.h>
 #include <setjmp.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include <sched.h>
+
+//#include <gperftools/profiler.h>
 
 #include "options.h"
 #include "uspike.h"
@@ -48,6 +52,7 @@ int status_function(void* arg)
     sleep(1);
     print_status();
   }
+  return 0;
 }
 
 void exit_func()
@@ -55,6 +60,7 @@ void exit_func()
   fprintf(stderr, "\n");
   print_status();
   fprintf(stderr, "\nuspike terminated normally\n");
+  //ProfilerStop();
 }  
 
 extern "C" {
@@ -81,6 +87,7 @@ void dump_trace_handler(int nSIGnum)
 
 int main(int argc, const char* argv[], const char* envp[])
 {
+  //ProfilerStart("uspike.prof");
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
   if (argc == 0)
     help_exit();
@@ -143,15 +150,17 @@ int main(int argc, const char* argv[], const char* envp[])
 
 extern "C" {
 
-#define poolsize  (1<<30)	/* size of simulation memory pool */
+#define POOL_SIZE  (1L<<31)	/* size of simulation memory pool */
 
-static char simpool[poolsize];	/* base of memory pool */
-static char* pooltop = simpool; /* current allocation address */
+static char* simpool;		/* base of memory pool */
+static char* pooltop;		/* current allocation address */
 
 void *malloc(size_t size)
 {
+  if (simpool == 0)
+    simpool = pooltop = (char*)mmap((void*)0, POOL_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   size = (size + 15) & ~15;	// always allocate aligned objects
-  if (pooltop+size > simpool+poolsize)
+  if (pooltop+size > simpool+POOL_SIZE)
     return 0;
   return __sync_fetch_and_add(&pooltop, size);
 }

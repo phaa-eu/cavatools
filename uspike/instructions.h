@@ -14,9 +14,9 @@ extern const char* reg_name[];
 // by making sure flag bits are all zero in this case, then just use value.
 
 #define GPREG	0
-#define FPREG	GPREG+32
-#define VPREG	FPREG+32
-#define VMREG	VPREG+32
+#define FPREG	(GPREG+32)
+#define VPREG	(FPREG+32)
+#define VMREG	(VPREG+32)
 #define NOREG	-1
 
 class alignas(8) Insn_t {
@@ -33,15 +33,19 @@ class alignas(8) Insn_t {
   };
   
 public:
-  Insn_t() { *((int64_t*)this) = -1; } // all registers become NOREG
-  Insn_t(Opcode_t code)                { *((int64_t*)this)=-1; op_code=code; }
-  Insn_t(Opcode_t code, int8_t rd, int16_t imm)     :Insn_t(code)  { op_rd=rd; op.imm=imm<<3|0x1; }
+  Insn_t() { *((uint64_t*)this) = ~0L; } // all registers become NOREG
+  Insn_t(Opcode_t code)                { *((uint64_t*)this)=~0L; op_code=code; }
+  Insn_t(Opcode_t code, int8_t rd, int16_t imm) :Insn_t(code) { op_rd=rd; op.imm=(imm<<1)|0x1; }
   long opcode() { return op_code; }
   int rd()  { return op_rd; }
   int rs1() { return op_rs1; }
   int rs2() { return op.rs2; }
   int rs3() { return op.rs3; }
-  long immed() { return (op.imm&0x1) ? op.imm>>3 : op_longimm; }
+  int fd()  { return op_rd-FPREG; }
+  int fs1() { return op_rs1-FPREG; }
+  int fs2() { return op.rs2-FPREG; }
+  int fs3() { return op.rs3-FPREG; }
+  long immed() { return (op.imm&0x1) ? op.imm>>1 : op_longimm; }
   int bytes() { return (op_code <= Last_Compressed_Opcode) ? 2 : 4; }
   bool longimmed() { return (op.imm & 0x1) == 0; }
   friend Insn_t reg1insn( Opcode_t code, int8_t rd, int8_t rs1);
