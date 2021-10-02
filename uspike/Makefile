@@ -8,7 +8,7 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-MINUS_O := -Ofast
+MINUS_O := -O3 -ffast-math
 #MINUS_O := -O0 -DDEBUG
 
 # Paths to riscv-tools build directories on local system
@@ -44,7 +44,7 @@ main.o instructions.o interpreter.o: uspike.h opcodes.h instructions.h
 main.o options.o: options.h
 instructions.o: decoder.h constants.h 
 elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h
-interpreter.o:  dispatch_table.h fastops.h hart.h
+interpreter.o:  dispatch_table.h fastops.h hart.h spike_link.h mmu.h
 hart.o: hart.h
 hart.o decoder.h dispatch_table.h fastops.h: opcodes.h hart.h
 proxy_syscall.o: ecall_nums.h
@@ -54,7 +54,7 @@ proxy_syscall.o: ecall_nums.h
 ecall_nums.h: Makefile syscall_mapping
 	./syscall_mapping < syscalls-riscv64 > $@
 
-opcodes.h constants.h dispatch_table.h &:  ../opcodes/ISA.json make_headers
+opcodes.h constants.h dispatch_table.h fastops.h &:  ../opcodes/ISA.json
 	./make_headers ../opcodes/ISA.json
 
 # Cleanup & installation

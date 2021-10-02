@@ -79,6 +79,8 @@ with open('newcode.tmp', 'w') as f:
             f.write('\n  ')
         if name in opcodes and 'exec' in opcodes[name]:
             f.write('&I_{:21s}'.format(name.replace('.','_')+','))
+        elif '_dyn' in name:
+            f.write('&I_{:21s}'.format(name.replace('.','_').replace('_dyn','') + ','))
         else:
             f.write('{:24s}'.format('0,'))
         i += 1

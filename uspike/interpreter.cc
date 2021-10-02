@@ -81,19 +81,11 @@ bool hart_t::single_step()
   return false;
 }
 
-union fpreg_t { 
-  uint32_t p[4];		// p[1]=~0  NAN-boxes float to double
-  uint64_t q[2];		// q[1]=~0L NAN-boxes double to quad
-  float s;
-  double d;
-};
-static_assert(sizeof(fpreg_t) == 16);
-
 void hart_t::interpreter()
 {
   processor_t* p = spike();
   long* xpr = reg_file();
-  fpreg_t* fpr = (fpreg_t*)freg_file();
+  freg_t* fpr = (freg_t*)freg_file();
   long pc = read_pc();
 #ifdef DEBUG
   long oldpc;
@@ -113,15 +105,6 @@ void hart_t::interpreter()
 #define imm	i.immed()
 #define MMU	(*mmu())
 #define wpc(npc)  pc=MMU.jump_model(npc, pc)
-
-#define wfs(e)  { fpr[i.fd()].s=(e); fpr[i.fd()].p[1]=~0; fpr[i.fd()].q[1]=~0L; }
-#define wfd(e)  { fpr[i.fd()].d=(e);                      fpr[i.fd()].q[1]=~0L; }
-#define f1	fpr[i.fs1()].s
-#define d1	fpr[i.fs1()].d
-#define f2	fpr[i.fs2()].s
-#define d2	fpr[i.fs2()].d
-#define f3	fpr[i.fs3()].s
-#define d3	fpr[i.fs3()].d
       
 #include "fastops.h"
 
@@ -180,9 +163,9 @@ void hart_t::interpreter()
 }
 
 #undef MMU
+
 long I_ZERO(long pc, mmu_t& MMU, hart_t* cpu)    { die("I_ZERO should never be dispatched!"); }
 long I_ILLEGAL(long pc, mmu_t& MMU, hart_t* cpu) { die("I_ILLEGAL at 0x%lx", pc); }
 long I_UNKNOWN(long pc, mmu_t& MMU, hart_t* cpu) { die("I_UNKNOWN at 0x%lx", pc); }
 
 #include "dispatch_table.h"
-

@@ -5,7 +5,7 @@ RVTOOLS := /opt/riscv-tools
 B := $(RVTOOLS)/riscv-isa-sim
 I :=  -I$B/build -I$B/riscv -I$B/fesvr -I$B/softfloat -I$B/riscv/insns
 
-CXXFLAGS := -I.. $I -g -Ofast
+CXXFLAGS := -I.. $I -g -O3 -ffast-math
 #CXXFLAGS := -I.. $I -g -O0 -DDEBUG
 
 insn_files := $(wildcard *.cc)
