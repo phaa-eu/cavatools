@@ -41,7 +41,7 @@ class cache_t {		        // cache descriptor
   long evictions() { return _evictions; }
   long penalty() { return _penalty; }
   long linemask(long pc) { return pc & tag_mask; }
-  long linesize() { return (1 << lg_line); }
+  long linesize() { return line; }
   void flush();
   void show();
   void print(FILE* f =stderr);

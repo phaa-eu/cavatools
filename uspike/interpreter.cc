@@ -22,6 +22,11 @@ option<>     conf_vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit paramete
 option<bool> conf_ecall("ecall",	false, true,			"Show system calls");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
 
+void ( *const insn_model)(void* mmu,           long pc) = [](void* mmu,           long pc) {             };
+long ( *const jump_model)(void* mmu, long npc, long pc) = [](void* mmu, long npc, long pc) { return npc; };
+long ( *const load_model)(void* mmu,   long a, long pc) = [](void* mmu,   long a, long pc) { return a;   };
+long (*const store_model)(void* mmu,   long a, long pc) = [](void* mmu,   long a, long pc) { return a;   };
+void (  *const amo_model)(void* mmu,   long a, long pc) = [](void* mmu,   long a, long pc) {             };
 
 struct syscall_map_t {
   int sysnum;
@@ -96,8 +101,6 @@ void hart_t::interpreter()
     oldpc = pc;
     debug.insert(executed()+1, pc);
 #endif
-    Insn_t i = code.at(pc);
-    switch (i.opcode()) {
 
 #define wrd(e)	xpr[i.rd()]=(e)
 #define r1	xpr[i.rs1()]
@@ -106,6 +109,10 @@ void hart_t::interpreter()
 #define MMU	(*mmu())
 #define wpc(npc)  pc=MMU.jump_model(npc, pc)
       
+    MMU.insn_model(pc);
+    Insn_t i = code.at(pc);
+    switch (i.opcode()) {
+
 #include "fastops.h"
 
     case Op_cas12_w:

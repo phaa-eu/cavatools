@@ -43,16 +43,18 @@ public:
   long cycles_run;
   mem_t(long n);
   void sync_system_clock();
-  void icache_lookup(long pc);
-  void insn_model(long end_pc);
-  long jump_model(long npc, long pc);
+
   long load_model( long a,  long pc);
   long store_model(long a,  long pc);
   void amo_model(  long a,  long pc);
+ public:
+  void insn_model(          long pc);
+  long jump_model(long npc, long pc);
+
   cache_t* dcache() { return &dc; }
   long cycles() { return cycles_run; }
   void print();
-private:
+
   cache_t ic;
   cache_t dc;
 };
@@ -161,10 +163,11 @@ static void print_status()
     threads++;
     total += p->executed();
   }
-  b += sprintf(b, "\r\33[2K%12ld cycles %3.1fs %3.1f MIPS IPC(util)", system_clock, realtime, total/1e6/realtime);
+  b += sprintf(b, "\r\33[2K%12ld cycles %3.1fs %3.1f MIPS IPC[I$,D$](util)", system_clock, realtime, total/1e6/realtime);
   char separator = '=';
   for (core_t* p=core_t::list(); p; p=p->next()) {
-    b += sprintf(b, "%c%4.2f", separator, (double)p->executed()/p->run_cycles());
+    b += sprintf(b, "%c%4.2f[%3.1f%%,%3.1f%%]", separator, (double)p->executed()/p->run_cycles(),
+		 100.0*p->ic.misses()/p->executed(), 100.0*p->dc.misses()/p->executed());
     if (p->local_clock() == LONG_MAX)
       b += sprintf(b, "(***)");
     else
@@ -194,78 +197,55 @@ void exitfunc()
   fprintf(stderr, "\ncaveat exited normally");
 }
 
-
-inline void mem_t::icache_lookup(long pc)
+inline void mem_t::insn_model(long pc)
 {
-  if (ic.lookup(pc))
-    return;
-  cycles_run += ic.penalty();
-  inc_imiss(pc);
-  inc_cycle(pc, ic.penalty());
-  //update_time();
+  inc_count(pc);
+  inc_cycle(pc);
+  cycles_run += 1;
 }
 
-inline void mem_t::insn_model(long end_pc)
+inline long mem_t::jump_model(long npc, long jpc)
 {
   long pc = last_pc;
-  icache_lookup(pc);
-  pc = ic.linemask(pc) + ic.linesize();
-  while (pc <= end_pc) {
-    icache_lookup(pc);
-    pc += ic.linesize();
+  long end = jpc + code.at(jpc).bytes();
+  while (pc < end) {
+    if (!ic.lookup(pc)) {
+      inc_imiss(pc);
+      inc_cycle(pc, ic.penalty());
+      cycles_run += ic.penalty();
+    }
+    pc = ic.linemask(pc) + ic.linesize();
   }
-  pc = last_pc;
-  while (pc <= end_pc) {
-    inc_count(pc);
-    inc_cycle(pc);
-    cycles_run += 1;
-    pc += code.at(pc).bytes();
-  }
-  last_pc = pc;
-}
-
-inline long mem_t::jump_model(long npc, long pc)
-{
-  insn_model(pc);
-  cycles_run += conf_Jump;
-  inc_cycle(npc, conf_Jump);
   last_pc = npc;
   return npc;
 }
 
 inline long mem_t::load_model(long a, long pc)
 {
-  insn_model(pc);
   if (!dc.lookup(a)) {
     inc_dmiss(pc);
     cycles_run += dc.penalty();
     inc_cycle(pc, dc.penalty());
-    //update_time();
   }
   return a;
 }
 
 inline long mem_t::store_model(long a, long pc)
 {
-  insn_model(pc);
   if (!dc.lookup(a, true)) {
     inc_dmiss(pc);
     cycles_run += dc.penalty();
     inc_cycle(pc, dc.penalty());
-    //update_time();
   }
   return a;
 }
 
 inline void mem_t::amo_model(long a, long pc)
 {
-  // sync_system_clock();
-  insn_model(pc);
   if (!dc.lookup(a, true)) {
     inc_dmiss(pc);
     cycles_run += dc.penalty();
     inc_cycle(pc, dc.penalty());
-    //update_time();
   }
 }
 
