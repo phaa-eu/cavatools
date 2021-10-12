@@ -169,10 +169,20 @@ void hart_t::interpreter()
   }
 }
 
+#ifdef DEBUG
+void dump_trace_handler(int nSIGnum)
+{
+  fprintf(stderr, "Killed by signal %d\n", nSIGnum);
+  hart_t* mycpu = hart_t::find(gettid());
+  mycpu->debug.print();
+  exit(-1);
+}
+#endif
+
 #undef MMU
 
-long I_ZERO(long pc, mmu_t& MMU, hart_t* cpu)    { die("I_ZERO should never be dispatched!"); }
-long I_ILLEGAL(long pc, mmu_t& MMU, hart_t* cpu) { die("I_ILLEGAL at 0x%lx", pc); }
-long I_UNKNOWN(long pc, mmu_t& MMU, hart_t* cpu) { die("I_UNKNOWN at 0x%lx", pc); }
+long I_ZERO(long pc, mmu_t& MMU, hart_t* cpu)    { die("I_ZERO should never be dispatched!"); return 0; }
+long I_ILLEGAL(long pc, mmu_t& MMU, hart_t* cpu) { die("I_ILLEGAL at 0x%lx", pc); return 0; }
+long I_UNKNOWN(long pc, mmu_t& MMU, hart_t* cpu) { die("I_UNKNOWN at 0x%lx", pc); return 0; }
 
 #include "dispatch_table.h"

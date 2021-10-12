@@ -26,23 +26,9 @@ clean:
 	rm -f caveat
 
 
-caveat:  simulator.o cache.o perf.o $(CAVA)/lib/libcava.a
+caveat:  simulator.o ../cache/cache.o perf.o $(CAVA)/lib/libcava.a
 	$(CXX) $(CXXFLAGS) -o caveat $^ $(LDFLAGS) $L -ldl -lrt
 
-cache.o simulator.o:  cache.h
+simulator.o:  ../cache/cache.h
 perf.o simulator.o: perf.h
-
-simulator.o: lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
-
-lru_fsm_1way.h: make_cache
-	./make_cache 1
-
-lru_fsm_2way.h: make_cache
-	./make_cache 2
-
-lru_fsm_3way.h: make_cache
-	./make_cache 3
-
-lru_fsm_4way.h: make_cache
-	./make_cache 4
 

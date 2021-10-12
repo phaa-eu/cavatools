@@ -75,16 +75,6 @@ extern "C" {
   extern long gdbNumContinue;
 };
 
-#ifdef DEBUG
-void dump_trace_handler(int nSIGnum)
-{
-  fprintf(stderr, "Killed by signal %d\n", nSIGnum);
-  hart_t* mycpu = hart_t::find(gettid());
-  mycpu->debug.print();
-  exit(-1);
-}
-#endif
-
 int main(int argc, const char* argv[], const char* envp[])
 {
   //ProfilerStart("uspike.prof");
@@ -121,17 +111,6 @@ int main(int argc, const char* argv[], const char* envp[])
     }
   }
   else {
-#ifdef DEBUG
-    struct sigaction action;
-    memset(&action, 0, sizeof(struct sigaction));
-    sigemptyset(&action.sa_mask);
-    sigemptyset(&action.sa_mask);
-    action.sa_flags = 0;
-    action.sa_handler = dump_trace_handler;
-    sigaction(SIGSEGV, &action, NULL);
-    sigaction(SIGABRT, &action, NULL);
-    sigaction(SIGINT,  &action, NULL);
-#endif
     // spawn status report thread
     extern option<bool> conf_quiet;
     if (!conf_quiet) {
@@ -143,6 +122,20 @@ int main(int argc, const char* argv[], const char* envp[])
 	exit(-1);
       }
     }
+
+#ifdef DEBUG
+    void dump_trace_handler(int nSIGnum);
+    struct sigaction action;
+    memset(&action, 0, sizeof(struct sigaction));
+    sigemptyset(&action.sa_mask);
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    action.sa_handler = dump_trace_handler;
+    sigaction(SIGSEGV, &action, NULL);
+    sigaction(SIGABRT, &action, NULL);
+    sigaction(SIGINT,  &action, NULL);
+#endif
+    
     mycpu->interpreter();
     die("Breakpoint executed, should never happen!");
   }

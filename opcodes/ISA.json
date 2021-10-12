@@ -265,6 +265,12 @@
         "exec": "require_extension('C');\nif (xlen == 32) {\n  require_extension('F');\n  require_fp;\n  MMU.store_uint32(RVC_SP + insn.rvc_swsp_imm(), RVC_FRS2.v[0]);\n} else { // c.sdsp\n  MMU.store_uint64(RVC_SP + insn.rvc_sdsp_imm(), RVC_RS2);\n}\n",
         "fast": "MMU.store_int64(r1+imm, r2)"
     },
+    "adrseg": {
+        "bits": "0100000    rs2   rs1  000  00000  01100 11",
+        "len": 4,
+        "decode": "fe007fff 40000033 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0",
+        "fast": "MMU.custom(pc)"
+    },
     "beq": {
         "flags": "type_sb,isa_I,pc",
         "bits": "{-12|10:5} rs2 rs1 000 {4:1|11} 1100011",

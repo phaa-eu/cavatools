@@ -12,6 +12,7 @@ clean:
 	rm -f $(CAVA)/include/cava/*
 	make -C opcodes   clean
 	make -C uspike    clean
+	make -C cache     clean
 	make -C caveat    clean
 	make -C erised    clean
 
@@ -21,6 +22,7 @@ tarball:  clean
 install:
 	make -C opcodes install
 	make -C uspike  install
+	make -C cache   install
 	make -C caveat  install
 	make -C erised  install
 

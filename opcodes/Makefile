@@ -23,10 +23,8 @@ ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 all:  ISA.json
 
-ISA.json SPIKE.json &: ./crunch_isa FP.bits RV_isa.tmp RV.fast
-	./crunch_isa RV_isa.tmp RV.fast
-#	./crunch_isa FP.bits RV_isa.tmp RV.fast
-#	./crunch_isa RV_isa.tmp
+ISA.json SPIKE.json &: ./crunch_isa RV_isa.tmp RV.fast CUSTOM.def
+	./crunch_isa CUSTOM.def RV_isa.tmp RV.fast
 
 RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
 	./parse_spike $(RVINS) RV_bits.tmp RVC.bits > $@

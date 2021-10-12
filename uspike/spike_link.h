@@ -31,7 +31,7 @@
   /* other permissions checks occur in get_csr */ \
   (which); })
 
-#if 0
+#if 1
 #undef require
 #undef require_extension
 #undef require_align

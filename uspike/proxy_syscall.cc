@@ -121,6 +121,7 @@ int thread_interpreter(void* arg)
   futex(&oldcpu->clone_lock, FUTEX_WAKE, 1);
   newcpu->interpreter();
   die("thread should never get here!\n");
+  return 0;
 }
 
 void hart_t::proxy_syscall(long sysnum)

@@ -229,6 +229,11 @@
         "len": 2,
         "decode": "e003 e002 NOREG;2;x(2,5)+GPREG;NOREG x(7,3)<<6|x(10,3)<<3 0"
     },
+    "adrseg": {
+        "fast": "MMU.custom(pc)",
+        "len": 4,
+        "decode": "fe007fff 40000033 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG NONE 0"
+    },
     "beq": {
         "flags": "type_sb,isa_I,pc",
         "exec": "if(RS1 == RS2)\n  set_pc(BRANCH_TARGET);\n",
