@@ -26,7 +26,7 @@ clean:
 	rm -f caveat
 
 
-caveat:  simulator.o ../cache/cache.o perf.o $(CAVA)/lib/libcava.a
+caveat:  simulator.o ../cache/lru_fsm_table.o perf.o $(CAVA)/lib/libcava.a
 	$(CXX) $(CXXFLAGS) -o caveat $^ $(LDFLAGS) $L -ldl -lrt
 
 simulator.o:  ../cache/cache.h

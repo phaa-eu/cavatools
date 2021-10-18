@@ -6,12 +6,9 @@
 import sys
 
 if len(sys.argv) != 2:
-    print("usage:  ./make_cache <ways associativity>")
+    print("usage:  ./make_cache <maximum ways associativity>")
     exit(0)
-
-N = int(sys.argv[1])
-filename = 'lru_fsm_{:d}way.h'.format(N)
-print('Making', N, 'way associative cache in file ', filename)
+N = int(sys.argv[1])+1
 
 def cacheHit(state, hit):
     new = state.copy()
@@ -27,49 +24,60 @@ def makeKey(state):
 
 def factorial(state):
     key = makeKey(state)
-    for i in range(N):
+    for i in range(n):
         nextState = cacheHit(state, i)
         nextKey = makeKey(nextState)
         if nextKey not in table:
-            table[nextKey] = [ None ]*N
+            table[nextKey] = [ None ]*n
             factorial(nextState)
         table[key][i] = nextKey
 
-initial = []
-for i in range(N-1, -1, -1):
-    initial.append(str(i))
-table = {}
-table[makeKey(initial)] = [ None ]*N
-factorial(initial)
+beginning = [ None ]*N
+index = 0
+with open('lru_fsm_table.cc', 'w') as f:
+    f.write('#include <stdlib.h>\n')
+    f.write('#include <stdio.h>\n')
+    f.write('#include <string.h>\n')
+    f.write('#include "cache.h"\n\n')
+    f.write('struct lru_fsm_t lru_fsm_state_table[] = {{\n'.format(N))
+    for n in range(1, N):
+        beginning[n] = index
+        initial = []
+        for i in range(n-1, -1, -1):
+            initial.append(str(i))
+        table = {}
+        table[makeKey(initial)] = [ None ]*n
+        factorial(initial)
+        number = {}
+        k = 0
+        for key in sorted(table):
+            number[key] = k
+            k += 1
 
-number = {}
-k = 0
-for key in sorted(table):
-    number[key] = k
-    k += 1
+        f.write('/* Header */\t{{ {:d}, {:3d} }}, /* Ways, Number of states */\n'.format(n, len(table)))
+        index += 1
 
+        k = 0
+        for key in sorted(table):
+            ways = key.split('-')
+            for (i, ww) in enumerate(ways):
+                w = int(ww)
+                ns = number[table[key][i]]
+                if ns == k:
+                    f.write('/* {:2d} */'.format(k))
+                else:
+                    f.write('\t')
+                f.write('\t{{ {:d}, {:3d}*{:d} }}, /* {:s} */\n'.format(w, ns, n, table[key][i]))
+                index += 1
+                lru_w = w
+                lru_i = i
+            k += 1
 
-
-f = open(filename, 'w');
-f.write('struct lru_fsm_t cache_fsm_{:d}way[] = {{\n'.format(N))
-f.write('/* Header */\t{{ {:d}, {:3d} }}, /* Ways, Number of states */\n'.format(int(sys.argv[1]), len(table)))
-
-k = 0
-for key in sorted(table):
-    ways = key.split('-')
-    for (i, ww) in enumerate(ways):
-        w = int(ww)
-        ns = number[table[key][i]]
-        if ns == k:
-            f.write('/* {:2d} */'.format(k))
-        else:
-            f.write('\t')
-        f.write('\t{{ {:d}, {:3d}*{:d} }}, /* {:s} */\n'.format(w, ns, N, table[key][i]))
-        lru_w = w
-        lru_i = i
-    k += 1
-
-f.write('};\n')
-
-f.close()
+    f.write('};\n\n')
+    f.write('struct lru_fsm_t* lru_fsm_table[] = {\n')
+    f.write('  0,\n')
+    for n in range(1, N):
+        f.write('  /* ways {:2d} */ &lru_fsm_state_table[{:d}],\n'.format(n, beginning[n]))
+    f.write('};\n\n')
+    f.write('int lru_fsm_max_ways = {:d};\n'.format(N-1))
 exit(0)

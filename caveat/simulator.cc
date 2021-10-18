@@ -24,52 +24,19 @@ void operator delete(void*) noexcept;
 option<long> conf_Jump("jump",	2,		"Taken branch pipeline flush cycles");
 
 option<int> conf_Imiss("imiss",	15,		"Instruction cache miss penalty");
-option<int> conf_Iways("iways", 4,		"Instruction cache number of ways associativity");
 option<int> conf_Iline("iline",	6,		"Instruction cache log-base-2 line size");
-option<int> conf_Irows("irows",	6,		"Instruction cache log-base-2 number of rows");
+option<int> conf_Irows("irows",	8,		"Instruction cache log-base-2 number of rows");
 
 option<int> conf_Dmiss("dmiss",	15,		"Data cache miss penalty");
-option<int> conf_Dways("dways", 4,		"Data cache number of ways associativity");
 option<int> conf_Dline("dline",	6,		"Data cache log-base-2 line size");
-option<int> conf_Drows("drows",	6,		"Data cache log-base-2 number of rows");
+option<int> conf_Drows("drows",	8,		"Data cache log-base-2 number of rows");
+
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
 option<>    conf_perf( "perf",	"caveat",	"Name of shared memory segment");
 option<long> conf_report("report", 10,		"Status report every N million instructions");
 
-
 volatile long system_clock;
-
-struct adrseg_t {
-  long base;
-  long limit;
-  unsigned allowed;
-  adrseg_t() { }
-  adrseg_t(long b, long l, unsigned a) { base=b; limit=l; allowed=a; }
-};
-
-#define NUM_ADRSEG  4
-adrseg_t adrseg[NUM_ADRSEG];
-int adrsegs;
-
-
-
-class multicache_t : public cache_t {
-public:
-  multicache_t(const char* name, int ways, int line, int rows, bool writeable, bool prefetch =false)
-    : cache_t(name, ways, line, rows, writeable, prefetch) { }
-  lru_fsm_t* modify_way(lru_fsm_t* p, long addr, long miss_ready, bool &prefetch) {
-    int i = adrsegs;
-    do {
-      if (--i < 0) die("did not find segment");
-    } while (!(adrseg[i].base <= addr && addr < adrseg[i].limit));
-    if (i == 0)
-      prefetch = false;
-    while (!((1<<p->way) & adrseg[i].allowed))
-      p--;
-    return p;
-  }
-};
 
 class mem_t : public mmu_t, public perf_t {
 public:
@@ -78,19 +45,44 @@ public:
   mem_t(long n);
   void sync_system_clock();
 
-  void check_cache(long a, long pc, bool iswrite);
-  long load_model( long a,  long pc);
-  long store_model(long a,  long pc);
-  void amo_model(  long a,  long pc);
+  void check_cache(long a, long pc, bool iswrite)
+  {
+    long delay = iswrite ? dc.write(a) : dc.read(a);
+    if (delay >= 0) {
+      inc_dmiss(pc);
+      inc_cycle(pc, conf_Dmiss);
+      now += conf_Dmiss;
+    }
+  }
+  long load_model( long a,  long pc) { check_cache(a, pc, false); return a; }
+  long store_model(long a,  long pc) { check_cache(a, pc, true ); return a; }
+  void amo_model(  long a,  long pc) { check_cache(a, pc, true );           }
  public:
-  void insn_model(          long pc);
-  long jump_model(long npc, long pc);
-
+  void insn_model(          long pc) {
+    inc_count(pc);
+    inc_cycle(pc);
+    now += 1;
+  }
+  long jump_model(long npc, long jpc) {
+    long pc = last_pc;
+    long end = jpc + code.at(jpc).bytes();
+    while (pc < end) {
+      long delay = ic.read(pc);
+      if (delay >= 0) {
+	inc_imiss(pc);
+	inc_cycle(pc, conf_Imiss);
+	now += conf_Imiss;
+      }
+      //pc = (pc & ic.linemask()) + ic.linesize();
+      pc += ic.linesize();
+    }
+    last_pc = npc;
+    return npc;
+  }
   void print();
 
-  cache_t ic;
-  cache_t dc;
-  multicache_t mc;
+  fsm_cache<1, false, true>	ic;
+  fsm_cache<1, true,  true>	dc;
 };
 
 class core_t : public mem_t, public hart_t {
@@ -106,7 +98,7 @@ public:
   void proxy_syscall(long sysnum);
   void run_thread();
 
-  void custom(long pc);
+  void custom(long pc) { }
   
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
@@ -117,26 +109,6 @@ public:
   long run_time() { return cycles() - start_time; }
   long run_cycles() { return run_time() - stall_time; }
 };
-
-void core_t::custom(long pc)
-{
-  Insn_t i = code.at(pc);
-  dieif(i.opcode() != Op_adrseg, "expecting Op_adrseg");
-  if (i.rs1()==0 && i.rs2()==0) {      // reset
-    adrseg[0] = adrseg_t(LONG_MIN, LONG_MAX, ~0);
-    adrsegs = 1;
-  }
-  else if (adrsegs < NUM_ADRSEG) { // create new descriptor
-    long base  =  read_reg(i.rs1())                 >> conf_Dline;
-    long limit = (read_reg(i.rs2()) + conf_Dline-1) >> conf_Dline;
-    dieif(base > limit, "base > limit");
-    unsigned alloc = 1 << (conf_Dways-adrsegs);
-    adrseg[adrsegs++] = adrseg_t(base, limit, alloc);
-    adrseg[0].allowed &= ~alloc;
-  }
-  else
-    die("too many adrsegs %d", adrsegs);
-}
 
 volatile long core_t::number_of_cores;
 
@@ -177,6 +149,13 @@ void mem_t::sync_system_clock()
 #define SYSCALL_OVERHEAD 100
 void core_t::proxy_syscall(long sysnum)
 {
+  if (sysnum == 24)
+    return;
+
+  
+  long pc = read_pc();
+  long saved_count = count(pc);
+  inc_count(pc, -saved_count-1);
   
 #if 0
   char buf[4096], *b=buf;
@@ -197,11 +176,22 @@ void core_t::proxy_syscall(long sysnum)
   saved_local_time = now;
   now = LONG_MAX;	// indicate we are stalled
   update_time();
-  hart_t::proxy_syscall(sysnum);
+
+  switch (sysnum) {
+    //case SYS_sched_yield:
+  case 24:
+    write_reg(10, 0);
+    break;
+  default:
+    hart_t::proxy_syscall(sysnum);
+  }
+  
   now = system_clock + SYSCALL_OVERHEAD;
   //now = system_clock;
   stall_time += now - t0; // accumulate stalled 
   update_time();
+
+  inc_count(pc, saved_count+1);
 }
 
 
@@ -213,37 +203,28 @@ static void print_status()
   double realtime = elapse_time();
   long threads = 0;
   long tInsns = 0;
-  long tCycles = 0;
-  long tImisses = 0;
-  long tDmisses = 0;
-  long tMmisses = 0;
   for (core_t* p=core_t::list(); p; p=p->next()) {
     threads++;
     tInsns += p->executed();
-    tCycles += p->cycles();
-    tImisses += p->ic.misses();
-    tDmisses += p->dc.misses();
-    tMmisses += p->mc.misses();
   }
-  fprintf(stderr, "\r\33[2K%12ld insns %4.2fM cycles/s in %3.1fs MIPS=%3.1f IPC=%4.2f I$=%4.2f%% D$=%4.2f%% M$=%4.2f%%",
-	  tInsns, (double)tCycles/1e6/realtime, realtime, tInsns/1e6/realtime, (double)tInsns/tCycles,
-  	  100.0*tImisses/tInsns, 100.0*tDmisses/tInsns, 100.0*tMmisses/tInsns);
-#if 0
+  update_time();
+  long now = system_clock;
+  /*
+  fprintf(stderr, "\r\33[2K%12ld insns %4.2fM cycles/s in %3.1fs MIPS=%3.1f IPC=%4.2f I$=%4.2f D$=%4.2f",
+	  tInsns, (double)now/1e6/realtime, realtime, tInsns/1e6/realtime, (double)tInsns/now,
+  	  1000.0*tImisses/tInsns, 1000.0*tDmisses/tInsns);
+  */
   char buf[4096];
   char* b = buf;
-  b += sprintf(b, "\r\33[2K%12ld cycles %ld insns %3.1fs %3.1f MIPS IPC[I$,D$,M$](util)", total_cycles, total, realtime, total/1e6/realtime);
+  b += sprintf(b, "\r\33[2K%12ld insns %4.2fM cycles/s in %3.1fs MIPS=%3.1f IPC,I$,D$",
+	       tInsns, (double)now/1e6/realtime, realtime, tInsns/1e6/realtime);
   char separator = '=';
   for (core_t* p=core_t::list(); p; p=p->next()) {
-    b += sprintf(b, "%c%4.2f[%4.2f%%,%4.2f%%,%4.2f%%]", separator, (double)p->executed()/p->run_cycles(),
-    		 100.0*p->ic.hits()/p->executed(), 100.0*p->dc.hits()/p->executed(), 100.0*p->mc.hits()/p->executed());
-    if (p->cycles() == LONG_MAX)
-      b += sprintf(b, "(***)");
-    else
-      b += sprintf(b, "(%4.2f%%)", 100.0*p->run_cycles()/p->run_time());
+    b += sprintf(b, "%c%4.2f[%3.1f,%3.1f]", separator, (double)p->executed()/now,
+    		 1000.0*p->ic.misses/p->executed(), 1000.0*p->dc.misses/p->executed());
     separator = ',';
   }
   fputs(buf, stderr);
-#endif
 }
 
 int status_function(void* arg)
@@ -266,68 +247,10 @@ void exitfunc()
   fprintf(stderr, "\ncaveat exited normally");
 }
 
-inline void mem_t::insn_model(long pc)
-{
-  //  fprintf(stderr, "[%8lx] ", pc);
-  //  labelpc(pc);
-  //  disasm(pc);
-  inc_count(pc);
-  inc_cycle(pc);
-  now += 1;
-}
-
-inline long mem_t::jump_model(long npc, long jpc)
-{
-  long pc = last_pc;
-  long end = jpc + code.at(jpc).bytes();
-  while (pc < end) {
-    long ready = ic.lookup(pc, now+conf_Imiss, false);
-    if (ready == now+conf_Imiss) {
-      inc_imiss(pc);
-      inc_cycle(pc, conf_Imiss);
-      now += conf_Imiss;
-    }
-    pc = ic.linemask(pc) + ic.linesize();
-  }
-  last_pc = npc;
-  return npc;
-}
-  
-inline void mem_t::check_cache(long a, long pc, bool iswrite)
-{
-  long ready = mc.lookup(a, iswrite, now+conf_Dmiss);
-  if (ready == now+conf_Dmiss) {
-    inc_dmiss(pc);
-    inc_cycle(pc, conf_Dmiss);
-    now += conf_Dmiss;
-  }
-}
-
-inline long mem_t::load_model(long a, long pc)
-{
-  check_cache(a, pc, false);
-  dc.lookup(a, false, now+conf_Dmiss);
-  return a;
-}
-
-inline long mem_t::store_model(long a, long pc)
-{
-  check_cache(a, pc, true);
-  dc.lookup(a, true, now+conf_Dmiss);
-  return a;
-}
-
-inline void mem_t::amo_model(long a, long pc)
-{
-  check_cache(a, pc, true);
-  dc.lookup(a, true, now+conf_Dmiss);
-}
-
 mem_t::mem_t(long n)
   : perf_t(n),
-    ic("Instruction", conf_Iways, conf_Iline, conf_Irows, false, true),
-    dc("Data",        conf_Dways, conf_Dline, conf_Drows, true, false),
-    mc("Multi",       conf_Dways, conf_Dline, conf_Drows, true,  true)
+    ic(conf_Iline, conf_Irows, "Instruction"),
+    dc(conf_Dline, conf_Drows, "Data")
 {
   now = 0;
 }
@@ -336,7 +259,6 @@ void mem_t::print()
 {
   ic.print();
   dc.print();
-  mc.print();
 }
 
 core_t::core_t(long entry) : hart_t(mem()), mem_t(__sync_fetch_and_add(&number_of_cores, 1))
@@ -392,9 +314,7 @@ int main(int argc, const char* argv[], const char* envp[])
   long sp = initialize_stack(argc, argv, envp);
   core_t* mycpu = new core_t(code.entry());
   mycpu->write_reg(2, sp);	// x2 is stack pointer
-
-  adrseg[0] = adrseg_t(LONG_MIN, LONG_MAX, ~0);
-  adrsegs = 1;
+  
   atexit(exitfunc);
   
 #define STATUS_STACK_SIZE  (1<<16)

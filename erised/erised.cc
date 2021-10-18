@@ -22,9 +22,8 @@
 #include "../caveat/perf.h"
 
 
-#define FRAMERATE    30		/* frames per second */
-#define PERSISTENCE  30		/* frames per color decay */
-#define HOT_COLOR  (7-2)
+#define FRAMERATE	10		/* frames per second */
+#define HOT_COLOR	(2*FRAMERATE)
 
 #define COUNT_WIDTH  12
 int global_width = COUNT_WIDTH;
@@ -53,6 +52,7 @@ struct assembly_t {
 
 perf_t** perf;
 perf_t* cur_core;
+int cur_core_num = 0;
 
 WINDOW *menu;
 struct histogram_t global, local;
@@ -90,42 +90,51 @@ void histo_delete(struct histogram_t* histo)
   memset(histo, 0, sizeof(struct histogram_t));
 }
 
+long stopped_pc;
+
 void histo_compute(perf_t* p, struct histogram_t* histo, long base, long bound)
 {
   if (base == 0 || bound == 0)
     return;
   long range = (bound-base) / histo->bins; /* pc range per bin */
+  range &= ~0x1L;
   histo->base = base;
   histo->bound = bound;
   histo->range = range;
   long pc = base;
   long max_count = 0;
+  stopped_pc = 0;
   for (int i=0; i<histo->bins; i++) {
     long mcount = 0;
     long end = pc + range;
     if (end > bound)
       end = bound;
     while (pc < end) {
+      if (p->count(pc) < 0)
+	stopped_pc = pc;
       mcount += p->count(pc);
       pc += code.at(pc).bytes();
     }
     if (mcount != histo->bin[i])
-      histo->decay[i] = HOT_COLOR*PERSISTENCE;
+      histo->decay[i] = HOT_COLOR;
     histo->bin[i] = mcount;
     max_count = max(max_count, mcount);
   }
   histo->max_value = max_count;
 }
 
-void paint_count_color(WINDOW* win, int width, long count, int decay, int always)
+void paint_count_color(WINDOW* win, int width, long count, int heat, int always)
 {
-  int heat = (decay + PERSISTENCE-1)/PERSISTENCE;
-  wattron(win, COLOR_PAIR(heat + 2));
-  //  if (count > 0 || always)
+  if (heat < 0) {
+    wattron(win, COLOR_PAIR(127));
     wprintw(win, "%*ld", width, count);
-    //  else
-    //    wprintw(win, "%*s", width, "");
-  wattroff(win, COLOR_PAIR(heat + 2));
+    wattroff(win, COLOR_PAIR(127));
+  }
+  else {
+    wattron(win, COLOR_PAIR(128+heat));
+    wprintw(win, "%*ld", width, count);
+    wattroff(win, COLOR_PAIR(128+heat));
+  }
 }
 
 void histo_paint(struct histogram_t* histo, const char* title, long base, long bound)
@@ -140,7 +149,10 @@ void histo_paint(struct histogram_t* histo, const char* title, long base, long b
   for (int y=0; y<rows; y++) {
     int highlight = (base <= pc && pc < bound || pc <= base && bound < pc+histo->range);
     if (highlight)  wattron(histo->win, A_REVERSE);
-    paint_count_color(histo->win, cols-1, histo->bin[y], histo->decay[y], 0);
+    if (stopped_pc && pc <= stopped_pc && stopped_pc < pc+histo->range)
+      paint_count_color(histo->win, cols-1, histo->bin[y], -1, 0);
+    else
+      paint_count_color(histo->win, cols-1, histo->bin[y], histo->decay[y], 0);
     wprintw(histo->win, "\n");
     if (highlight)  wattroff(histo->win, A_REVERSE);
     if (histo->decay[y] > 0)
@@ -188,18 +200,21 @@ void assembly_paint(perf_t* p, struct assembly_t* assembly)
   WINDOW* win = assembly->win;
   long pc = assembly->base;
   wmove(win, 0, 0);
-  wprintw(win, "%16s %-5s %-4s %-5s %-5s", "Count", " CPI", "#ssi", "I$", "D$");
-  wprintw(win, "] %8s %8s %s\n", "PC", "Hex", "Assembly                q=quit");
+  wprintw(win, "%16s %-5s %-5s %-5s ", "Count", " CPI", "I$", "D$");
+  wprintw(win, "Core %d stopped_pc=%lx\n", cur_core_num, stopped_pc);
   if (pc != 0) {
     for (int y=1; y<getmaxy(win) && pc<code.limit(); y++) {
       wmove(win, y, 0);
       if (p->count(pc) != assembly->old[y])
-	assembly->decay[y] = HOT_COLOR*PERSISTENCE;
+	assembly->decay[y] = HOT_COLOR;
       assembly->old[y] = p->count(pc);
-      paint_count_color(win, 16, p->count(pc), assembly->decay[y], 1);
+      if (pc == stopped_pc) 
+	paint_count_color(win, 16, p->count(pc), -1, 1);
+      else
+	paint_count_color(win, 16, p->count(pc), assembly->decay[y], 1);
       if (assembly->decay[y] > 0)
 	assembly->decay[y]--;
-      double cpi = (double)p->cycle(pc)/p->count(pc);
+      double cpi = pc==stopped_pc ? 99 : (double)p->cycle(pc)/p->count(pc);
       int dim = cpi < 1.0+EPSILON || p->count(pc) == 0;
       if (dim)  wattron(win, A_DIM);
       /*
@@ -243,15 +258,17 @@ void interactive()
 {
   struct timeval t1, t2;
   for (;;) {
+    stopped_pc = 0;
     gettimeofday(&t1, 0);
     histo_compute(cur_core, &global, code.base(), code.limit());
-    histo_compute(cur_core, &local, local.base, local.bound);
     histo_paint(&global, "Global", local.base, local.bound);
+    histo_compute(cur_core, &local, local.base, local.bound);
     histo_paint(&local, "Local", assembly.base, assembly.bound);
     assembly_paint(cur_core, &assembly);
     doupdate();
     //    switch (wgetch(stdscr)) {
-    switch (getch()) {
+    int ch = getch();
+    switch (ch) {
     case ERR:
       {
 	gettimeofday(&t2, 0);
@@ -270,6 +287,16 @@ void interactive()
 #endif
     case 'q':
       return;
+    case '0' ... '9':
+      {
+	int c = ch - '0';
+	if (c < perf_t::cores()) {
+	  cur_core_num = c;
+	  cur_core = perf[c];
+	}
+      }
+      break;
+      
       //case KEY_DOWN:
       //case KEY_UP:
     case KEY_MOUSE:
@@ -331,6 +358,7 @@ void interactive()
     if (local.bound > code.limit())
       local.bound = code.limit();
     local.range = (local.bound-local.base)/local.bins;
+    local.range &= ~0x1L;
     if (assembly.base < code.base())
       assembly.base = code.base();
     if (assembly.bound > code.limit())
@@ -379,12 +407,14 @@ int main(int argc, const char** argv)
   noecho();
 
   start_color();		/* Start the color functionality */
-  init_pair(2, COLOR_MAGENTA, COLOR_BLACK);
-  init_pair(3, COLOR_BLUE,    COLOR_BLACK);
-  init_pair(4, COLOR_CYAN,    COLOR_BLACK);
-  init_pair(5, COLOR_GREEN,   COLOR_BLACK);
-  init_pair(6, COLOR_YELLOW,  COLOR_BLACK);
-  init_pair(7, COLOR_RED,     COLOR_BLACK);
+
+#define COLD_COLOR  0
+  for (int i=0; i<=HOT_COLOR; i++) {
+    int v = i*(1000-COLD_COLOR)/HOT_COLOR+COLD_COLOR;
+    init_color(i+16, v, COLD_COLOR, COLD_COLOR);
+    init_pair(i+128, i+16, COLOR_BLACK);
+  }
+  init_pair(127, COLOR_YELLOW, COLOR_GREEN);
   
   mouseinterval(0);	   /* no mouse clicks, just button up/down */
   // Don't mask any mouse events
