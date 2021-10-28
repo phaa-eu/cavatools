@@ -99,7 +99,8 @@ void hart_t::interpreter()
 #ifdef DEBUG
     dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
     oldpc = pc;
-    debug.insert(executed()+1, pc);
+    //debug.insert(executed()+1, pc);
+    debug.insert(xpr[2], pc);
 #endif
 
 #define wrd(e)	xpr[i.rd()]=(e)
@@ -163,8 +164,8 @@ void hart_t::interpreter()
     _executed++;
 #ifdef DEBUG
     i = code.at(oldpc);
-    int rn = i.rd()==NOREG ? i.rs2() : i.rd();
-    debug.addval(i.rd(), read_reg(rn));
+    int rn = i.rd()!=NOREG ? i.rd() : i.rs2()!=NOREG ? i.rs2() : i.rs1();
+    debug.addval(rn, read_reg(rn));
 #endif
   }
 }

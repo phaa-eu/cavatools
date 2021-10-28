@@ -17,19 +17,21 @@
 #include "../cache/cache.h"
 #include "perf.h"
 
+//#define NOCACHE
+
 using namespace std;
 void* operator new(size_t size);
 void operator delete(void*) noexcept;
 
 option<long> conf_Jump("jump",	2,		"Taken branch pipeline flush cycles");
 
-option<int> conf_Imiss("imiss",	15,		"Instruction cache miss penalty");
+option<int> conf_Imiss("imiss",	10,		"Instruction cache miss penalty");
 option<int> conf_Iline("iline",	6,		"Instruction cache log-base-2 line size");
-option<int> conf_Irows("irows",	8,		"Instruction cache log-base-2 number of rows");
+option<int> conf_Irows("irows",	6,		"Instruction cache log-base-2 number of rows");
 
-option<int> conf_Dmiss("dmiss",	15,		"Data cache miss penalty");
+option<int> conf_Dmiss("dmiss",	10,		"Data cache miss penalty");
 option<int> conf_Dline("dline",	6,		"Data cache log-base-2 line size");
-option<int> conf_Drows("drows",	8,		"Data cache log-base-2 number of rows");
+option<int> conf_Drows("drows",	6,		"Data cache log-base-2 number of rows");
 
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
@@ -45,6 +47,7 @@ public:
   mem_t(long n);
   void sync_system_clock();
 
+#ifndef NOCACHE
   void check_cache(long a, long pc, bool iswrite)
   {
     long delay = iswrite ? dc.write(a) : dc.read(a);
@@ -57,12 +60,14 @@ public:
   long load_model( long a,  long pc) { check_cache(a, pc, false); return a; }
   long store_model(long a,  long pc) { check_cache(a, pc, true ); return a; }
   void amo_model(  long a,  long pc) { check_cache(a, pc, true );           }
+#endif
  public:
   void insn_model(          long pc) {
     inc_count(pc);
     inc_cycle(pc);
     now += 1;
   }
+#ifndef NOCACHE
   long jump_model(long npc, long jpc) {
     long pc = last_pc;
     long end = jpc + code.at(jpc).bytes();
@@ -79,10 +84,11 @@ public:
     last_pc = npc;
     return npc;
   }
+#endif
   void print();
 
-  fsm_cache<1, false, true>	ic;
-  fsm_cache<1, true,  true>	dc;
+  fsm_cache<4, false, true>	ic;
+  fsm_cache<4, true,  true>	dc;
 };
 
 class core_t : public mem_t, public hart_t {
@@ -106,6 +112,7 @@ public:
 
   bool stalled() { return now == LONG_MAX; }
   long cycles() { return stalled() ? saved_local_time : now; }
+  long stalls() { return stall_time; }
   long run_time() { return cycles() - start_time; }
   long run_cycles() { return run_time() - stall_time; }
 };
@@ -203,25 +210,26 @@ static void print_status()
   double realtime = elapse_time();
   long threads = 0;
   long tInsns = 0;
+  double aUtil = 0.0;
   for (core_t* p=core_t::list(); p; p=p->next()) {
     threads++;
     tInsns += p->executed();
+    aUtil += (double)p->run_cycles()/p->run_time();
   }
+  aUtil /= threads;
   update_time();
   long now = system_clock;
-  /*
-  fprintf(stderr, "\r\33[2K%12ld insns %4.2fM cycles/s in %3.1fs MIPS=%3.1f IPC=%4.2f I$=%4.2f D$=%4.2f",
-	  tInsns, (double)now/1e6/realtime, realtime, tInsns/1e6/realtime, (double)tInsns/now,
-  	  1000.0*tImisses/tInsns, 1000.0*tDmisses/tInsns);
-  */
   char buf[4096];
   char* b = buf;
-  b += sprintf(b, "\r\33[2K%12ld insns %4.2fM cycles/s in %3.1fs MIPS=%3.1f IPC,I$,D$",
-	       tInsns, (double)now/1e6/realtime, realtime, tInsns/1e6/realtime);
+  b += sprintf(b, "\r\33[2K%12gB insns %3.1fM cycles/s in %3.1fs MIPS=%3.1f(%3.1f%%) IPC(util)[I$,D$]",
+	       tInsns/1e9, (double)now/1e6/realtime, realtime, tInsns/1e6/realtime, 100.0*aUtil);
   char separator = '=';
   for (core_t* p=core_t::list(); p; p=p->next()) {
-    b += sprintf(b, "%c%4.2f[%3.1f,%3.1f]", separator, (double)p->executed()/now,
-    		 1000.0*p->ic.misses/p->executed(), 1000.0*p->dc.misses/p->executed());
+    double ipc = (double)p->executed()/p->run_cycles();
+    double util = 100.0*p->run_cycles()/p->run_time();
+    double impk = 1000.0*p->ic.misses/p->executed();
+    double dmpk = 1000.0*p->dc.misses/p->executed();
+    b += sprintf(b, "%c%4.2f(%3.1f%%)[%3.1f,%3.1f]", separator, ipc, util, impk, dmpk);
     separator = ',';
   }
   fputs(buf, stderr);

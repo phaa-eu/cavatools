@@ -20,6 +20,7 @@
 #include <string.h>
 #include <signal.h>
 #include <sched.h>
+#include <sys/stat.h>
 
 #include "options.h"
 #include "uspike.h"
@@ -124,6 +125,44 @@ int thread_interpreter(void* arg)
   return 0;
 }
 
+/*
+ * Workaround for differences between RISC-V and X86_64 struct stat
+ */
+struct rv_stat {
+  uint64_t st_dev;		// at  0
+  uint64_t st_ino;		// at  8
+  uint32_t st_mode;		// at 16
+  uint32_t st_nlink;		// at 20
+  uint32_t st_uid;		// at 24
+  uint32_t st_gid;		// at 28
+  uint64_t st_remaining[12];	// at 30
+};
+static_assert(sizeof(rv_stat) == 128);
+
+static inline void copy_stat(rv_stat* rv, struct stat* x)
+{
+  memcpy(rv, x, sizeof(rv_stat));
+  rv->st_mode	= x->st_mode;
+  rv->st_nlink	= x->st_nlink;
+  rv->st_uid	= x->st_uid;
+  rv->st_gid	= x->st_gid;
+}
+
+int fork_interpreter(void* arg)
+{
+  hart_t::cpu_list = 0;			// 
+  hart_t* oldcpu = (hart_t*)arg;
+  hart_t* newcpu = oldcpu->newcore();
+  //  newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
+  //  newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
+  newcpu->write_reg(10, 0);	// indicating we are child thread
+  newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
+  newcpu->set_tid();
+  newcpu->interpreter();
+  die("thread should never get here!\n");
+  return 0;
+}
+
 void hart_t::proxy_syscall(long sysnum)
 {
   long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
@@ -136,15 +175,68 @@ void hart_t::proxy_syscall(long sysnum)
     //break;
   case SYS_clone:
     {
+      /*
+	RISC-V clone system call arguments not same as wrapper or X86_64:
+	a0 = flags
+	a1 = child_stack
+	a2 = parent_tidptr
+	a3 = tls
+	a4 = child_tidptr
+      */
       char* interp_stack = new char[THREAD_STACK_SIZE];
       interp_stack += THREAD_STACK_SIZE; // grows down
+      fprintf(stderr, "clone: settls=%d, tp=%lx, a3(tls)=%lx\n", (a0 & CLONE_SETTLS)!=0, read_reg(4), a3);
       long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
-      clone_lock = 1;		       // private mutex
-      retval = clone(thread_interpreter, interp_stack, flags, this, (void*)a2, (void*)a4);
-      while (clone_lock)
-	futex(&clone_lock, FUTEX_WAIT, 1);
+      if (flags & CLONE_VM) {
+	clone_lock = 1;		       // private mutex
+	retval = clone(thread_interpreter, interp_stack, flags, this, (void*)a2, (void*)a4);
+	while (clone_lock)
+	  futex(&clone_lock, FUTEX_WAIT, 1);
+      }
+      else
+	retval = clone(fork_interpreter, interp_stack, flags, this, (void*)a2, (void*)a4);
     }
     break;
+    /* Workaround for size mismatch between struct stat in riscv and x86_64 Linux */
+  case SYS_stat:
+  case SYS_fstat:
+  case SYS_lstat:
+    {
+      struct stat x;
+      retval = asm_syscall(sysnum, a0, (long)&x, a2, a3, a4, a5);
+      copy_stat((rv_stat*)a1, &x);
+      break;
+    }
+  case SYS_newfstatat:
+    {
+      struct stat x;
+      retval = asm_syscall(sysnum, a0, a1, (long)&x, a3, a4, a5);
+      copy_stat((rv_stat*)a2, &x);
+      break;
+    }
+  case SYS_ppoll:
+    {
+      a2 = -1;
+      sysnum = SYS_poll;
+      retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
+      break;
+    }
+    /*
+  case SYS_rt_sigaction:
+    fprintf(stderr, "SYS_rt_sigaction()\n");
+    break;
+    
+  case SYS_rt_sigprocmask:
+  case SYS_pause:
+  case SYS_kill:
+  case SYS_rt_sigpending:
+  case SYS_rt_sigtimedwait:
+  case SYS_rt_sigqueueinfo:
+  case SYS_rt_sigsuspend:
+  case SYS_sigaltstack:
+    fprintf(stderr, "System call %ld\n", sysnum);
+    */
+    
   default:
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
   }

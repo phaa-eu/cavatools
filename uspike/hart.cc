@@ -54,14 +54,35 @@ void Debug_t::print()
 {
   for (int i=0; i<PCTRACEBUFSZ; i++) {
     pctrace_t t = get();
+    char buf[1024], *b=buf;
+    const char* cs;
+    switch (gettid() % 6) {
+    case 0: cs = "31"; break;
+    case 1: cs = "32"; break;
+    case 2: cs = "33"; break;
+    case 3: cs = "34"; break;
+    case 4: cs = "35"; break;
+    case 5: cs = "36"; break;
+    }
+    b += sprintf(b, "\e[%s;40m", cs);
+    /*
     if (t.rn != NOREG)
       fprintf(stderr, "%15ld %4s[%016lx] ", t.count, reg_name[t.rn], t.val);
     else
       fprintf(stderr, "%15ld %4s[%16s] ", t.count, "", "");
-    labelpc(t.pc);
+    */
+    //fprintf(stderr, "%16lx ", t.count);
+
+    b += sprintf(b, "tid=%6d ", gettid());
+    if (t.rn != NOREG)
+      b += sprintf(b, "%4s[%016lx] ", reg_name[t.rn], t.val);
+    else
+      b += sprintf(b, "%4s[%16s] ", "", "");
+    b += slabelpc(b, t.pc);
     if (code.valid(t.pc))
-      disasm(t.pc, "");
-    fprintf(stderr, "\n");
+      b += sdisasm(b, t.pc);
+    b += sprintf(b, "\e[0m\n");
+    fputs(buf, stderr);
   }
 }
 

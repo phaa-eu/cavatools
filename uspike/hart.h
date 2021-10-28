@@ -10,7 +10,7 @@ struct pctrace_t {
   int8_t rn;
 };
 
-#define PCTRACEBUFSZ  (1<<9)
+#define PCTRACEBUFSZ  (1<<8)
 struct Debug_t {
   pctrace_t trace[PCTRACEBUFSZ];
   int cursor;
@@ -32,6 +32,7 @@ class hart_t {
   volatile long _executed;		// executed this thread
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
+  friend int fork_interpreter(void* arg);
 public:
   hart_t(mmu_t* m);
   hart_t(hart_t* p, mmu_t* m);

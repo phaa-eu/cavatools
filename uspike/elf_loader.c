@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -92,10 +93,12 @@ long load_elf_binary( const char* file_name, int include_data )
 
   Elf64_Ehdr eh;
   ehdr_size = read(file, &eh, sizeof(eh));
+  /*
   quitif(ehdr_size < (ssize_t)sizeof(eh) ||
 	 !(eh.e_ident[0] == '\177' && eh.e_ident[1] == 'E' &&
 	   eh.e_ident[2] == 'L'    && eh.e_ident[3] == 'F'),
 	 "Elf header not correct");
+  */
   phdr_size = eh.e_phnum * sizeof(Elf64_Phdr);
   quitif(phdr_size > info->phdr_size, "Phdr too big");
 
@@ -176,13 +179,9 @@ long load_elf_binary( const char* file_name, int include_data )
 	high_bound = header.sh_addr+header.sh_size;
     }
   }
-  //  insnSpace.base = low_bound;
-  //  insnSpace.bound = high_bound;
-  //  fprintf(stderr, "Text segment [0x%lx, 0x%lx)\n", low_bound, high_bound);
-  //insnSpace_init(low_bound, high_bound);
+  
   close(file);
   
-  //  info->stack_top = MEM_END + 0x1000;
   info->stack_top = MEM_END;
   stack_lowest = (long)mmap((void*)(info->stack_top-STACK_SIZE), STACK_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   dieif(stack_lowest != info->stack_top-STACK_SIZE, "Could not allocate stack\n");
@@ -257,23 +256,33 @@ long initialize_stack(int argc, const char** argv, const char** envp)
     size_t old = value;
     switch (auxv[i].key) {
       //case AT_SYSINFO_EHDR:  continue; /* No vDSO */
-      //    case AT_HWCAP:	value = 0; break;
+      //case AT_HWCAP:	value = 0; break;
+      //case AT_HWCAP:	break;
     case AT_PAGESZ:	value = RISCV_PGSIZE; break;
     case AT_PHDR:	value = current.phdr; break;
     case AT_PHENT:	value = (size_t)current.phent; break;
     case AT_PHNUM:	value = (size_t)current.phnum; break;
-      //    case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
+      //case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
       //case AT_BASE:	continue;
     case AT_ENTRY:	value = current.entry; break;
     case AT_SECURE:	value = 0; break;
     case AT_RANDOM:	value = current.stack_top; break;
-      //    case AT_HWCAP2:	value = 0; break;
-      //    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
+      //case AT_HWCAP2:	value = 0; break;
+      //case AT_HWCAP2:	break;
+      /*
+    case AT_EXECFN:
+      {
+	static char path[PATH_MAX];
+	dieif(realpath(argv[0], path)==0, "realpath() failed");
+	value = (size_t)path;
+	break;
+      }
+      */
       //    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
-      //case AT_PLATFORM:	continue;
+						     //case AT_PLATFORM:	continue;
     case AT_NULL:
     default:
-      continue;
+      //continue;
       break;
     }
     PUSH_ARG(uintptr_t, auxv[i].key);
