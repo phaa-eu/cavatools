@@ -185,7 +185,7 @@ void hart_t::proxy_syscall(long sysnum)
       */
       char* interp_stack = new char[THREAD_STACK_SIZE];
       interp_stack += THREAD_STACK_SIZE; // grows down
-      fprintf(stderr, "clone: settls=%d, tp=%lx, a3(tls)=%lx\n", (a0 & CLONE_SETTLS)!=0, read_reg(4), a3);
+      //fprintf(stderr, "clone: settls=%d, tp=%lx, a3(tls)=%lx\n", (a0 & CLONE_SETTLS)!=0, read_reg(4), a3);
       long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
       if (flags & CLONE_VM) {
 	clone_lock = 1;		       // private mutex
