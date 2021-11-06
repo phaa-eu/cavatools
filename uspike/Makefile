@@ -45,7 +45,7 @@ main.o options.o: options.h
 instructions.o: decoder.h constants.h 
 elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h
 interpreter.o:  dispatch_table.h fastops.h hart.h spike_link.h mmu.h
-hart.o: hart.h
+hart.o proxy_syscall.o: hart.h
 hart.o decoder.h dispatch_table.h fastops.h: opcodes.h hart.h
 proxy_syscall.o: ecall_nums.h
 

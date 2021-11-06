@@ -112,7 +112,8 @@ void hart_t::proxy_ecall()
 int thread_interpreter(void* arg)
 {
   hart_t* oldcpu = (hart_t*)arg;
-  hart_t* newcpu = oldcpu->newcore();
+  hart_t* newcpu = oldcpu->duplicate();
+  newcpu->copy_state(oldcpu);
   newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
   newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
   newcpu->write_reg(10, 0);	// indicating we are child thread
@@ -152,7 +153,7 @@ int fork_interpreter(void* arg)
 {
   hart_t::cpu_list = 0;			// 
   hart_t* oldcpu = (hart_t*)arg;
-  hart_t* newcpu = oldcpu->newcore();
+  hart_t* newcpu = oldcpu->duplicate();
   //  newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
   //  newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
   newcpu->write_reg(10, 0);	// indicating we are child thread

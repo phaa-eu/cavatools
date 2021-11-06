@@ -2,6 +2,9 @@
   Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
+#ifndef USPIKE_H
+#define USPIKE_H
+
 #include <cassert>
 #include <cstdint>
 #include <stdio.h>
@@ -38,3 +41,5 @@ void show(hart_t* cpu, long pc, FILE* f =stderr);
 void start_time();
 double elapse_time();
 void status_report();
+
+#endif

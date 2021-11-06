@@ -21,6 +21,7 @@ option<>     conf_isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
 option<>     conf_vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
 option<bool> conf_ecall("ecall",	false, true,			"Show system calls");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
+option<bool> conf_show("show",		false, true, 			"Trace execution");
 
 void ( *const insn_model)(void* mmu,           long pc) = [](void* mmu,           long pc) {             };
 long ( *const jump_model)(void* mmu, long npc, long pc) = [](void* mmu, long npc, long pc) { return npc; };
@@ -92,16 +93,8 @@ void hart_t::interpreter()
   long* xpr = reg_file();
   freg_t* fpr = (freg_t*)freg_file();
   long pc = read_pc();
-#ifdef DEBUG
-  long oldpc;
-#endif
   while (1) {
-#ifdef DEBUG
-    dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
-    oldpc = pc;
-    //debug.insert(executed()+1, pc);
-    debug.insert(xpr[2], pc);
-#endif
+    long oldpc = pc;
 
 #define wrd(e)	xpr[i.rd()]=(e)
 #define r1	xpr[i.rs1()]
@@ -110,7 +103,6 @@ void hart_t::interpreter()
 #define MMU	(*mmu())
 #define wpc(npc)  pc=MMU.jump_model(npc, pc)
       
-    MMU.insn_model(pc);
     Insn_t i = code.at(pc);
     switch (i.opcode()) {
 
@@ -162,11 +154,8 @@ void hart_t::interpreter()
     } // switch (i.opcode())
     xpr[0] = 0;
     _executed++;
-#ifdef DEBUG
-    i = code.at(oldpc);
-    int rn = i.rd()!=NOREG ? i.rd() : i.rs2()!=NOREG ? i.rs2() : i.rs1();
-    debug.addval(rn, read_reg(rn));
-#endif
+    if (conf_show)
+      show(this, oldpc);
   }
 }
 
