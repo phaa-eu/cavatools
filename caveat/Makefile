@@ -12,7 +12,7 @@ B := $(RVTOOLS)/riscv-isa-sim
 L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 
 CXXFLAGS := -I$(CAVA)/include/cava -g -O3 -ffast-math
-#CXXFLAGS := -I$(CAVA)/include/cava -g -O0
+#CXXFLAGS := -I$(CAVA)/include/cava -g -O0 -DDEBUG
 LDFLAGS := -Wl,-Ttext=70000000
 
 install:  caveat perf.o perf.h

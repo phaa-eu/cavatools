@@ -4,35 +4,15 @@
 #ifndef MMU_H
 #define MMU_H
 
-enum event_type { jump_event, amo_event, load_event, store_event };
-// note:  ecalls are jump_event
-
-struct event_t {
-  event_type	type	:  2;
-  unsigned	delta	: 14;	// parcels since last event
-  long		address	: 48;	// signed X86_64 address
-  event_t(event_type e, long d, long a) { type=e; delta=d; address=a; }
-  event_t() { }
-};
-static_assert(sizeof(event_t)==8);
-
-#define EVENT_BUFFER_SIZE  1024	// should be power of two
-
-struct mmu_t {
-  event_t event[EVENT_BUFFER_SIZE];
-  int circle;			// points to last event
-  int last_jump;		// sequential run is last_jump+1 to circle
-  long last_event;		// pc of last event to compute delta
-  void insert(event_type e, long pc, long a) { circle=(circle+1)%EVENT_BUFFER_SIZE; event[circle]=event_t(e, (pc-last_event)/2, a); last_event=pc; }
-  mmu_t() { circle=last_jump=0; last_event=0; }
-  
-  long load_model( long a, long pc) { insert(load_event,  pc, a); return a; }
-  long store_model(long a, long pc) { insert(store_event, pc, a); return a; }
-  void amo_model(  long a, long pc) { insert(amo_event,   pc, a);           }
-
-  virtual void simulate(event_t* buffer, int last, int now) = 0;
-  // for a sequential run of instructions
-  long jump_model(long npc, long pc) { insert(jump_event, pc, npc); simulate(event, last_jump, circle); last_jump=circle; last_event=npc; return npc; }
+class mmu_t {
+  virtual long load_model( long a,  long pc) { return a;   }
+  virtual long store_model(long a,  long pc) { return a;   }
+  virtual void amo_model(  long a,  long pc) {             }
+ public:
+  virtual void insn_model(          long pc) {             }
+  virtual long jump_model(long npc, long pc) { return npc; }
+  virtual void custom(              long pc) {             }
+  mmu_t() { }
 
   uint8_t  load_uint8( long a, long pc) { return *(uint8_t* )load_model(a, pc); }
   uint16_t load_uint16(long a, long pc) { return *(uint16_t*)load_model(a, pc); }
