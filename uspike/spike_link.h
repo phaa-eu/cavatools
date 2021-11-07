@@ -16,7 +16,8 @@
 
 #define set_pc(x)				\
   do { p->check_pc_alignment(x);		\
-    npc = MMU.jump_model(sext_xlen(x), pc);	\
+    npc = sext_xlen(x);				\
+    throw trap_supervisor_ecall();		\
   } while(0)
 
 #define set_pc_and_serialize(x) STATE.pc = (x) & p->pc_alignment_mask()

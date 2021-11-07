@@ -7,7 +7,7 @@ struct perf_header_t {		// performance segment header
   long parcels;			// length of text segment (2B parcels)
   long base;			// address of code segment
   long _cores;			// number of simulated cores allocated
-  volatile char arrays[0];	// beginning of dynamic arrays
+  char arrays[0];		// beginning of dynamic arrays
 };
 
 struct count_t {		// perinstruction counters
@@ -35,4 +35,5 @@ public:
   void inc_cycle( long pc, long k =1) { _count[index(pc)].cycles   += k; }
   void inc_imiss( long pc, long k =1) { _imiss[index(pc)] += k; }
   void inc_dmiss( long pc, long k =1) { _dmiss[index(pc)] += k; }
+  volatile count_t* count_ptr(long pc) { return &_count[index(pc)]; }
 };

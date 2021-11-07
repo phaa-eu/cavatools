@@ -109,6 +109,8 @@ void hart_t::proxy_ecall()
 
 #define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
 
+static long dummy;
+
 int thread_interpreter(void* arg)
 {
   hart_t* oldcpu = (hart_t*)arg;
@@ -120,8 +122,7 @@ int thread_interpreter(void* arg)
   newcpu->set_tid();
   oldcpu->clone_lock = 0;
   futex(&oldcpu->clone_lock, FUTEX_WAKE, 1);
-  newcpu->interpreter();
-  die("thread should never get here!\n");
+  newcpu->run_thread();
   return 0;
 }
 
@@ -158,8 +159,7 @@ int fork_interpreter(void* arg)
   newcpu->write_reg(10, 0);	// indicating we are child thread
   newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
   newcpu->set_tid();
-  newcpu->interpreter();
-  die("thread should never get here!\n");
+  newcpu->run_thread();
   return 0;
 }
 

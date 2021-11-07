@@ -21,12 +21,7 @@ option<>     conf_isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
 option<>     conf_vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
 option<bool> conf_ecall("ecall",	false, true,			"Show system calls");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
-
-void ( *const insn_model)(void* mmu,           long pc) = [](void* mmu,           long pc) {             };
-long ( *const jump_model)(void* mmu, long npc, long pc) = [](void* mmu, long npc, long pc) { return npc; };
-long ( *const load_model)(void* mmu,   long a, long pc) = [](void* mmu,   long a, long pc) { return a;   };
-long (*const store_model)(void* mmu,   long a, long pc) = [](void* mmu,   long a, long pc) { return a;   };
-void (  *const amo_model)(void* mmu,   long a, long pc) = [](void* mmu,   long a, long pc) {             };
+option<bool> conf_show("show",		false, true,			"Trace execution");
 
 struct syscall_map_t {
   int sysnum;
@@ -86,19 +81,17 @@ bool hart_t::single_step()
   return false;
 }
 
-void hart_t::interpreter()
+long hart_t::interpreter(long& jpc)
 {
   processor_t* p = spike();
-  long* xpr = reg_file();
-  freg_t* fpr = (freg_t*)freg_file();
-  long pc = read_pc();
-#ifdef DEBUG
-  long oldpc;
-#endif
+  long pc = STATE.pc;
+  long* xpr = (long*)&STATE.XPR[0];
+  long count = 0;
+  
   while (1) {
+    long oldpc = pc;
 #ifdef DEBUG
     dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
-    oldpc = pc;
     //debug.insert(executed()+1, pc);
     debug.insert(xpr[2], pc);
 #endif
@@ -108,60 +101,39 @@ void hart_t::interpreter()
 #define r2	xpr[i.rs2()]
 #define imm	i.immed()
 #define MMU	(*mmu())
-#define wpc(npc)  pc=MMU.jump_model(npc, pc)
+#define jumped	{ jpc=oldpc; STATE.pc=pc; xpr[0]=0; _executed += ++count; if (conf_show) show(this, oldpc); return count; }
+#define cas32op(n) pc += !cas<int32_t>(pc) ? code.at(pc+4).immed()+4 : n
+#define cas64op(n) pc += !cas<int64_t>(pc) ? code.at(pc+4).immed()+4 : n
       
-    MMU.insn_model(pc);
     Insn_t i = code.at(pc);
     switch (i.opcode()) {
 
 #include "fastops.h"
 
-    case Op_cas12_w:
-      if (!cas<int32_t>(pc)) {
-	wpc(pc+code.at(pc+4).immed()+4);
-	break;
-      }
-      pc += 12;
-      break;
-
-    case Op_cas12_d:
-      if (!cas<int64_t>(pc)) {
-	wpc(pc+code.at(pc+4).immed()+4);
-	break;
-      }
-      pc += 12;
-      break;
-
-    case Op_cas10_w:
-      if (!cas<int32_t>(pc)) {
-	wpc(pc+code.at(pc+4).immed()+4);
-	break;
-      }
-      pc += 10;
-      break;
-
-    case Op_cas10_d:
-      if (!cas<int64_t>(pc)) {
-	wpc(pc+code.at(pc+4).immed()+4);
-	break;
-      }
-      pc += 10;
-      break;
+    case Op_cas12_w:  cas32op(12); break;
+    case Op_cas12_d:  cas64op(12); break;
+    case Op_cas10_w:  cas32op(10); break;
+    case Op_cas10_d:  cas64op(10); break;
       
     default:
       try {
 	pc = golden[i.opcode()](pc, *mmu(), spike());
       } catch (trap_user_ecall& e) {
-	write_pc(pc);
+	STATE.pc = pc;
 	proxy_ecall();
 	pc += 4;
+      } catch (trap_supervisor_ecall& e) { // set_pc() called, ie. jumped
+	die("ugg");
       } catch (trap_breakpoint& e) {
-	write_pc(pc);
-	return;
+	STATE.pc = pc;
+	_executed += count;
+	return count;		// didn't execute instruction
       }
     } // switch (i.opcode())
     xpr[0] = 0;
-    _executed++;
+    ++count;
+    if (conf_show)
+      show(this, oldpc);
 #ifdef DEBUG
     i = code.at(oldpc);
     int rn = i.rd()!=NOREG ? i.rd() : i.rs2()!=NOREG ? i.rs2() : i.rs1();

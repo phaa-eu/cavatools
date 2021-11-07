@@ -12,7 +12,7 @@ B := $(RVTOOLS)/riscv-isa-sim
 L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 I := $(CAVA)/include/cava
 
-CXXFLAGS := -I$I -g -O0
+CXXFLAGS := -I$I -g -O3
 
 LIBS := $(CAVA)/lib/libcava.a $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl -lrt -lncurses -lX11
 LDFLAGS := -Wl,-Ttext=70000000

@@ -35,80 +35,48 @@ option<int> conf_Drows("drows",	6,		"Data cache log-base-2 number of rows");
 
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
-option<>    conf_perf( "perf",	"caveat",	"Name of shared memory segment");
+option<>    conf_shm( "shm",	"caveat",	"Name of shared memory segment");
 option<long> conf_report("report", 10,		"Status report every N million instructions");
 
 volatile long system_clock;
 
-class mem_t : public mmu_t, public perf_t {
-public:
-  long last_pc;
+class core_t : public hart_t {
+  perf_t perf;
   volatile long now;
-  mem_t(long n);
+  long last_pc;
+  long start_time;
+  long stall_time;
+  long saved_local_time;
+  static volatile long number_of_cores;
+  fsm_cache<4, false, true>	ic;
+  fsm_cache<4, true,  true>	dc;
+  core_t();
+public:
+  core_t(long entry);
+  hart_t* newcore() { core_t* h=new core_t(); h->copy_state(this); h->last_pc=read_pc(); return h; }
+  void proxy_syscall(long sysnum);
+  void run_thread();
   void sync_system_clock();
+  friend void update_time();
+  friend void print_status();
+  void print();
 
-#ifndef NOCACHE
   void check_cache(long a, long pc, bool iswrite)
   {
     long delay = iswrite ? dc.write(a) : dc.read(a);
     if (delay >= 0) {
-      inc_dmiss(pc);
-      inc_cycle(pc, conf_Dmiss);
+      perf.inc_dmiss(pc);
+      perf.inc_cycle(pc, conf_Dmiss);
       now += conf_Dmiss;
     }
   }
   long load_model( long a,  long pc) { check_cache(a, pc, false); return a; }
   long store_model(long a,  long pc) { check_cache(a, pc, true ); return a; }
   void amo_model(  long a,  long pc) { check_cache(a, pc, true );           }
-#endif
- public:
-  void insn_model(          long pc) {
-    inc_count(pc);
-    inc_cycle(pc);
-    now += 1;
-  }
-#ifndef NOCACHE
-  long jump_model(long npc, long jpc) {
-    long pc = last_pc;
-    long end = jpc + code.at(jpc).bytes();
-    while (pc < end) {
-      long delay = ic.read(pc);
-      if (delay >= 0) {
-	inc_imiss(pc);
-	inc_cycle(pc, conf_Imiss);
-	now += conf_Imiss;
-      }
-      //pc = (pc & ic.linemask()) + ic.linesize();
-      pc += ic.linesize();
-    }
-    last_pc = npc;
-    return npc;
-  }
-#endif
-  void print();
-
-  fsm_cache<4, false, true>	ic;
-  fsm_cache<4, true,  true>	dc;
-};
-
-class core_t : public mem_t, public hart_t {
-  long start_time;
-  long stall_time;
-  long saved_local_time;
-  static volatile long number_of_cores;
-  void init() { now=start_time=system_clock; stall_time=0; }
-public:
-  core_t(long entry);
-  core_t(core_t* p);
-  core_t* newcore() { return new core_t(this); }
-  void proxy_syscall(long sysnum);
-  void run_thread();
-
   void custom(long pc) { }
   
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
-  mem_t* mem() { return static_cast<mem_t*>(this); }
 
   bool stalled() { return now == LONG_MAX; }
   long cycles() { return stalled() ? saved_local_time : now; }
@@ -140,7 +108,7 @@ void update_time()
     futex((int*)&system_clock, FUTEX_WAKE, INT_MAX, 0);
   }
 }
-void mem_t::sync_system_clock()
+void core_t::sync_system_clock()
 {
   static struct timespec timeout = { 0, 10000 };
   update_time();
@@ -161,8 +129,8 @@ void core_t::proxy_syscall(long sysnum)
 
   
   long pc = read_pc();
-  long saved_count = count(pc);
-  inc_count(pc, -saved_count-1);
+  long saved_count = perf.count(pc);
+  perf.inc_count(pc, -saved_count-1);
   
 #if 0
   char buf[4096], *b=buf;
@@ -198,14 +166,14 @@ void core_t::proxy_syscall(long sysnum)
   stall_time += now - t0; // accumulate stalled 
   update_time();
 
-  inc_count(pc, saved_count+1);
+  perf.inc_count(pc, saved_count+1);
 }
 
 
 void start_time();
 double elapse_time();
 
-static void print_status()
+void print_status()
 {
   double realtime = elapse_time();
   long threads = 0;
@@ -221,15 +189,14 @@ static void print_status()
   long now = system_clock;
   char buf[4096];
   char* b = buf;
-  b += sprintf(b, "\r\33[2K%12gB insns %3.1fM cycles/s in %3.1fs MIPS=%3.1f(%3.1f%%) IPC(util)[I$,D$]",
+  b += sprintf(b, "\r\33[2K%12gB insns %3.1fM cycles/s in %3.1fs MIPS=%3.1f(%3.1f%%) IPC(mpki,u)",
 	       tInsns/1e9, (double)now/1e6/realtime, realtime, tInsns/1e6/realtime, 100.0*aUtil);
   char separator = '=';
   for (core_t* p=core_t::list(); p; p=p->next()) {
     double ipc = (double)p->executed()/p->run_cycles();
-    double util = 100.0*p->run_cycles()/p->run_time();
-    double impk = 1000.0*p->ic.misses/p->executed();
-    double dmpk = 1000.0*p->dc.misses/p->executed();
-    b += sprintf(b, "%c%4.2f(%3.1f%%)[%3.1f,%3.1f]", separator, ipc, util, impk, dmpk);
+    long dmpk = 1000.0*p->dc.misses/p->executed() + 0.5;
+    long util = 100.0*p->run_cycles()/p->run_time() + 0.5;
+    b += sprintf(b, "%c%4.2f(%ld,%ld%%)", separator, ipc, dmpk, util);
     separator = ',';
   }
   fputs(buf, stderr);
@@ -243,49 +210,64 @@ int status_function(void* arg)
   }
 }
 
+static char shm_name[1024];
+
 void exitfunc()
 {
   fprintf(stderr, "\n--------\n");
   for (core_t* p=core_t::list(); p; p=p->next()) {
     fprintf(stderr, "Core [%ld] ", p->tid());
-    p->mem()->print();
+    p->print();
   }
   fprintf(stderr, "\n");
   print_status();
+  perf_t::close(shm_name);
   fprintf(stderr, "\ncaveat exited normally");
 }
 
-mem_t::mem_t(long n)
-  : perf_t(n),
-    ic(conf_Iline, conf_Irows, "Instruction"),
-    dc(conf_Dline, conf_Drows, "Data")
+void core_t::print()
 {
-  now = 0;
-}
-
-void mem_t::print()
-{
-  ic.print();
   dc.print();
 }
 
-core_t::core_t(long entry) : hart_t(mem()), mem_t(__sync_fetch_and_add(&number_of_cores, 1))
+core_t::core_t() : perf(__sync_fetch_and_add(&number_of_cores, 1)),
+		   ic(conf_Iline, conf_Irows, "Instruction"),
+		   dc(conf_Dline, conf_Drows, "Data")
 {
-  init();
-  last_pc = entry;
+  now = start_time = system_clock;
+  stall_time = 0;
 }
 
-core_t::core_t(core_t* p) : hart_t(p, mem()), mem_t(__sync_fetch_and_add(&number_of_cores, 1))
+core_t::core_t(long entry) : core_t()
 {
-  init();
-  last_pc = p->last_pc;
+  last_pc = entry;
 }
 
 void core_t::run_thread()
 {
-  fprintf(stderr, "Running [%ld]\n", tid());
-  interpreter();
-  die("should never get here");
+#if 1
+  while (1) {
+    volatile count_t* c = perf.count_ptr(read_pc());
+    long end;
+    now += interpreter(end);
+    volatile count_t* e = perf.count_ptr(end);
+    for (; c<e; c++) {
+      c->executed++;
+      c->cycles++;
+    }
+  }
+#else
+  while (1) {
+    long pc = read_pc();
+    long end;
+    now += interpreter(end);
+    for (; pc<end; pc+=2) {
+      inc_count(pc);
+      inc_cycle(pc);
+      inc_dmiss(pc);
+    }
+  }
+#endif
 }
   
   
@@ -316,9 +298,14 @@ int main(int argc, const char* argv[], const char* envp[])
     help_exit();
   start_time();
   code.loadelf(argv[0]);
-  perf_t::create(code.base(), code.limit(), conf_cores, conf_perf);
-  for (int i=0; i<perf_t::cores(); i++)
-    new perf_t(i);
+
+  if (std::getenv("MPI_LOCALNRANKS"))
+    sprintf(shm_name, "%s.%d", conf_shm(), getpid());
+  else
+    sprintf(shm_name, "%s", conf_shm());
+  perf_t::create(code.base(), code.limit(), conf_cores, shm_name);
+  //  for (int i=0; i<perf_t::cores(); i++)
+  //    new perf_t(i);
   long sp = initialize_stack(argc, argv, envp);
   core_t* mycpu = new core_t(code.entry());
   mycpu->write_reg(2, sp);	// x2 is stack pointer

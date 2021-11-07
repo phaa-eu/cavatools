@@ -14,7 +14,7 @@
 #include <fcntl.h>
 #include <ncurses.h>
 
-//#define DEBUG
+#define DEBUG
 
 #include "../uspike/options.h"
 #include "../uspike/uspike.h"
@@ -51,7 +51,6 @@ struct assembly_t {
 };
 
 perf_t** perf;
-perf_t* cur_core;
 int cur_core_num = 0;
 
 WINDOW *menu;
@@ -225,8 +224,6 @@ void assembly_paint(perf_t* p, struct assembly_t* assembly)
       char* b = buf;
       b+=fmtpercent(b, p->imiss(pc), p->count(pc));
       b+=fmtpercent(b, p->dmiss(pc), p->count(pc));
-      //      b+=sprintf(b , " %8ld", *icm);
-      //      b+=sprintf(b , " %8ld", *dcm);
       b+=sprintf(b, " ");
       b+=slabelpc(b,pc);
       b+=sdisasm(b, pc);
@@ -246,9 +243,9 @@ void resize_histos()
   histo_delete(&local);
   assembly_delete(&assembly);
   histo_create(&global, LINES, global_width, 0, 0);
-  histo_compute(cur_core, &global, code.base(), code.limit());
+  histo_compute(perf[cur_core_num], &global, code.base(), code.limit());
   histo_create(&local, LINES, local_width, 0, global_width);
-  histo_compute(cur_core, &local, code.base(), code.limit());
+  histo_compute(perf[cur_core_num], &local, code.base(), code.limit());
   assembly_create(&assembly, LINES, COLS-global_width-local_width, 0, global_width+local_width);
   assembly.base = 0;
   doupdate();
@@ -260,11 +257,11 @@ void interactive()
   for (;;) {
     stopped_pc = 0;
     gettimeofday(&t1, 0);
-    histo_compute(cur_core, &global, code.base(), code.limit());
+    histo_compute(perf[cur_core_num], &global, code.base(), code.limit());
     histo_paint(&global, "Global", local.base, local.bound);
-    histo_compute(cur_core, &local, local.base, local.bound);
+    histo_compute(perf[cur_core_num], &local, local.base, local.bound);
     histo_paint(&local, "Local", assembly.base, assembly.bound);
-    assembly_paint(cur_core, &assembly);
+    assembly_paint(perf[cur_core_num], &assembly);
     doupdate();
     //    switch (wgetch(stdscr)) {
     int ch = getch();
@@ -290,10 +287,8 @@ void interactive()
     case '0' ... '9':
       {
 	int c = ch - '0';
-	if (c < perf_t::cores()) {
+	if (c < perf_t::cores())
 	  cur_core_num = c;
-	  cur_core = perf[c];
-	}
       }
       break;
       
@@ -387,18 +382,19 @@ long atohex(const char* p)
 static const char* perf_path =0;
 static int list =0;
 
+option<> conf_shm( "shm",	"caveat",	"Name of shared memory segment");
+
 int main(int argc, const char** argv)
 {
   parse_options(argc, argv, "erised: real-time viewer for caveat");
   if (argc == 0)
     help_exit();
   code.loadelf(argv[0]);
-  perf_t::open("caveat");
+  perf_t::open(conf_shm());
   perf = new perf_t*[perf_t::cores()];
   for (int i=0; i<perf_t::cores(); i++) {
     perf[i] = new perf_t(i);
   }
-  cur_core = perf[0];
 
   initscr();			/* Start curses mode */
   keypad(stdscr, true);		/* Need all keys */
@@ -429,5 +425,6 @@ int main(int argc, const char** argv)
   
   //  printf("\033[?1003l\n"); // Disable mouse movement events, as l = low
   endwin();
+  perf_t::close(conf_shm());
   return 0;
 }

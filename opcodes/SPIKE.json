@@ -134,21 +134,21 @@
     "c.j": {
         "flags": "type_c,isa_C,pc",
         "exec": "require_extension('C');\nset_pc(pc + insn.rvc_j_imm());\n",
-        "fast": "wpc(pc+imm); break",
+        "fast": "pc+=imm; jumped",
         "len": 2,
         "decode": "e003 a001 NOREG;NOREG;NOREG;NOREG x(2,1)<<5|x(3,3)<<1|x(6,1)<<7|x(7,1)<<6|x(8,1)<<10|x(9,2)<<8|x(11,1)<<4|xs(12,1)<<11 0"
     },
     "c.beqz": {
         "flags": "type_c,isa_C,pc",
         "exec": "require_extension('C');\nif (RVC_RS1S == 0)\n  set_pc(pc + insn.rvc_b_imm());\n",
-        "fast": "if (r1==0) { wpc(pc+imm); break; }",
+        "fast": "if (r1==0) { pc+=imm; jumped; }",
         "len": 2,
         "decode": "e003 c001 NOREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,1)<<5|x(3,2)<<1|x(5,2)<<6|x(10,2)<<3|xs(12,1)<<8 0"
     },
     "c.bnez": {
         "flags": "type_c,isa_C,pc",
         "exec": "require_extension('C');\nif (RVC_RS1S != 0)\n  set_pc(pc + insn.rvc_b_imm());\n",
-        "fast": "if (r1!=0) { wpc(pc+imm); break; }",
+        "fast": "if (r1!=0) { pc+=imm; jumped; }",
         "len": 2,
         "decode": "e003 e001 NOREG;x(7,3)+8+GPREG;NOREG;NOREG x(2,1)<<5|x(3,2)<<1|x(5,2)<<6|x(10,2)<<3|xs(12,1)<<8 0"
     },
@@ -181,7 +181,7 @@
     "c.jr": {
         "flags": "type_c,isa_C,pc",
         "exec": "require_extension('C');\nrequire(insn.rvc_rs1() != 0);\nset_pc(RVC_RS1 & ~reg_t(1));\n",
-        "fast": "wpc(r1); break",
+        "fast": "pc=r1; jumped",
         "len": 2,
         "decode": "f07f 8002 NOREG;x(7,5)+GPREG;NOREG;NOREG NONE 0"
     },
@@ -199,7 +199,7 @@
     "c.jalr": {
         "flags": "type_cjl,isa_C,pc",
         "exec": "require_extension('C');\nrequire(insn.rvc_rs1() != 0);\nreg_t tmp = npc;\nset_pc(RVC_RS1 & ~reg_t(1));\nWRITE_REG(X_RA, tmp);\n",
-        "fast": "{ long t=pc+2; wpc(r1); wrd(t); break; }",
+        "fast": "{ long t=pc+2; pc=r1; wrd(t); jumped; }",
         "len": 2,
         "decode": "f07f 9002 1;x(7,5)+GPREG;NOREG;NOREG NONE 0"
     },
@@ -237,56 +237,56 @@
     "beq": {
         "flags": "type_sb,isa_I,pc",
         "exec": "if(RS1 == RS2)\n  set_pc(BRANCH_TARGET);\n",
-        "fast": "if ( int64_t(r1)== int64_t(r2)) { wpc(pc+imm); break; }",
+        "fast": "if ( int64_t(r1)== int64_t(r2)) { pc+=imm; jumped; }",
         "len": 4,
         "decode": "707f 63 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
     },
     "bne": {
         "flags": "type_sb,isa_I,pc",
         "exec": "if(RS1 != RS2)\n  set_pc(BRANCH_TARGET);\n",
-        "fast": "if ( int64_t(r1)!= int64_t(r2)) { wpc(pc+imm); break; }",
+        "fast": "if ( int64_t(r1)!= int64_t(r2)) { pc+=imm; jumped; }",
         "len": 4,
         "decode": "707f 1063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
     },
     "blt": {
         "flags": "type_sb,isa_I,pc",
         "exec": "if(sreg_t(RS1) < sreg_t(RS2))\n  set_pc(BRANCH_TARGET);\n",
-        "fast": "if ( int64_t(r1)<  int64_t(r2)) { wpc(pc+imm); break; }",
+        "fast": "if ( int64_t(r1)<  int64_t(r2)) { pc+=imm; jumped; }",
         "len": 4,
         "decode": "707f 4063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
     },
     "bge": {
         "flags": "type_sb,isa_I,pc",
         "exec": "if(sreg_t(RS1) >= sreg_t(RS2))\n  set_pc(BRANCH_TARGET);\n",
-        "fast": "if ( int64_t(r1)>= int64_t(r2)) { wpc(pc+imm); break; }",
+        "fast": "if ( int64_t(r1)>= int64_t(r2)) { pc+=imm; jumped; }",
         "len": 4,
         "decode": "707f 5063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
     },
     "bltu": {
         "flags": "type_sb,isa_I,pc",
         "exec": "if(RS1 < RS2)\n  set_pc(BRANCH_TARGET);\n",
-        "fast": "if (uint64_t(r1)< uint64_t(r2)) { wpc(pc+imm); break; }",
+        "fast": "if (uint64_t(r1)< uint64_t(r2)) { pc+=imm; jumped; }",
         "len": 4,
         "decode": "707f 6063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
     },
     "bgeu": {
         "flags": "type_sb,isa_I,pc",
         "exec": "if(RS1 >= RS2)\n  set_pc(BRANCH_TARGET);\n",
-        "fast": "if (uint64_t(r1)>=uint64_t(r2)) { wpc(pc+imm); break; }",
+        "fast": "if (uint64_t(r1)>=uint64_t(r2)) { pc+=imm; jumped; }",
         "len": 4,
         "decode": "707f 7063 NOREG;x(15,5)+GPREG;x(20,5)+GPREG;NOREG x(7,1)<<11|x(8,4)<<1|x(25,6)<<5|xs(31,1)<<12 0"
     },
     "jalr": {
         "flags": "type_i,isa_I,pc",
         "exec": "reg_t tmp = npc;\nset_pc((RS1 + insn.i_imm()) & ~reg_t(1));\nWRITE_RD(tmp);\n",
-        "fast": "{ long t=pc+4; wpc((r1+imm)&~1L); wrd(t); break; }",
+        "fast": "{ long t=pc+4; pc=((r1+imm)&~1L); wrd(t); jumped; }",
         "len": 4,
         "decode": "707f 67 x(7,5)+GPREG;x(15,5)+GPREG;NOREG;NOREG xs(20,12) 0"
     },
     "jal": {
         "flags": "type_uj,isa_I,pc",
         "exec": "reg_t tmp = npc;\nset_pc(JUMP_TARGET);\nWRITE_RD(tmp);\n",
-        "fast": "{ long t=pc+4; wpc(pc+imm);     wrd(t); break; }",
+        "fast": "{ long t=pc+4; pc+=imm;           wrd(t); jumped; }",
         "len": 4,
         "decode": "7f 6f x(7,5)+GPREG;NOREG;NOREG;NOREG x(12,8)<<12|x(20,1)<<11|x(21,10)<<1|xs(31,1)<<20 1"
     },

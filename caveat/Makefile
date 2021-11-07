@@ -16,9 +16,9 @@ CXXFLAGS := -I$(CAVA)/include/cava -g -O3 -ffast-math
 LDFLAGS := -Wl,-Ttext=70000000
 
 install:  caveat perf.o perf.h
-	cp caveat $(CAVA)/bin/.
 	ar r $(CAVA)/lib/libcava.a perf.o
 	cp perf.h $(CAVA)/include/cava/.
+	cp caveat $(CAVA)/bin/.
 
 clean:
 	rm -f *.o *~ ./#*# *.tmp

@@ -5,13 +5,11 @@
 #define MMU_H
 
 class mmu_t {
-  virtual long load_model( long a,  long pc) { return a;   }
-  virtual long store_model(long a,  long pc) { return a;   }
-  virtual void amo_model(  long a,  long pc) {             }
+  virtual long load_model( long a,  long pc) =0;
+  virtual long store_model(long a,  long pc) =0;
+  virtual void amo_model(  long a,  long pc) =0;
  public:
-  virtual void insn_model(          long pc) {             }
-  virtual long jump_model(long npc, long pc) { return npc; }
-  virtual void custom(              long pc) {             }
+  virtual void custom(              long pc) =0;
   mmu_t() { }
 
   uint8_t  load_uint8( long a, long pc) { return *(uint8_t* )load_model(a, pc); }

@@ -18,7 +18,6 @@
 #include "hart.h"
 
 option<long> conf_report("report",	100,				"Status report every N million instructions");
-option<long> conf_show("show",		0, 				"Trace execution after N gdb continue");
 option<>     conf_gdb("gdb",		0, "localhost:1234", 		"Remote GDB on socket");
 
 static void print_status()
@@ -84,7 +83,7 @@ int main(int argc, const char* argv[], const char* envp[])
   start_time();
   code.loadelf(argv[0]);
   long sp = initialize_stack(argc, argv, envp);
-  hart_t* mycpu = new hart_t(new mmu_t());
+  hart_t* mycpu = new hart_t();
   mycpu->write_reg(2, sp);	// x2 is stack pointer
 
   dieif(atexit(exit_func), "atexit failed");
@@ -103,8 +102,6 @@ int main(int argc, const char* argv[], const char* envp[])
 	long oldpc = mycpu->read_pc();
 	if (!mycpu->single_step())
 	  break;
-	if (gdbNumContinue > conf_show)
-	  show(mycpu, oldpc);
       }
       lastGdbSignal = SIGTRAP;
       ProcessGdbException();
@@ -135,9 +132,7 @@ int main(int argc, const char* argv[], const char* envp[])
     sigaction(SIGABRT, &action, NULL);
     sigaction(SIGINT,  &action, NULL);
 #endif
-    
-    mycpu->interpreter();
-    die("Breakpoint executed, should never happen!");
+    mycpu->run_thread();
   }
 }
 

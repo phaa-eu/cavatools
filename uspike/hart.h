@@ -23,9 +23,8 @@ struct Debug_t {
 };
 #endif
 
-class hart_t {
+class hart_t : public mmu_t {
   class processor_t* spike_cpu;	// opaque pointer to Spike structure
-  class mmu_t* caveat_mmu;	// opaque pointer to our MMU
   static volatile hart_t* cpu_list;	// for find() using thread id
   hart_t* link;				// list of hart_t
   int my_tid;				// my Linux thread number
@@ -33,10 +32,15 @@ class hart_t {
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
   friend int fork_interpreter(void* arg);
+
+  virtual long load_model( long a,  long pc) { return a;   }
+  virtual long store_model(long a,  long pc) { return a;   }
+  virtual void amo_model(  long a,  long pc) {             }
+  virtual void custom(              long pc) {             }
 public:
-  hart_t(mmu_t* m);
-  hart_t(hart_t* p, mmu_t* m);
-  virtual hart_t* newcore() { return new hart_t(this, new mmu_t); }
+  hart_t();
+  void copy_state(hart_t* from);
+  virtual hart_t* newcore() { hart_t* h=new hart_t(); h->copy_state(this); return h; }
   virtual void proxy_syscall(long sysnum);
   void proxy_ecall();
   
@@ -47,10 +51,11 @@ public:
   void set_tid();
   static hart_t* find(int tid);
   bool single_step();
-  void interpreter();
+  long interpreter(long& jpc); // returns number of instructions before jump/ecall
+  virtual void run_thread();
   
   class processor_t* spike() { return spike_cpu; }
-  class mmu_t* mmu() { return caveat_mmu; }
+  class mmu_t* mmu() { return this; }
   long read_reg(int n);
   void write_reg(int n, long value);
   long* reg_file();

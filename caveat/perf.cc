@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 
 #include "options.h"
 #include "uspike.h"
@@ -15,14 +16,13 @@ perf_header_t* perf_t::h;
 
 perf_t::perf_t(long n)
 {
-  if (n > h->_cores)
-    fprintf(stderr, "perf_t(%ld) greater than allocated cores=%ld\n", n, h->_cores);
-  else {
-    volatile char* ptr = h->arrays + n*h->parcels*(sizeof(count_t)+2*sizeof(long));
-    _count = (volatile count_t*)ptr;
-    _imiss = (volatile long*)(ptr + h->parcels*sizeof(count_t));
-    _dmiss = (volatile long*)(_imiss + h->parcels);
-  }
+  dieif(n>h->_cores, "perf_t(%ld) greater than allocated cores=%ld\n", n, h->_cores);
+  char* ptr = h->arrays + n*h->parcels*(sizeof(count_t)+2*sizeof(long));
+  _count = (count_t*)ptr;
+  _imiss = (long*)(ptr + h->parcels*sizeof(count_t));
+  _dmiss = _imiss + h->parcels;
+#define diff(x) ((char*)(x)-(char*)(h))
+  fprintf(stderr, "perf_t(%ld) count=%ld imiss=%ld dmiss=%ld\n", n, diff(_count), diff(_imiss), diff(_dmiss));
 }
 
 void perf_t::create(long base, long bound, long n, const char* shm_name)
@@ -46,13 +46,11 @@ void perf_t::create(long base, long bound, long n, const char* shm_name)
 void perf_t::open(const char* shm_name)
 {
   int fd = shm_open(shm_name, O_RDONLY, 0);
-  dieif(fd<0, "shm_open() failed in perf_open");
-  h = (perf_header_t*)mmap(0, sizeof(perf_header_t), PROT_READ, MAP_SHARED, fd, 0);
-  dieif(h==0, "first mmap() failed");
-  long sz = h->size;
-  dieif(munmap((void*)h, sizeof(perf_header_t))<0, "munmap() failed");
-  h = (perf_header_t*)mmap(0, sz, PROT_READ, MAP_SHARED, fd, 0);
-  dieif(h==0, "second mmap() failed");
+  dieif(fd<0, "shm_open(%s) failed in perf_open", shm_name);
+  struct stat stat;
+  dieif(fstat(fd, &stat)!=0, "could not fstat %s\n", shm_name);
+  h = (perf_header_t*)mmap(0, stat.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  dieif(h==0, "mmap() of %s failed", shm_name);
 }
 
 void perf_t::close(const char* shm_name)

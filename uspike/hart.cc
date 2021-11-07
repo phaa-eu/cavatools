@@ -147,7 +147,7 @@ long* hart_t::ptr_pc()
 extern option<> conf_isa;
 extern option<> conf_vec;
 
-hart_t::hart_t(mmu_t* m)
+hart_t::hart_t()
 {
   processor_t* p = new processor_t(conf_isa, "mu", conf_vec, 0, 0, false, stdout);
   STATE.prv = PRV_U;
@@ -156,7 +156,6 @@ hart_t::hart_t(mmu_t* m)
   STATE.pc = code.entry();
   my_tid = gettid();
   spike_cpu = p;
-  caveat_mmu = m;
   _executed = 0;
   // atomically add this to head of list
   do {
@@ -164,7 +163,7 @@ hart_t::hart_t(mmu_t* m)
   } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
 }
 
-hart_t::hart_t(hart_t* from, mmu_t* m) : hart_t(m)
+void hart_t::copy_state(hart_t* from)
 {
   memcpy(spike()->get_state(), from->spike()->get_state(), sizeof(state_t));
 }
@@ -172,4 +171,11 @@ hart_t::hart_t(hart_t* from, mmu_t* m) : hart_t(m)
 void hart_t::set_tid()
 {
   my_tid = gettid();
+}
+
+void hart_t::run_thread()
+{
+  long dummy;
+  while (1)
+    interpreter(dummy);
 }
