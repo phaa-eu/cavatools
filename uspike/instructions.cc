@@ -3,6 +3,7 @@
 */
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/mman.h>
 
 #include "options.h"
 #include "uspike.h"
@@ -16,10 +17,12 @@ insnSpace_t code;
 void insnSpace_t::loadelf(const char* elfname)
 {
   _entry = load_elf_binary(elfname, 1);
-  _base=low_bound;
-  _limit=high_bound;
+  _base = low_bound;
+  _limit = high_bound;
   int n = (_limit - _base) / 2;
-  predecoded=new Insn_t[n];
+  //  predecoded=new Insn_t[n];
+  predecoded = (Insn_t*)mmap(0, n*sizeof(Insn_t), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  dieif(predecoded==0, "mmap failed");
   memset(predecoded, 0, n*sizeof(Insn_t));
   // Predecode instruction code segment
   long pc = _base;
@@ -28,6 +31,7 @@ void insnSpace_t::loadelf(const char* elfname)
     pc += i.bytes();
   }
   substitute_cas(_base, _limit);
+  dieif(mprotect(predecoded, n*sizeof(Insn_t), PROT_READ)!=0, "mprotect failed");
 }
 
 Insn_t reg1insn(Opcode_t code, int8_t rd, int8_t rs1)

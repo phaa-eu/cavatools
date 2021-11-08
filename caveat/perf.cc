@@ -16,13 +16,12 @@ perf_header_t* perf_t::h;
 
 perf_t::perf_t(long n)
 {
-  dieif(n>h->_cores, "perf_t(%ld) greater than allocated cores=%ld\n", n, h->_cores);
+  dieif(n>=h->_cores, "exceeding %ld allocated cores, use --cores=n\n", h->_cores);
   char* ptr = h->arrays + n*h->parcels*(sizeof(count_t)+2*sizeof(long));
   _count = (count_t*)ptr;
   _imiss = (long*)(ptr + h->parcels*sizeof(count_t));
   _dmiss = _imiss + h->parcels;
-#define diff(x) ((char*)(x)-(char*)(h))
-  fprintf(stderr, "perf_t(%ld) count=%ld imiss=%ld dmiss=%ld\n", n, diff(_count), diff(_imiss), diff(_dmiss));
+  _number = n;
 }
 
 void perf_t::create(long base, long bound, long n, const char* shm_name)

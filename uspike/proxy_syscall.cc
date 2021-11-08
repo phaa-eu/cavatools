@@ -103,7 +103,7 @@ void hart_t::proxy_ecall()
     }
   }
   if (conf_ecall)
-    fprintf(stderr, "Ecall[%ld] %s\n", tid(), name);
+    fprintf(stderr, "Ecall[%d] %s\n", tid(), name);
   proxy_syscall(sysnum);
 }
 
@@ -113,17 +113,13 @@ static long dummy;
 
 int thread_interpreter(void* arg)
 {
-  hart_t* oldcpu = (hart_t*)arg;
-  hart_t* newcpu = oldcpu->newcore();
+  hart_t* newcpu = (hart_t*)arg;
   newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
   newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
   newcpu->write_reg(10, 0);	// indicating we are child thread
   newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
   newcpu->set_tid();
-  oldcpu->clone_lock = 0;
-  futex(&oldcpu->clone_lock, FUTEX_WAKE, 1);
-  newcpu->run_thread();
-  return 0;
+  return newcpu->run_thread();
 }
 
 /*
@@ -151,16 +147,13 @@ static inline void copy_stat(rv_stat* rv, struct stat* x)
 
 int fork_interpreter(void* arg)
 {
-  hart_t::cpu_list = 0;			// 
-  hart_t* oldcpu = (hart_t*)arg;
-  hart_t* newcpu = oldcpu->newcore();
-  //  newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
-  //  newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
-  newcpu->write_reg(10, 0);	// indicating we are child thread
+  hart_t* newcpu = (hart_t*)arg; // no allocation, copy-on-write
+  newcpu->link = 0;		 // takes care of stack, tls...
+  hart_t::cpu_list = newcpu;	 // we become the main thread
+  newcpu->write_reg(10, 0);	 // indicating we are child thread
   newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
   newcpu->set_tid();
-  newcpu->run_thread();
-  return 0;
+  return newcpu->run_thread();
 }
 
 void hart_t::proxy_syscall(long sysnum)
@@ -170,7 +163,8 @@ void hart_t::proxy_syscall(long sysnum)
   switch (sysnum) {
   case SYS_exit:
   case SYS_exit_group:
-    exit(a0);
+    throw (int)a0;
+    //    exit(a0);
     //case SYS_sched_yield:
     //break;
   case SYS_clone:
@@ -183,18 +177,14 @@ void hart_t::proxy_syscall(long sysnum)
 	a3 = tls
 	a4 = child_tidptr
       */
-      char* interp_stack = new char[THREAD_STACK_SIZE];
-      interp_stack += THREAD_STACK_SIZE; // grows down
-      //fprintf(stderr, "clone: settls=%d, tp=%lx, a3(tls)=%lx\n", (a0 & CLONE_SETTLS)!=0, read_reg(4), a3);
       long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
       if (flags & CLONE_VM) {
-	clone_lock = 1;		       // private mutex
-	retval = clone(thread_interpreter, interp_stack, flags, this, (void*)a2, (void*)a4);
-	while (clone_lock)
-	  futex(&clone_lock, FUTEX_WAIT, 1);
+	char* interp_stack = new char[THREAD_STACK_SIZE];
+	interp_stack += THREAD_STACK_SIZE; // grows down
+	retval = clone(thread_interpreter, interp_stack, flags, newcore(), (void*)a2, (void*)a4);
       }
-      else
-	retval = clone(fork_interpreter, interp_stack, flags, this, (void*)a2, (void*)a4);
+      else			// fork does not need child stack
+	retval = clone(fork_interpreter, 0, flags, this, (void*)a2, (void*)a4);
     }
     break;
     /* Workaround for size mismatch between struct stat in riscv and x86_64 Linux */

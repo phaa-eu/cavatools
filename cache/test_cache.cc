@@ -31,7 +31,7 @@ void sequential(cache_t* c)
   for (long i=0; i<N; i++)
     c->read(i<<3);
   double t = elapse_time();
-  printf("%s %ld ways %gns miss=%6.2f%%\n", c->name, c->way(), 1e9*t/N, 100.0*c->misses/c->refs);
+  printf("%s %ld ways %gns miss=%6.2f%%\n", c->name(), c->ways(), 1e9*t/N, 100.0*c->misses()/c->refs());
   delete c;
 }
 
@@ -41,7 +41,7 @@ void random(cache_t* c)
   for (long i=0; i<N; i++)
     c->read(numbers[i]);
   double t = elapse_time();
-  printf("%s %gns miss=%6.2f%%\n", c->name, 1e9*t/N, 100.0*c->misses/c->refs);
+  printf("%s %gns miss=%6.2f%%\n", c->name(), 1e9*t/N, 100.0*c->misses()/c->refs());
   delete c;
 }
 

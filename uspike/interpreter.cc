@@ -47,9 +47,9 @@ void show(hart_t* cpu, long pc, FILE* f)
   int rn = i.rd()==NOREG ? i.rs2() : i.rd();
   long rv = cpu->read_reg(rn);
   if (rn != NOREG)
-    fprintf(stderr, "%6ld: %4s[%16lx] ", cpu->tid(), reg_name[rn], rv);
+    fprintf(stderr, "%6d: %4s[%16lx] ", cpu->tid(), reg_name[rn], rv);
   else
-    fprintf(stderr, "%6ld: %4s[%16s] ", cpu->tid(), "", "");
+    fprintf(stderr, "%6d: %4s[%16s] ", cpu->tid(), "", "");
   labelpc(pc);
   disasm(pc);
 }
@@ -96,11 +96,12 @@ long hart_t::interpreter(long& jpc)
     debug.insert(xpr[2], pc);
 #endif
 
+#undef MMU
+#define MMU	(*mmu())
 #define wrd(e)	xpr[i.rd()]=(e)
 #define r1	xpr[i.rs1()]
 #define r2	xpr[i.rs2()]
 #define imm	i.immed()
-#define MMU	(*mmu())
 #define jumped	{ jpc=oldpc; STATE.pc=pc; xpr[0]=0; _executed += ++count; if (conf_show) show(this, oldpc); return count; }
 #define cas32op(n) pc += !cas<int32_t>(pc) ? code.at(pc+4).immed()+4 : n
 #define cas64op(n) pc += !cas<int64_t>(pc) ? code.at(pc+4).immed()+4 : n

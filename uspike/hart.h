@@ -28,8 +28,7 @@ class hart_t : public mmu_t {
   static volatile hart_t* cpu_list;	// for find() using thread id
   hart_t* link;				// list of hart_t
   int my_tid;				// my Linux thread number
-  volatile long _executed;		// executed this thread
-  volatile int clone_lock;	// 0=free, 1=locked
+  volatile long _executed;		// instructions executed this thread
   friend int thread_interpreter(void* arg);
   friend int fork_interpreter(void* arg);
 
@@ -46,13 +45,13 @@ public:
   
   static class hart_t* list() { return (class hart_t*)cpu_list; }
   class hart_t* next() { return link; }
-  long executed() { return _executed; }
-  long tid() { return my_tid; }
+  volatile long executed() { return _executed; }
+  int tid() { return my_tid; }
   void set_tid();
   static hart_t* find(int tid);
   bool single_step();
   long interpreter(long& jpc); // returns number of instructions before jump/ecall
-  virtual void run_thread();
+  virtual int run_thread();
   
   class processor_t* spike() { return spike_cpu; }
   class mmu_t* mmu() { return this; }

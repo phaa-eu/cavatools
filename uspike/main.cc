@@ -87,6 +87,7 @@ int main(int argc, const char* argv[], const char* envp[])
   mycpu->write_reg(2, sp);	// x2 is stack pointer
 
   dieif(atexit(exit_func), "atexit failed");
+  int rc = 0;
   if (conf_gdb) {
     gdb_pc = mycpu->ptr_pc();
     gdb_reg = mycpu->reg_file();
@@ -132,8 +133,9 @@ int main(int argc, const char* argv[], const char* envp[])
     sigaction(SIGABRT, &action, NULL);
     sigaction(SIGINT,  &action, NULL);
 #endif
-    mycpu->run_thread();
+    rc = mycpu->run_thread();
   }
+  return rc;
 }
 
 extern "C" {

@@ -33,7 +33,7 @@ LDFLAGS := -Wl,-Ttext=70000000
 uspike: $(bins) $(CAVA)/lib/libcava.a
 	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) $(CAVA)/lib/libcava.a $(LIBS)
 
-$(CAVA)/lib/libcava.a:  ../opcodes/SPIKE.json mmu.h
+$(CAVA)/lib/libcava.a:  ../opcodes/SPIKE.json mmu.h spike_link.h make_insns
 	./make_insns ../opcodes/SPIKE.json
 	make -j 16 -C insns
 	mv libcava.a $@

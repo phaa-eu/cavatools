@@ -173,9 +173,14 @@ void hart_t::set_tid()
   my_tid = gettid();
 }
 
-void hart_t::run_thread()
+int hart_t::run_thread()
 {
   long dummy;
-  while (1)
-    interpreter(dummy);
+  try {
+    while (1)
+      interpreter(dummy);
+  } catch (int return_code) {
+    //    fprintf(stderr, "trap_exit_system_call\n");
+    return return_code;
+  }
 }

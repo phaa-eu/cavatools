@@ -20,6 +20,7 @@ class perf_t {			// pointers into shared memory structure
   volatile count_t* _count;
   volatile long* _imiss;
   volatile long* _dmiss;
+  int _number;
   long index(long pc) { checkif(h->base<=pc && (pc-h->base)/2<h->parcels); return (pc - h->base) / 2; }
 public:
   perf_t(long n);		// initialize as core n
@@ -36,4 +37,5 @@ public:
   void inc_imiss( long pc, long k =1) { _imiss[index(pc)] += k; }
   void inc_dmiss( long pc, long k =1) { _dmiss[index(pc)] += k; }
   volatile count_t* count_ptr(long pc) { return &_count[index(pc)]; }
+  int number() { return _number; }
 };

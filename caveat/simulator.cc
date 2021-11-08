@@ -48,18 +48,16 @@ class core_t : public hart_t {
   long stall_time;
   long saved_local_time;
   static volatile long number_of_cores;
-  fsm_cache<4, false, true>	ic;
-  fsm_cache<4, true,  true>	dc;
   core_t();
 public:
+  fsm_cache<4, true,  true>	dc;
   core_t(long entry);
   hart_t* newcore() { core_t* h=new core_t(); h->copy_state(this); h->last_pc=read_pc(); return h; }
   void proxy_syscall(long sysnum);
-  void run_thread();
+  int run_thread();
   void sync_system_clock();
   friend void update_time();
   friend void print_status();
-  void print();
 
   void check_cache(long a, long pc, bool iswrite)
   {
@@ -78,6 +76,7 @@ public:
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
 
+  int number() { return perf.number(); }
   bool stalled() { return now == LONG_MAX; }
   long cycles() { return stalled() ? saved_local_time : now; }
   long stalls() { return stall_time; }
@@ -124,48 +123,19 @@ void core_t::sync_system_clock()
 #define SYSCALL_OVERHEAD 100
 void core_t::proxy_syscall(long sysnum)
 {
-  if (sysnum == 24)
-    return;
-
-  
   long pc = read_pc();
   long saved_count = perf.count(pc);
   perf.inc_count(pc, -saved_count-1);
-  
-#if 0
-  char buf[4096], *b=buf;
-  b += sprintf(b, "ecall[%ld] system=%ld local", tid(), system_clock());
-  for (core_t* p=core_t::list(); p; p=p->next()) {
-    if (p->local_clock() == LONG_MAX)
-      b += sprintf(b, " stalled");
-    else
-      b += sprintf(b, " +%ld", p->local_clock()-system_clock());
-  }
-  b += sprintf(b, "\n");
-  fputs(buf, stderr);
-#endif
-
   update_time();
   sync_system_clock();
   long t0 = system_clock;
   saved_local_time = now;
   now = LONG_MAX;	// indicate we are stalled
   update_time();
-
-  switch (sysnum) {
-    //case SYS_sched_yield:
-  case 24:
-    write_reg(10, 0);
-    break;
-  default:
-    hart_t::proxy_syscall(sysnum);
-  }
-  
+  hart_t::proxy_syscall(sysnum);
   now = system_clock + SYSCALL_OVERHEAD;
-  //now = system_clock;
   stall_time += now - t0; // accumulate stalled 
   update_time();
-
   perf.inc_count(pc, saved_count+1);
 }
 
@@ -189,12 +159,14 @@ void print_status()
   long now = system_clock;
   char buf[4096];
   char* b = buf;
-  b += sprintf(b, "\r\33[2K%12gB insns %3.1fM cycles/s in %3.1fs MIPS=%3.1f(%3.1f%%) IPC(mpki,u)",
-	       tInsns/1e9, (double)now/1e6/realtime, realtime, tInsns/1e6/realtime, 100.0*aUtil);
+  //  b += sprintf(b, "\r\33[2K%12gB insns %3.1fM cycles/s in %3.1fs MIPS=%3.1f(%3.1f%%) IPC(mpki,u)",
+  //	       tInsns/1e9, (double)now/1e6/realtime, realtime, tInsns/1e6/realtime, 100.0*aUtil);
+  b += sprintf(b, "\r\33[2K%12ld insns %3.1fs MCPS=%3.1f MIPS=%3.1f(%3.1f%%) IPC(mpki,u)",
+	       tInsns, realtime, (double)now/1e6/realtime, tInsns/1e6/realtime, 100.0*aUtil);
   char separator = '=';
   for (core_t* p=core_t::list(); p; p=p->next()) {
     double ipc = (double)p->executed()/p->run_cycles();
-    long dmpk = 1000.0*p->dc.misses/p->executed() + 0.5;
+    long dmpk = 1000.0*p->dc.misses()/p->executed() + 0.5;
     long util = 100.0*p->run_cycles()/p->run_time() + 0.5;
     b += sprintf(b, "%c%4.2f(%ld,%ld%%)", separator, ipc, dmpk, util);
     separator = ',';
@@ -214,24 +186,29 @@ static char shm_name[1024];
 
 void exitfunc()
 {
-  fprintf(stderr, "\n--------\n");
+  core_t* p = core_t::list();
+  // assume all D caches are same
+  long size = p->dc.linesize() * p->dc.rows() * p->dc.ways();
+  fprintf(stderr, "\n--------\nL1 D-cache size ");
+  if      (size >= 1024*1024)  fprintf(stderr, "%3.1f MB\n", size/1024.0/1024);
+  else if (size >=      1024)  fprintf(stderr, "%3.1f KB\n", size/1024.0);
+  else                         fprintf(stderr, "%ld B\n", size);
+  long tInsns = 0;
+  for (p=core_t::list(); p; p=p->next())
+    tInsns += p->executed();
+  fprintf(stderr, "Core  References Writes  Miss  MPKI UPKI\n");
   for (core_t* p=core_t::list(); p; p=p->next()) {
-    fprintf(stderr, "Core [%ld] ", p->tid());
-    p->print();
+    fprintf(stderr, "%4d %10ld  %5.2f%% %5.2f%% %4ld %4ld\n",
+	    p->number(), p->dc.refs(), 100.0*p->dc.updates()/p->dc.refs(), 100.0*p->dc.misses()/p->dc.refs(),
+	    (long)(1000.0*p->dc.misses()/tInsns+0.5), (long)(1000.0*p->dc.evictions()/tInsns+0.5));
   }
   fprintf(stderr, "\n");
   print_status();
   perf_t::close(shm_name);
-  fprintf(stderr, "\ncaveat exited normally");
-}
-
-void core_t::print()
-{
-  dc.print();
+  fprintf(stderr, "\ncaveat exited normally\n");
 }
 
 core_t::core_t() : perf(__sync_fetch_and_add(&number_of_cores, 1)),
-		   ic(conf_Iline, conf_Irows, "Instruction"),
 		   dc(conf_Dline, conf_Drows, "Data")
 {
   now = start_time = system_clock;
@@ -243,31 +220,22 @@ core_t::core_t(long entry) : core_t()
   last_pc = entry;
 }
 
-void core_t::run_thread()
+int core_t::run_thread()
 {
-#if 1
-  while (1) {
-    volatile count_t* c = perf.count_ptr(read_pc());
-    long end;
-    now += interpreter(end);
-    volatile count_t* e = perf.count_ptr(end);
-    for (; c<e; c++) {
-      c->executed++;
-      c->cycles++;
+  try {
+    while (1) {
+      volatile count_t* c = perf.count_ptr(read_pc());
+      long end;
+      now += interpreter(end);
+      for (; c<perf.count_ptr(end); c++) {
+	c->executed++;
+	c->cycles++;
+      }
     }
+  } catch (int return_code) {
+    //    fprintf(stderr, "trap_exit_system_call!\n");
+    return return_code;
   }
-#else
-  while (1) {
-    long pc = read_pc();
-    long end;
-    now += interpreter(end);
-    for (; pc<end; pc+=2) {
-      inc_count(pc);
-      inc_cycle(pc);
-      inc_dmiss(pc);
-    }
-  }
-#endif
 }
   
   
