@@ -222,7 +222,6 @@ void assembly_paint(perf_t* p, struct assembly_t* assembly)
       else */                                    wprintw(win, " %5.2f", cpi);
       char buf[1024];
       char* b = buf;
-      b+=fmtpercent(b, p->imiss(pc), p->count(pc));
       b+=fmtpercent(b, p->dmiss(pc), p->count(pc));
       b+=sprintf(b, " ");
       b+=slabelpc(b,pc);

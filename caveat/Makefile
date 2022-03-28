@@ -11,6 +11,8 @@ endif
 B := $(RVTOOLS)/riscv-isa-sim
 L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 
+OBJS := main.o core.o perf.o
+
 CXXFLAGS := -I$(CAVA)/include/cava -g -O3 -ffast-math
 #CXXFLAGS := -I$(CAVA)/include/cava -g -O0 -DDEBUG
 LDFLAGS := -Wl,-Ttext=70000000
@@ -26,9 +28,10 @@ clean:
 	rm -f caveat
 
 
-caveat:  simulator.o ../cache/lru_fsm_table.o perf.o $(CAVA)/lib/libcava.a
+caveat:  $(OBJS) ../cache/lru_fsm_table.o perf.o $(CAVA)/lib/libcava.a
 	$(CXX) $(CXXFLAGS) -o caveat $^ $(LDFLAGS) $L -ldl -lrt
 
-simulator.o:  ../cache/cache.h
-perf.o simulator.o: perf.h
+main.o: core.h perf.h
+perf.o: perf.h
+core.o: core.h ../cache/cache.h
 

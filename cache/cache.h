@@ -18,8 +18,8 @@ class cache_t {
   template<int, bool, bool> friend class fsm_cache;
 public:
   virtual void flush() =0;
-  virtual long  read(long addr) =0;
-  virtual long write(long addr) =0;
+  virtual long fetch(long addr) =0;
+  virtual long update(long addr) =0;
   virtual long miss_model(long addr, bool exclusive =false) { return 0; }
   virtual long exclusive_model(long addr) { return 0; }
   virtual long eviction_model(long addr) { return 0; }
@@ -122,8 +122,8 @@ class fsm_cache : public cache_t {
   
 public:
   long ways() { return _ways; }
-  long  read(long addr) { return lookup(addr, false); }
-  long write(long addr) { return lookup(addr, true ); }
+  long fetch( long addr) { return lookup(addr, false); }
+  long update(long addr) { return lookup(addr, true ); }
   void flush() {
     memset(tags, 0, rows()*ways()*sizeof(fsm_tag));
     memset(states, 0, rows()*sizeof(fsm_state_t));

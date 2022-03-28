@@ -17,10 +17,9 @@ perf_header_t* perf_t::h;
 perf_t::perf_t(long n)
 {
   dieif(n>=h->_cores, "exceeding %ld allocated cores, use --cores=n\n", h->_cores);
-  char* ptr = h->arrays + n*h->parcels*(sizeof(count_t)+2*sizeof(long));
+  char* ptr = h->arrays + n*h->parcels*(sizeof(count_t) + sizeof(long));
   _count = (count_t*)ptr;
-  _imiss = (long*)(ptr + h->parcels*sizeof(count_t));
-  _dmiss = _imiss + h->parcels;
+  _dmiss = (long*)(ptr + h->parcels*sizeof(count_t));
   _number = n;
 }
 
@@ -29,7 +28,7 @@ void perf_t::create(long base, long bound, long n, const char* shm_name)
   long sz = sizeof(perf_header_t);
   long p = (bound-base)/2;
   sz += p*n*sizeof(count_t);	// execution counters
-  sz += 2*p*n*sizeof(long);	// cache miss counters
+  sz += p*n*sizeof(long);	// cache miss counters
   int fd = shm_open(shm_name, O_CREAT|O_TRUNC|O_RDWR, S_IRWXU);
   dieif(fd<0, "shm_open() failed");
   dieif(ftruncate(fd, sz)<0, "ftruncate() failed");

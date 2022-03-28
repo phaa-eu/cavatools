@@ -18,7 +18,6 @@ struct count_t {		// perinstruction counters
 class perf_t {			// pointers into shared memory structure
   static perf_header_t* h;	// shared segment
   volatile count_t* _count;
-  volatile long* _imiss;
   volatile long* _dmiss;
   int _number;
   long index(long pc) { checkif(h->base<=pc && (pc-h->base)/2<h->parcels); return (pc - h->base) / 2; }
@@ -30,11 +29,9 @@ public:
   static long cores() { return h->_cores; }
   long count(long pc) { return _count[index(pc)].executed; }
   long cycle(long pc) { return _count[index(pc)].cycles;   }
-  long imiss(long pc) { return _imiss[index(pc)]; }
   long dmiss(long pc) { return _dmiss[index(pc)]; }
   void inc_count( long pc, long k =1) { _count[index(pc)].executed += k; }
   void inc_cycle( long pc, long k =1) { _count[index(pc)].cycles   += k; }
-  void inc_imiss( long pc, long k =1) { _imiss[index(pc)] += k; }
   void inc_dmiss( long pc, long k =1) { _dmiss[index(pc)] += k; }
   volatile count_t* count_ptr(long pc) { return &_count[index(pc)]; }
   int number() { return _number; }
