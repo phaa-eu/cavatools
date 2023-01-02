@@ -35,6 +35,11 @@ extern "C" {
   extern long gdbNumContinue;
 };
 
+static jmp_buf return_to_top_level;
+
+static void segv_handler(int, siginfo_t*, void*) {
+  longjmp(return_to_top_level, 1);
+}
 
 int main(int argc, const char* argv[], const char* envp[])
 {
@@ -47,22 +52,21 @@ int main(int argc, const char* argv[], const char* envp[])
   hart_t* mycpu = new hart_t(new mmu_t());
   mycpu->write_reg(2, sp);	// x2 is stack pointer
 
-  //#ifdef DEBUG
-#if 0
+#ifdef DEBUG
   static struct sigaction action;
   memset(&action, 0, sizeof(struct sigaction));
   sigemptyset(&action.sa_mask);
   sigemptyset(&action.sa_mask);
   action.sa_flags = 0;
-  action.sa_sigaction = signal_handler;
+  action.sa_sigaction = segv_handler;
   sigaction(SIGSEGV, &action, NULL);
   sigaction(SIGABRT, &action, NULL);
   sigaction(SIGINT,  &action, NULL);
-  //  if (setjmp(return_to_top_level) != 0) {
-  //    fprintf(stderr, "SIGSEGV signal was caught\n");
-  //    debug.print();
-  //    exit(-1);
-  //  }
+  if (setjmp(return_to_top_level) != 0) {
+    fprintf(stderr, "SIGSEGV signal was caught\n");
+    mycpu->debug.print();
+    exit(-1);
+  }
 #endif
 
   dieif(atexit(exit_func), "atexit failed");

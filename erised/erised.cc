@@ -135,7 +135,7 @@ void histo_paint(struct histogram_t* histo, const char* title, long base, long b
   getmaxyx(histo->win, rows, cols);
   rows--;
   wmove(histo->win, 0, 0);
-  wprintw(histo->win, "%*s\n", cols-1, title);
+  wprintw(histo->win, "%*s\n", (int)(cols-1), title);
   long pc = histo->base;
   for (int y=0; y<rows; y++) {
     int highlight = (base <= pc && pc < bound || pc <= base && bound < pc+histo->range);
