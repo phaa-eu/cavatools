@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+#  Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 #
 ifndef RVTOOLS
 RVTOOLS := /opt/riscv-tools
@@ -11,6 +11,7 @@ endif
 #MINUS_O := -Ofast
 #MINUS_O := -O0 -DDEBUG
 MINUS_O := -O3 -DDEBUG
+#MINUS_O := -O3
 
 # Paths to riscv-tools build directories on local system
 B := $(RVTOOLS)/riscv-isa-sim
@@ -19,19 +20,6 @@ L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 
 # Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
 HEADERS := options.h opcodes.h uspike.h instructions.h mmu.h hart.h
-
-# Collect all the opcodes
-RVOPS = $(RVTOOLS)/riscv-opcodes
-RVINS = $(RVTOOLS)/riscv-isa-sim/riscv/insns
-
-RV32 := rv32i rv32m rv32a rv32f rv32d system
-ISAg := $(RV32) rv64i rv64m rv64a rv64f rv64d
-ISAv := rvv
-ISAp := rv32b rv32c rv32d-zfh rv32h rv32k rv64b rv64c rv64h rv64k rvk
-
-ISAg := $(addprefix $(RVOPS)/opcodes-, $(ISAg))
-ISAv := $(addprefix $(RVOPS)/opcodes-, $(ISAv))
-ISAp := $(addprefix $(RVOPS)/opcodes-, $(ISAp))
 
 # Compiling options
 
@@ -66,25 +54,10 @@ proxy_syscall.o: ecall_nums.h
 ecall_nums.h: Makefile syscall_mapping
 	./syscall_mapping < syscalls-riscv64 > $@
 
-opcodes.h:  ISA.tmp make_headers
-	./make_headers ISA.tmp
-
-ISA.tmp: ./crunch_isa RV_isa.tmp RV.fast
-	./crunch_isa RV_isa.tmp RV.fast > ISA.tmp
-#	./crunch_isa RV_isa.tmp > ISA.tmp
-
-RV_isa.tmp: parse_spike RV_bits.tmp RVC.bits
-	./parse_spike $(RVINS) RV_bits.tmp RVC.bits > $@
-
-RV_bits.tmp: parse_opcodes
-	./parse_opcodes $(ISAg) > $@
-#	./parse_opcodes $(ISAg) $(ISAv) $(ISAp) > $@
-
 # Cleanup & installation
 
 clean: tidy
 	rm -f *.o *~ ./#*# *.tmp
-	rm -f insns/*.o insns/*.cc insns/*~ insns/#*#
 
 tidy:
 	rm -f uspike opcodes.h decoder.h dispatch_table.h constants.h ecall_nums.h fastops.h

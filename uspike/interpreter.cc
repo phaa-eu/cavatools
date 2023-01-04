@@ -112,10 +112,18 @@ bool hart_t::interpreter(long how_many)
     mmu()->insn_model(pc);
     Insn_t i = code.at(pc);
     switch (i.opcode()) {
-#include "fastops.h"
+      //#include "fastops.h"
+    case Op_cas12_w:  if (!cas<int32_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=12; break;
+    case Op_cas12_d:  if (!cas<int64_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=12; break;
+    case Op_cas10_w:  if (!cas<int32_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=10; break;
+    case Op_cas10_d:  if (!cas<int64_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=10; break;
     default:
       try {
 	pc = golden[i.opcode()](pc, *mmu(), spike());
+      } catch (trap_user_ecall& e) {
+	write_pc(pc);
+	proxy_ecall(insns);
+	pc += 4;
       } catch (trap_breakpoint& e) {
 	write_pc(pc);
 	incr_count(insns);
