@@ -121,7 +121,8 @@ bool hart_t::interpreter(long how_many)
     switch (i.opcode()) {
 
     case Op_c_addi4spn:  wrd(r1+imm); pc+=2; break;
-    case Op_c_fld: WRITE_RVC_FRS2S(f64(MMU.load_uint64(r1+imm)));  pc+=2; break;
+      //    case Op_c_fld: WRITE_RVC_FRS2S(f64(MMU.load_uint64(r1+imm)));  pc+=2; break;
+    case Op_c_fld: wfd(f64(MMU.load_uint64(r1+imm)));  pc+=2; break;
     case Op_c_lw:  wrd(MMU.load_int32(r1+imm)); pc+=2; break;
     case Op_c_ld:  wrd(MMU.load_int64(r1+imm)); pc+=2; break;
     case Op_c_fsd: MMU.store_uint64(r1+imm, f2.v[0]); pc+=2; break;
@@ -143,7 +144,7 @@ bool hart_t::interpreter(long how_many)
     case Op_c_bnez:  if (r1!=0) { wpc(pc+imm); break; }; pc+=2; break;
       
     case Op_c_slli:  wrd(uint64_t(r1) << imm); pc+=2; break;
-    case Op_c_fldsp: WRITE_FRD(f64(MMU.load_uint64(r1+imm)));  pc+=2; break;
+    case Op_c_fldsp: wfd(f64(MMU.load_uint64(r1+imm)));  pc+=2; break;
     case Op_c_lwsp:  wrd(MMU.load_int32(r1+imm)); pc+=2; break;
     case Op_c_ldsp:  wrd(MMU.load_int64(r1+imm)); pc+=2; break;
     case Op_c_jr:  wpc(r1); break; pc+=2; break;
@@ -237,55 +238,55 @@ bool hart_t::interpreter(long how_many)
       { \
 	bool less = f32_lt_quiet(f32(f1), f32(f2)) || (f32_eq(f32(f1), f32(f2)) && (f32(f1).v & F32_SIGN)); \
 	if (isNaNF32UI(f32(f1).v) && isNaNF32UI(f32(f2).v)) \
-	  WRITE_FRD(f32(defaultNaNF32UI)); \
+	  wfd(f32(defaultNaNF32UI)); \
 	else \
-	  WRITE_FRD(less || isNaNF32UI(f32(f2).v) ? f1 : f2); \
+	  wfd(less || isNaNF32UI(f32(f2).v) ? f1 : f2); \
       }
 
 #define fmax_s_body() \
       { \
 	bool greater = f32_lt_quiet(f32(f2), f32(f1)) || (f32_eq(f32(f2), f32(f1)) && (f32(f2).v & F32_SIGN)); \
 	if (isNaNF32UI(f32(f1).v) && isNaNF32UI(f32(f2).v)) \
-	  WRITE_FRD(f32(defaultNaNF32UI)); \
+	  wfd(f32(defaultNaNF32UI)); \
 	else \
-	  WRITE_FRD(greater || isNaNF32UI(f32(f2).v) ? f1 : f2); \
+	  wfd(greater || isNaNF32UI(f32(f2).v) ? f1 : f2); \
       }
 
 #define fmin_d_body() \
       { \
 	bool less = f64_lt_quiet(f64(f1), f64(f2)) || (f64_eq(f64(f1), f64(f2)) && (f64(f1).v & F64_SIGN)); \
 	if (isNaNF64UI(f64(f1).v) && isNaNF64UI(f64(f2).v)) \
-	  WRITE_FRD(f64(defaultNaNF64UI)); \
+	  wfd(f64(defaultNaNF64UI)); \
 	else \
-	  WRITE_FRD(less || isNaNF64UI(f64(f2).v) ? f1 : f2); \
+	  wfd(less || isNaNF64UI(f64(f2).v) ? f1 : f2); \
       }
 
 #define fmax_d_body() \
       { \
 	bool greater = f64_lt_quiet(f64(f2), f64(f1)) || (f64_eq(f64(f2), f64(f1)) && (f64(f2).v & F64_SIGN)); \
 	if (isNaNF64UI(f64(f1).v) && isNaNF64UI(f64(f2).v)) \
-	  WRITE_FRD(f64(defaultNaNF64UI)); \
+	  wfd(f64(defaultNaNF64UI)); \
 	else \
-	  WRITE_FRD(greater || isNaNF64UI(f64(f2).v) ? f1 : f2); \
+	  wfd(greater || isNaNF64UI(f64(f2).v) ? f1 : f2); \
       }
 
-      //    case Op_flw:  WRITE_FRD(f32(MMU.load_uint32(RS1 + insn.i_imm())));  pc+=4; break;
+      //    case Op_flw:  wfd(f32(MMU.load_uint32(RS1 + insn.i_imm())));  pc+=4; break;
     case Op_fsw:  MMU.store_uint32(RS1 + insn.s_imm(), f2.v[0]);  pc+=4; break;
       
-    case Op_fmadd_s:  srm; WRITE_FRD(f32_mulAdd(f32(f1),                 f32(f2),     f32(f3)            )); sfx; pc+=4; break;
-    case Op_fmsub_s:  srm; WRITE_FRD(f32_mulAdd(f32(f1),                 f32(f2), f32(f32(f3).v^F32_SIGN))); sfx; pc+=4; break;
-    case Op_fnmsub_s: srm; WRITE_FRD(f32_mulAdd(f32(f32(f1).v^F32_SIGN), f32(f2),     f32(f3)            )); sfx; pc+=4; break;
-    case Op_fnmadd_s: srm; WRITE_FRD(f32_mulAdd(f32(f32(f1).v^F32_SIGN), f32(f2), f32(f32(f3).v^F32_SIGN))); sfx; pc+=4; break;
+    case Op_fmadd_s:  srm; wfd(f32_mulAdd(f32(f1),                 f32(f2),     f32(f3)            )); sfx; pc+=4; break;
+    case Op_fmsub_s:  srm; wfd(f32_mulAdd(f32(f1),                 f32(f2), f32(f32(f3).v^F32_SIGN))); sfx; pc+=4; break;
+    case Op_fnmsub_s: srm; wfd(f32_mulAdd(f32(f32(f1).v^F32_SIGN), f32(f2),     f32(f3)            )); sfx; pc+=4; break;
+    case Op_fnmadd_s: srm; wfd(f32_mulAdd(f32(f32(f1).v^F32_SIGN), f32(f2), f32(f32(f3).v^F32_SIGN))); sfx; pc+=4; break;
       
-    case Op_fadd_s:  srm; WRITE_FRD(f32_add(f32(f1), f32(f2))); sfx; pc+=4; break;
-    case Op_fsub_s:  srm; WRITE_FRD(f32_sub(f32(f1), f32(f2))); sfx; pc+=4; break;
-    case Op_fmul_s:  srm; WRITE_FRD(f32_mul(f32(f1), f32(f2))); sfx; pc+=4; break;
-    case Op_fdiv_s:  srm; WRITE_FRD(f32_div(f32(f1), f32(f2))); sfx; pc+=4; break;
-    case Op_fsqrt_s: srm; WRITE_FRD(f32_sqrt(f32(f1)));         sfx; pc+=4; break;
+    case Op_fadd_s:  srm; wfd(f32_add(f32(f1), f32(f2))); sfx; pc+=4; break;
+    case Op_fsub_s:  srm; wfd(f32_sub(f32(f1), f32(f2))); sfx; pc+=4; break;
+    case Op_fmul_s:  srm; wfd(f32_mul(f32(f1), f32(f2))); sfx; pc+=4; break;
+    case Op_fdiv_s:  srm; wfd(f32_div(f32(f1), f32(f2))); sfx; pc+=4; break;
+    case Op_fsqrt_s: srm; wfd(f32_sqrt(f32(f1)));         sfx; pc+=4; break;
 
-    case Op_fsgnj_s:      WRITE_FRD(fsgnj32(f1, f2, false, false));  pc+=4; break;
-    case Op_fsgnjn_s:     WRITE_FRD(fsgnj32(f1, f2, true,  false));  pc+=4; break;
-    case Op_fsgnjx_s:     WRITE_FRD(fsgnj32(f1, f2, false,  true));  pc+=4; break;
+    case Op_fsgnj_s:      wfd(fsgnj32(f1, f2, false, false));  pc+=4; break;
+    case Op_fsgnjn_s:     wfd(fsgnj32(f1, f2, true,  false));  pc+=4; break;
+    case Op_fsgnjx_s:     wfd(fsgnj32(f1, f2, false,  true));  pc+=4; break;
     case Op_fmin_s:  fmin_s_body(); pc+=4; break;
     case Op_fmax_s:  fmax_s_body(); pc+=4; break;
 
@@ -298,37 +299,37 @@ bool hart_t::interpreter(long how_many)
     case Op_fle_s:           wrd(f32_lt(f32(f1), f32(f2)));                  pc+= 4; break;
     case Op_fclass_s:        wrd(f32_classify(f32(f1)));                       pc+= 4; break;
 				      
-    case Op_fcvt_s_w:  srm;  WRITE_FRD(i32_to_f32( ( int32_t)RS1));              sfx; pc+= 4; break;
-    case Op_fcvt_s_wu: srm;  WRITE_FRD(ui32_to_f32((uint32_t)RS1));              sfx; pc+= 4; break;
-    case Op_fmv_w_x:         WRITE_FRD(f32(RS1));                                     pc+= 4; break;
+    case Op_fcvt_s_w:  srm;  wfd(i32_to_f32( ( int32_t)RS1));              sfx; pc+= 4; break;
+    case Op_fcvt_s_wu: srm;  wfd(ui32_to_f32((uint32_t)RS1));              sfx; pc+= 4; break;
+    case Op_fmv_w_x:         wfd(f32(RS1));                                     pc+= 4; break;
 
     case Op_fcvt_l_s:  srm;  wrd(sext32(f32_to_i64( f32(f1), RM, true))); sfx; pc+= 4; break;
     case Op_fcvt_lu_s: srm;  wrd(sext32(f32_to_ui64(f32(f1), RM, true))); sfx; pc+= 4; break;
-    case Op_fcvt_s_l:  srm;  WRITE_FRD(i64_to_f32( ( int32_t)RS1));              sfx; pc+= 4; break;
-    case Op_fcvt_s_lu: srm;  WRITE_FRD(ui64_to_f32((uint32_t)RS1));              sfx; pc+= 4; break;
+    case Op_fcvt_s_l:  srm;  wfd(i64_to_f32( ( int32_t)RS1));              sfx; pc+= 4; break;
+    case Op_fcvt_s_lu: srm;  wfd(ui64_to_f32((uint32_t)RS1));              sfx; pc+= 4; break;
 
-    case Op_fld:  WRITE_FRD(f64(MMU.load_uint64(r1+imm)));  pc+=4; break;
+    case Op_fld:  wfd(f64(MMU.load_uint64(r1+imm)));  pc+=4; break;
     case Op_fsd:  MMU.store_uint64(r1+imm, f2.v[0]);  pc+=4; break;
 
-    case Op_fmadd_d:  srm; WRITE_FRD(f64_mulAdd(f64(f1),                 f64(f2),     f64(f3)            )); sfx; pc+=4; break;
-    case Op_fmsub_d:  srm; WRITE_FRD(f64_mulAdd(f64(f1),                 f64(f2), f64(f64(f3).v^F64_SIGN))); sfx; pc+=4; break;
-    case Op_fnmsub_d: srm; WRITE_FRD(f64_mulAdd(f64(f64(f1).v^F64_SIGN), f64(f2),     f64(f3)            )); sfx; pc+=4; break;
-    case Op_fnmadd_d: srm; WRITE_FRD(f64_mulAdd(f64(f64(f1).v^F64_SIGN), f64(f2), f64(f64(f3).v^F64_SIGN))); sfx; pc+=4; break;
+    case Op_fmadd_d:  srm; wfd(f64_mulAdd(f64(f1),                 f64(f2),     f64(f3)            )); sfx; pc+=4; break;
+    case Op_fmsub_d:  srm; wfd(f64_mulAdd(f64(f1),                 f64(f2), f64(f64(f3).v^F64_SIGN))); sfx; pc+=4; break;
+    case Op_fnmsub_d: srm; wfd(f64_mulAdd(f64(f64(f1).v^F64_SIGN), f64(f2),     f64(f3)            )); sfx; pc+=4; break;
+    case Op_fnmadd_d: srm; wfd(f64_mulAdd(f64(f64(f1).v^F64_SIGN), f64(f2), f64(f64(f3).v^F64_SIGN))); sfx; pc+=4; break;
 
-    case Op_fadd_d:  srm; WRITE_FRD(f64_add(f64(f1), f64(f2))); sfx; pc+=4; break;
-    case Op_fsub_d:  srm; WRITE_FRD(f64_sub(f64(f1), f64(f2))); sfx; pc+=4; break;
-    case Op_fmul_d:  srm; WRITE_FRD(f64_mul(f64(f1), f64(f2))); sfx; pc+=4; break;
-    case Op_fdiv_d:  srm; WRITE_FRD(f64_div(f64(f1), f64(f2))); sfx; pc+=4; break;
-    case Op_fsqrt_d: srm; WRITE_FRD(f64_sqrt(f64(f1)));         sfx; pc+=4; break;
+    case Op_fadd_d:  srm; wfd(f64_add(f64(f1), f64(f2))); sfx; pc+=4; break;
+    case Op_fsub_d:  srm; wfd(f64_sub(f64(f1), f64(f2))); sfx; pc+=4; break;
+    case Op_fmul_d:  srm; wfd(f64_mul(f64(f1), f64(f2))); sfx; pc+=4; break;
+    case Op_fdiv_d:  srm; wfd(f64_div(f64(f1), f64(f2))); sfx; pc+=4; break;
+    case Op_fsqrt_d: srm; wfd(f64_sqrt(f64(f1)));         sfx; pc+=4; break;
 
-    case Op_fsgnj_d:      WRITE_FRD(fsgnj64(f1, f2, false, false));  pc+=4; break;
-    case Op_fsgnjn_d:     WRITE_FRD(fsgnj64(f1, f2, true,  false));  pc+=4; break;
-    case Op_fsgnjx_d:     WRITE_FRD(fsgnj64(f1, f2, false,  true));  pc+=4; break;
+    case Op_fsgnj_d:      wfd(fsgnj64(f1, f2, false, false));  pc+=4; break;
+    case Op_fsgnjn_d:     wfd(fsgnj64(f1, f2, true,  false));  pc+=4; break;
+    case Op_fsgnjx_d:     wfd(fsgnj64(f1, f2, false,  true));  pc+=4; break;
     case Op_fmin_d:  fmin_d_body(); pc+=4; break;
     case Op_fmax_d:  fmax_d_body(); pc+=4; break;
 
-    case Op_fcvt_s_d:  srm;  WRITE_FRD(f64_to_f32(f64(f1)));                   sfx; pc+= 4; break;
-    case Op_fcvt_d_s:  srm;  WRITE_FRD(f32_to_f64(f32(f1)));                   sfx; pc+= 4; break;
+    case Op_fcvt_s_d:  srm;  wfd(f64_to_f32(f64(f1)));                   sfx; pc+= 4; break;
+    case Op_fcvt_d_s:  srm;  wfd(f32_to_f64(f32(f1)));                   sfx; pc+= 4; break;
 
     case Op_feq_d:           wrd(f64_eq(f64(f1), f64(f2)));                  pc+= 4; break;
     case Op_flt_d:           wrd(f64_lt(f64(f1), f64(f2)));                  pc+= 4; break;
@@ -337,15 +338,38 @@ bool hart_t::interpreter(long how_many)
 
     case Op_fcvt_w_d:  srm;  wrd(sext32(f64_to_i32( f64(f1), RM, true))); sfx; pc+= 4; break;
     case Op_fcvt_wu_d: srm;  wrd(sext32(f64_to_ui32(f64(f1), RM, true))); sfx; pc+= 4; break;
-    case Op_fcvt_d_w:  srm;  WRITE_FRD(i32_to_f64( ( int32_t)RS1));              sfx; pc+= 4; break;
-    case Op_fcvt_d_wu: srm;  WRITE_FRD(ui32_to_f64((uint32_t)RS1));              sfx; pc+= 4; break;
+    case Op_fcvt_d_w:  srm;  wfd(i32_to_f64( ( int32_t)RS1));              sfx; pc+= 4; break;
+    case Op_fcvt_d_wu: srm;  wfd(ui32_to_f64((uint32_t)RS1));              sfx; pc+= 4; break;
 
     case Op_fcvt_l_d:  srm;  wrd(sext32(f64_to_i64( f64(f1), RM, true))); sfx; pc+= 4; break;
     case Op_fcvt_lu_d: srm;  wrd(sext32(f64_to_ui64(f64(f1), RM, true))); sfx; pc+= 4; break;
     case Op_fmv_x_d:         wrd(f1.v[0]);                                     pc+= 4; break;
-    case Op_fcvt_d_l:  srm;  WRITE_FRD(i64_to_f64( ( int64_t)RS1));              sfx; pc+= 4; break;
-    case Op_fcvt_d_lu: srm;  WRITE_FRD(ui64_to_f64((uint64_t)RS1));              sfx; pc+= 4; break;
-    case Op_fmv_d_x:         WRITE_FRD(f64(RS1));                                     pc+= 4; break;
+    case Op_fcvt_d_l:  srm;  wfd(i64_to_f64( ( int64_t)RS1));              sfx; pc+= 4; break;
+    case Op_fcvt_d_lu: srm;  wfd(ui64_to_f64((uint64_t)RS1));              sfx; pc+= 4; break;
+    case Op_fmv_d_x:         wfd(f64(RS1));                                     pc+= 4; break;
+
+
+    case Op_amoswap_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return r2; })));       pc+=4; break;
+    case Op_amoadd_w:	wrd(sext32(MMU.amo_uint32(r1, [&]( int32_t lhs) { return lhs + r2; }))); pc+=4; break;
+    case Op_amoxor_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return lhs ^ r2; }))); pc+=4; break;
+    case Op_amoand_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return lhs & r2; }))); pc+=4; break;
+    case Op_amoor_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return lhs | r2; }))); pc+=4; break;
+    case Op_amomin_w:	wrd(sext32(MMU.amo_uint32(r1, [&]( int32_t lhs) { return std::min(lhs,  int32_t(r2)); }))); pc+=4; break;
+    case Op_amomax_w:	wrd(sext32(MMU.amo_uint32(r1, [&]( int32_t lhs) { return std::max(lhs,  int32_t(r2)); }))); pc+=4; break;
+    case Op_amominu_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return std::min(lhs, uint32_t(r2)); }))); pc+=4; break;
+    case Op_amomaxu_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); }))); pc+=4; break;
+
+    case Op_amoswap_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return r2; }));       pc+=4; break;
+    case Op_amoadd_d:	wrd(MMU.amo_uint64(r1, [&]( int64_t lhs) { return lhs + r2; })); pc+=4; break;
+    case Op_amoxor_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return lhs ^ r2; })); pc+=4; break;
+    case Op_amoand_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return lhs & r2; })); pc+=4; break;
+    case Op_amoor_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return lhs | r2; })); pc+=4; break;
+    case Op_amomin_d:	wrd(MMU.amo_uint64(r1, [&]( int64_t lhs) { return std::min(lhs,  int64_t(r2)); })); pc+=4; break;
+    case Op_amomax_d:	wrd(MMU.amo_uint64(r1, [&]( int64_t lhs) { return std::max(lhs,  int64_t(r2)); })); pc+=4; break;
+    case Op_amominu_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return std::min(lhs, uint64_t(r2)); })); pc+=4; break;
+    case Op_amomaxu_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return std::max(lhs, uint64_t(r2)); })); pc+=4; break;
+
+      
 
     default:
       try {
