@@ -8,7 +8,8 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-../uspike/opcodes.h ../uspike/decoder.h ../uspike/dispatch_table.h ../uspike/constants.h ../uspike/ecall_nums.h ../uspike/fastops.h:  isa.def
+#../uspike/opcodes.h ../uspike/decoder.h ../uspike/dispatch_table.h ../uspike/constants.h ../uspike/ecall_nums.h ../uspike/fastops.h:  isa.def
+install:  isa.def crunch.py
 	python crunch.py < isa.def
 
 clean:

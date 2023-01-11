@@ -14,9 +14,9 @@ extern const char* reg_name[];
 // by making sure flag bits are all zero in this case, then just use value.
 
 #define GPREG	0
-#define FPREG	GPREG+32
-#define VPREG	FPREG+32
-#define VMREG	VPREG+32
+#define FPREG	(GPREG+32)
+#define VPREG	(FPREG+32)
+#define VMREG	(VPREG+32)
 #define NOREG	-1
 
 class alignas(8) Insn_t {

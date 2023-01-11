@@ -145,10 +145,11 @@ with open('newcode.tmp', 'w') as f:
         if not immed:
             f.write('i=reg3insn({:s}, {:s}, {:s}, {:s}, {:s});'.format(opname, reglist[0], reglist[1], reglist[2], reglist[3]))
         elif bigimm:
-            f.write('i=reg1imm({:s}, {:s}, {:s}, {:s});'.format(opname, reglist[0], reglist[1], immed))
+            f.write('i=reg0imm({:s}, {:s}, {:s});'.format(opname, reglist[0], immed))
+#            f.write('i=reg1imm({:s}, {:s}, {:s}, {:s});'.format(opname, reglist[0], reglist[1], immed))
         else:
             f.write('i=reg2imm({:s}, {:s}, {:s}, {:s}, {:s});'.format(opname, reglist[0], reglist[1], reglist[2], immed))
-        f.write(' goto opcode_found; }')
+        f.write(' goto opcode_found; }\n')
 diffcp('../uspike/decoder.h')
 
 with open('newcode.tmp', 'w') as f:
