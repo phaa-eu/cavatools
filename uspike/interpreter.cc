@@ -118,10 +118,10 @@ bool hart_t::interpreter(long how_many)
     mmu()->insn_model(pc);
     Insn_t i = code.at(pc);
     insn_t insn = (long)(*(int32_t*)pc);
-    switch (i.opcode()) {
+    switch ((Opcode_t)i.opcode()) {
+    case Op_ZERO:  die("Op_ZERO opcode");
 
     case Op_c_addi4spn:  wrd(r1+imm); pc+=2; break;
-      //    case Op_c_fld: WRITE_RVC_FRS2S(f64(MMU.load_uint64(r1+imm)));  pc+=2; break;
     case Op_c_fld: wfd(f64(MMU.load_uint64(r1+imm)));  pc+=2; break;
     case Op_c_lw:  wrd(MMU.load_int32(r1+imm)); pc+=2; break;
     case Op_c_ld:  wrd(MMU.load_int64(r1+imm)); pc+=2; break;
@@ -137,6 +137,10 @@ bool hart_t::interpreter(long how_many)
     case Op_c_srli:  wrd(uint64_t(r1) >> imm); pc+=2; break;
     case Op_c_srai:  wrd( int64_t(r1) >> imm); pc+=2; break;
     case Op_c_andi:  wrd(r1 & imm); pc+=2; break;
+    case Op_c_sub:   wrd(r1 - r2); pc+=2; break;
+    case Op_c_xor:   wrd(r1 ^ r2); pc+=2; break;
+    case Op_c_or:    wrd(r1 | r2); pc+=2; break;
+    case Op_c_and:   wrd(r1 & r2); pc+=2; break;
     case Op_c_subw:  wrd(int32_t(r1) - int32_t(r2)); pc+=2; break;
     case Op_c_addw:  wrd(int32_t(r1) + int32_t(r2)); pc+=2; break;
     case Op_c_j:     wpc(pc+imm); break; pc+=2; break;
@@ -204,6 +208,14 @@ bool hart_t::interpreter(long how_many)
       //    case Op_ecall:  write_pc(pc); throw trap_user_ecall();
     case Op_ebreak:  throw trap_breakpoint(pc);
       
+#define r1n0  i.rs1()!=0
+    case Op_csrrw:   { int csr=imm;       reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr,                r1      ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrwi:  { int csr=imm&0xFFF; reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr,                imm>>12 ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrs:   { int csr=imm;       reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr, old |          r1      ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrsi:  { int csr=imm&0xFFF; reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr, old |          imm>>12 ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrc:   { int csr=imm;       reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr, old & ~        r1      ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrci:  { int csr=imm&0xFFF; reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr, old & ~(reg_t)(imm>>12)); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+      
     case Op_lwu: wrd(MMU.load_uint32(r1+imm)); pc+=4; break;
     case Op_ld:  wrd(MMU.load_int64 (r1+imm)); pc+=4; break;
     case Op_sd:  MMU.store_int64(r1+imm, r2); pc+=4; break;
@@ -218,6 +230,21 @@ bool hart_t::interpreter(long how_many)
     case Op_sllw:  wrd(uint32_t(r1) << uint32_t(r2)); pc+=4; break;
     case Op_srlw:  wrd(uint32_t(r1) >> uint32_t(r2)); pc+=4; break;
     case Op_sraw:  wrd( int32_t(r1) >>  int32_t(r2)); pc+=4; break;
+
+    case Op_mul:   wrd(r1 * r2);         pc+=4; break;
+    case Op_mulh:  wrd(mulh(  r1,  r2)); pc+=4; break;
+    case Op_mulhsu:wrd(mulhsu(r1,  r2)); pc+=4; break;
+    case Op_mulhu: wrd(mulhu( r1,  r2)); pc+=4; break;
+    case Op_div:   wrd(r2==0 ?  INT64_MAX : (r1==INT64_MIN && r2==-1) ? r1 : r1/r2); pc+=4; break;
+    case Op_divu:  wrd(r2==0 ? UINT64_MAX : (uint64_t)r1/(uint64_t)r2             ); pc+=4; break;
+    case Op_rem:   wrd(r2==0 ?  INT64_MAX : (r1==INT64_MIN && r2==-1) ? r1 : r1%r2); pc+=4; break;
+    case Op_remu:  wrd(r2==0 ? UINT64_MAX : (uint64_t)r1%(uint64_t)r2             ); pc+=4; break;
+
+    case Op_mulw:  wrd((int32_t)r1 * (int32_t)r2);                                   pc+=4; break;
+    case Op_divw:  wrd(r2==0 ? UINT64_MAX : ( int32_t)r1/( int32_t)r2             ); pc+=4; break;
+    case Op_divuw: wrd(r2==0 ? UINT64_MAX : (uint32_t)r1/(uint32_t)r2             ); pc+=4; break;
+    case Op_remw:  wrd(r2==0 ? UINT64_MAX : ( int32_t)r1%( int32_t)r2             ); pc+=4; break;
+    case Op_remuw: wrd(r2==0 ? UINT64_MAX : (uint32_t)r1%(uint32_t)r2             ); pc+=4; break;
       
     case Op_cas12_w:  if (!cas<int32_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=12; break;
     case Op_cas12_d:  if (!cas<int64_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=12; break;
@@ -270,8 +297,8 @@ bool hart_t::interpreter(long how_many)
 	  wfd(greater || isNaNF64UI(f64(f2).v) ? f1 : f2); \
       }
 
-      //    case Op_flw:  wfd(f32(MMU.load_uint32(RS1 + insn.i_imm())));  pc+=4; break;
-    case Op_fsw:  MMU.store_uint32(RS1 + insn.s_imm(), f2.v[0]);  pc+=4; break;
+    case Op_flw:  wfd(f32(MMU.load_uint32(r1+imm)));  pc+=4; break;
+    case Op_fsw:  MMU.store_uint32(r1+imm, f2.v[0]);  pc+=4; break;
       
     case Op_fmadd_s:  srm; wfd(f32_mulAdd(f32(f1),                 f32(f2),     f32(f3)            )); sfx; pc+=4; break;
     case Op_fmsub_s:  srm; wfd(f32_mulAdd(f32(f1),                 f32(f2), f32(f32(f3).v^F32_SIGN))); sfx; pc+=4; break;
@@ -299,14 +326,14 @@ bool hart_t::interpreter(long how_many)
     case Op_fle_s:           wrd(f32_lt(f32(f1), f32(f2)));                  pc+= 4; break;
     case Op_fclass_s:        wrd(f32_classify(f32(f1)));                       pc+= 4; break;
 				      
-    case Op_fcvt_s_w:  srm;  wfd(i32_to_f32( ( int32_t)RS1));              sfx; pc+= 4; break;
-    case Op_fcvt_s_wu: srm;  wfd(ui32_to_f32((uint32_t)RS1));              sfx; pc+= 4; break;
-    case Op_fmv_w_x:         wfd(f32(RS1));                                     pc+= 4; break;
+    case Op_fcvt_s_w:  srm;  wfd(i32_to_f32( ( int32_t)r1));              sfx; pc+= 4; break;
+    case Op_fcvt_s_wu: srm;  wfd(ui32_to_f32((uint32_t)r1));              sfx; pc+= 4; break;
+    case Op_fmv_w_x:         wfd(f32(r1));                                     pc+= 4; break;
 
     case Op_fcvt_l_s:  srm;  wrd(sext32(f32_to_i64( f32(f1), RM, true))); sfx; pc+= 4; break;
     case Op_fcvt_lu_s: srm;  wrd(sext32(f32_to_ui64(f32(f1), RM, true))); sfx; pc+= 4; break;
-    case Op_fcvt_s_l:  srm;  wfd(i64_to_f32( ( int32_t)RS1));              sfx; pc+= 4; break;
-    case Op_fcvt_s_lu: srm;  wfd(ui64_to_f32((uint32_t)RS1));              sfx; pc+= 4; break;
+    case Op_fcvt_s_l:  srm;  wfd(i64_to_f32( ( int32_t)r1));              sfx; pc+= 4; break;
+    case Op_fcvt_s_lu: srm;  wfd(ui64_to_f32((uint32_t)r1));              sfx; pc+= 4; break;
 
     case Op_fld:  wfd(f64(MMU.load_uint64(r1+imm)));  pc+=4; break;
     case Op_fsd:  MMU.store_uint64(r1+imm, f2.v[0]);  pc+=4; break;
@@ -338,17 +365,19 @@ bool hart_t::interpreter(long how_many)
 
     case Op_fcvt_w_d:  srm;  wrd(sext32(f64_to_i32( f64(f1), RM, true))); sfx; pc+= 4; break;
     case Op_fcvt_wu_d: srm;  wrd(sext32(f64_to_ui32(f64(f1), RM, true))); sfx; pc+= 4; break;
-    case Op_fcvt_d_w:  srm;  wfd(i32_to_f64( ( int32_t)RS1));              sfx; pc+= 4; break;
-    case Op_fcvt_d_wu: srm;  wfd(ui32_to_f64((uint32_t)RS1));              sfx; pc+= 4; break;
+    case Op_fcvt_d_w:  srm;  wfd(i32_to_f64( ( int32_t)r1));              sfx; pc+= 4; break;
+    case Op_fcvt_d_wu: srm;  wfd(ui32_to_f64((uint32_t)r1));              sfx; pc+= 4; break;
 
     case Op_fcvt_l_d:  srm;  wrd(sext32(f64_to_i64( f64(f1), RM, true))); sfx; pc+= 4; break;
     case Op_fcvt_lu_d: srm;  wrd(sext32(f64_to_ui64(f64(f1), RM, true))); sfx; pc+= 4; break;
     case Op_fmv_x_d:         wrd(f1.v[0]);                                     pc+= 4; break;
-    case Op_fcvt_d_l:  srm;  wfd(i64_to_f64( ( int64_t)RS1));              sfx; pc+= 4; break;
-    case Op_fcvt_d_lu: srm;  wfd(ui64_to_f64((uint64_t)RS1));              sfx; pc+= 4; break;
-    case Op_fmv_d_x:         wfd(f64(RS1));                                     pc+= 4; break;
+    case Op_fcvt_d_l:  srm;  wfd(i64_to_f64( ( int64_t)r1));              sfx; pc+= 4; break;
+    case Op_fcvt_d_lu: srm;  wfd(ui64_to_f64((uint64_t)r1));              sfx; pc+= 4; break;
+    case Op_fmv_d_x:         wfd(f64(r1));                                     pc+= 4; break;
 
 
+    case Op_lr_w: { int32_t res=MMU.load_int32(r1, true); MMU.acquire_load_reservation(r1);                                      wrd( res); } pc+=4; break;
+    case Op_sc_w: { bool yes=MMU.check_load_reservation(r1, 4); if (yes) MMU.store_uint32(r1, r2); MMU.yield_load_reservation(); wrd(!yes); } pc+=4; break;
     case Op_amoswap_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return r2; })));       pc+=4; break;
     case Op_amoadd_w:	wrd(sext32(MMU.amo_uint32(r1, [&]( int32_t lhs) { return lhs + r2; }))); pc+=4; break;
     case Op_amoxor_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return lhs ^ r2; }))); pc+=4; break;
@@ -359,6 +388,8 @@ bool hart_t::interpreter(long how_many)
     case Op_amominu_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return std::min(lhs, uint32_t(r2)); }))); pc+=4; break;
     case Op_amomaxu_w:	wrd(sext32(MMU.amo_uint32(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); }))); pc+=4; break;
 
+    case Op_lr_d: { int64_t res=MMU.load_int64(r1, true); MMU.acquire_load_reservation(r1);                                      wrd( res); } pc+=4; break;
+    case Op_sc_d: { bool yes=MMU.check_load_reservation(r1, 4); if (yes) MMU.store_uint64(r1, r2); MMU.yield_load_reservation(); wrd(!yes); } pc+=4; break;
     case Op_amoswap_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return r2; }));       pc+=4; break;
     case Op_amoadd_d:	wrd(MMU.amo_uint64(r1, [&]( int64_t lhs) { return lhs + r2; })); pc+=4; break;
     case Op_amoxor_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return lhs ^ r2; })); pc+=4; break;
@@ -369,8 +400,10 @@ bool hart_t::interpreter(long how_many)
     case Op_amominu_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return std::min(lhs, uint64_t(r2)); })); pc+=4; break;
     case Op_amomaxu_d:	wrd(MMU.amo_uint64(r1, [&](uint64_t lhs) { return std::max(lhs, uint64_t(r2)); })); pc+=4; break;
 
+    case Op_ILLEGAL:  die("Op_ILLEGAL opcode");
+    case Op_UNKNOWN:  die("Op_UNKNOWN opcode");
       
-
+#if 0
     default:
       try {
 	pc = golden[i.opcode()](pc, *mmu(), spike());
@@ -383,6 +416,7 @@ bool hart_t::interpreter(long how_many)
 	incr_count(insns);
 	return true;
       }
+#endif
     } // switch (i.opcode())
     xpr[0] = 0;
 #ifdef DEBUG
