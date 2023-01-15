@@ -31,25 +31,23 @@ class alignas(8) Insn_t {
     } op;
     int32_t op_longimm;
   };
-  
+  void setimm(int16_t v) { op.imm=(v<<1)|0x1; }
 public:
-  Insn_t() { *((int64_t*)this) = -1; } // all registers become NOREG
-  Insn_t(Opcode_t code)                { *((int64_t*)this)=-1; op_code=code; }
-  Insn_t(Opcode_t code, int8_t rd, int16_t imm)     :Insn_t(code)  { op_rd=rd; op.imm=imm<<3|0x1; }
+  bool longimmed() { return (op.imm & 0x1) == 0; }
+  long immed() { return longimmed() ? op_longimm : op.imm>>1; }
+
   long opcode() { return op_code; }
   int rd()  { return op_rd; }
   int rs1() { return op_rs1; }
   int rs2() { return op.rs2; }
   int rs3() { return op.rs3; }
-  long immed() { return (op.imm&0x1) ? op.imm>>3 : op_longimm; }
   bool compressed() { return op_code <= Last_Compressed_Opcode; }
-  bool longimmed() { return (op.imm & 0x1) == 0; }
-  friend Insn_t reg1insn( Opcode_t code, int8_t rd, int8_t rs1);
-  friend Insn_t reg2insn( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2);
-  friend Insn_t reg3insn (Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3);
-  friend Insn_t reg0imm(Opcode_t code, int8_t rd, int32_t longimmed);
-  friend Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm);
-  friend Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
+  
+  Insn_t() { *((int64_t*)this) = -1; } // all registers become NOREG
+  Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3, int16_t imm);
+  Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
+  Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int32_t longimmed);
+  Insn_t(Opcode_t code, int8_t rd, int32_t longimmed);
 };
 static_assert(sizeof(Insn_t) == 8);
 
@@ -71,15 +69,6 @@ public:
   uint32_t image(long pc) { checkif(valid(pc)); return *(uint32_t*)(pc); }
   Insn_t set(long pc, Insn_t i) { predecoded[index(pc)] = i; return i; }
 };
-
-/*
-Insn_t reg1insn( Opcode_t code, int8_t rd, int8_t rs1);
-Insn_t reg2insn( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2);
-Insn_t reg3insn(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3);
-Insn_t reg0imm( Opcode_t code, int8_t rd, int32_t longimmed);
-Insn_t reg1imm( Opcode_t code, int8_t rd, int8_t rs1, int16_t imm);
-Insn_t reg2imm( Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
-*/
 
 Insn_t decoder(int b, long pc);	// given bitpattern image of in struction
 

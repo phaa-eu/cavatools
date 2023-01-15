@@ -89,54 +89,17 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 
 #endif
 
-#include "spike_link.h"
+#include "mmu.h"
 
-long hart_t::read_reg(int n)
+hart_t::hart_t(mmu_t* m, hart_t* from)
 {
-  processor_t* p = spike();
-  return READ_REG(n);
-}
-
-void hart_t::write_reg(int n, long value)
-{
-  processor_t* p = spike();
-  WRITE_REG(n, value);
-}
-
-long* hart_t::reg_file()
-{
-  processor_t* p = spike();
-  //return (long*)&(p->get_state()->XPR);
-  return (long*)&p->get_state()->XPR[0];
-}
-
-long hart_t::read_pc()
-{
-  processor_t* p = spike();
-  return STATE.pc;
-}
-
-void hart_t::write_pc(long value)
-{
-  processor_t* p = spike();
-  STATE.pc = value;
-}
-
-long* hart_t::ptr_pc()
-{
-  processor_t* p = spike();
-  return (long*)&STATE.pc;
-}
-
-hart_t::hart_t(mmu_t* m)
-{
-  processor_t* p = new processor_t(conf_isa, "mu", conf_vec, 0, 0, false, stdout);
-  STATE.prv = PRV_U;
-  STATE.mstatus |= (MSTATUS_FS|MSTATUS_VS);
-  STATE.vsstatus |= SSTATUS_FS;
-  STATE.pc = code.entry();
+  if (from)
+    memcpy(this, from, sizeof(hart_t));
+  else {
+    memset(this, 0, sizeof(hart_t));
+    pc = code.entry();
+  }
   my_tid = gettid();
-  spike_cpu = p;
   caveat_mmu = m;
   _executed = 0;
   do {
@@ -149,12 +112,43 @@ hart_t::hart_t(mmu_t* m)
   _number = old_n;		// after loop in case of race
 }
 
-hart_t::hart_t(hart_t* from, mmu_t* m) : hart_t(m)
-{
-  memcpy(spike()->get_state(), from->spike()->get_state(), sizeof(state_t));
-}
-
 void hart_t::set_tid()
 {
   my_tid = gettid();
+}
+
+
+#define CSR_FFLAGS	0x1
+#define CSR_FRM		0x2
+#define CSR_FCSR	0x3
+
+long hart_t::get_csr(int what, bool write)
+{
+  switch (what) {
+  case CSR_FFLAGS:
+    return fcsr.f.flags;
+  case CSR_FRM:
+    return fcsr.f.rm;
+  case CSR_FCSR:
+    return fcsr.ui;
+  default:
+    die("unsupported CSR number %d", what);
+  }
+}
+
+void hart_t::set_csr(int what, long val)
+{
+  switch (what) {
+  case CSR_FFLAGS:
+    fcsr.f.flags = val;
+    break;
+  case CSR_FRM:
+    fcsr.f.rm = val;
+    break;
+  case CSR_FCSR:
+    fcsr.ui = val;
+    break;
+  default:
+    die("unsupported CSR number %d", what);
+  }
 }

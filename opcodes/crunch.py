@@ -11,7 +11,7 @@ def eprint(*args):
 def ParseOpcode(bits):
     (code, mask, pos) = (0, 0, 0)
     immed = []
-    bigimm = False
+    immtyp = -1
     for b in reversed(bits.split()):
         if re.match('[01]+', b):
             code |= int(b, 2) << pos
@@ -20,6 +20,7 @@ def ParseOpcode(bits):
         elif re.match('[.]+', b):
             pos += len(b)
         elif re.match('\{[^}]+\}', b):
+            immtyp = 0
             tuple = []
             signed = False
             i = 0
@@ -44,7 +45,7 @@ def ParseOpcode(bits):
                 pos += hi-lo+1
             (hi, lo) = tuple[0]
             if hi >= 13:
-                bigimm = True
+                imm = 1
             shift = lo and '<<{:d}'.format(lo) or ''
             immed.append('{:s}({:d},{:d}){:s}'.format(signed and 'xs' or 'x', pos, hi-lo+1, shift))
             pos += hi-lo+1
@@ -65,7 +66,7 @@ def ParseOpcode(bits):
         exit(-1)
     code = '0x' + hex(code)[2:].zfill(digits)
     mask = '0x' + hex(mask)[2:].zfill(digits)
-    return (code, mask, pos/8, immed, bigimm)
+    return (code, mask, pos/8, immed, immtyp)
 
 
 def ParseReglist(reglist):
@@ -105,8 +106,8 @@ for line in sys.stdin:
     (opcode, asm, isa, req, bits, reglist, action) = m.groups()
     opname = 'Op_' + opcode.replace('.', '_')
     reglist = ParseReglist(reglist)
-    (code, mask, bytes, immed, bigimm) = ParseOpcode(bits)
-    instructions[opcode] = (opname, asm, isa, req, code, mask, bytes, immed, bigimm, reglist, action)
+    (code, mask, bytes, immed, immtyp) = ParseOpcode(bits)
+    instructions[opcode] = (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action)
     if bytes == 2:
         last_compressed_opcode = opcode
 
@@ -140,21 +141,27 @@ diffcp('../uspike/constants.h')
 
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
-        (opname, asm, isa, req, code, mask, bytes, immed, bigimm, reglist, action) = t
-        f.write('  if((b&{:s})=={:s}) {{ '.format(mask, code))
-        if not immed:
-            f.write('i=reg3insn({:s}, {:s}, {:s}, {:s}, {:s});'.format(opname, reglist[0], reglist[1], reglist[2], reglist[3]))
-        elif bigimm:
-            f.write('i=reg0imm({:s}, {:s}, {:s});'.format(opname, reglist[0], immed))
-#            f.write('i=reg1imm({:s}, {:s}, {:s}, {:s});'.format(opname, reglist[0], reglist[1], immed))
+        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
+        f.write('  if((b&{:s})=={:s}) return '.format(mask, code))
+        if len(reglist) == 4:
+            f.write('Insn_t({:s}, {:s}, {:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], reglist[2], reglist[3], immed))
+        elif len(reglist) == 3:
+            f.write('Insn_t({:s}, {:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], reglist[2], immed))
+        elif len(reglist) == 2:
+            f.write('Insn_t({:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], immed))
+        elif len(reglist) == 1:
+            f.write('Insn_t({:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], immed))
+        elif len(reglist) == 0:
+            f.write('Insn_t({:s}, {:s}, {:s}, {:s})'.format(opname, 'NOREG', immed))
         else:
-            f.write('i=reg2imm({:s}, {:s}, {:s}, {:s}, {:s});'.format(opname, reglist[0], reglist[1], reglist[2], immed))
-        f.write(' goto opcode_found; }\n')
+            eprint('reglist length not 0-4')
+            exit(-1)
+        f.write(';\n')
 diffcp('../uspike/decoder.h')
 
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
-        (opname, asm, isa, req, code, mask, bytes, immed, bigimm, reglist, action) = t
+        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
         f.write('long I_{:s}(long pc, mmu_t& MMU, class processor_t* cpu);\n'.format(opcode.replace('.', '_')))
     f.write('\n')
     

@@ -8,10 +8,11 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-MINUS_O := -Ofast -Wswitch
+#MINUS_O := -Ofast -Wswitch
+#MINUS_O := -O0
 #MINUS_O := -O0 -DDEBUG
 #MINUS_O := -O3 -DDEBUG
-#MINUS_O := -O3
+MINUS_O := -O3 -Wswitch
 
 # Paths to riscv-tools build directories on local system
 B := $(RVTOOLS)/riscv-isa-sim
@@ -26,17 +27,20 @@ HEADERS := options.h opcodes.h uspike.h instructions.h mmu.h hart.h
 libfiles := options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o hart.o
 bins := main.o gdblink.o $(libfiles)
 
-CXXFLAGS := $I -g $(MINUS_O)
+#CXXFLAGS := $I -g $(MINUS_O)
+CXXFLAGS := -g $(MINUS_O)
 CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O0
-LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
+#LIBS := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a -ldl
+LIBS := ~/lib/libsoftfloat.a
+#LIBS := $(RVTOOLS)/riscv-isa-sim/build/libsoftfloat.a
 LDFLAGS := -Wl,-Ttext=70000000
 
-uspike: $(bins) $(CAVA)/lib/libcava.a
-	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) $(CAVA)/lib/libcava.a $(LIBS)
+uspike: $(bins)
+	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) $(LIBS)
 
-$(CAVA)/lib/libcava.a:  mmu.h
-	make -j 16 -C insns
-	mv libcava.a $@
+#$(CAVA)/lib/libcava.a:  mmu.h
+#	make -j 16 -C insns
+#	mv libcava.a $@
 
 # Dependencies
 
@@ -44,15 +48,18 @@ main.o instructions.o interpreter.o: uspike.h opcodes.h instructions.h
 main.o options.o: options.h
 instructions.o: decoder.h constants.h 
 elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h
-interpreter.o:  dispatch_table.h fastops.h hart.h
+interpreter.o:  hart.h
 hart.o: hart.h
 hart.o decoder.h dispatch_table.h fastops.h: opcodes.h hart.h
 proxy_syscall.o: ecall_nums.h
 
 # Python scripts to create various files
-
 ecall_nums.h: Makefile syscall_mapping
 	./syscall_mapping < syscalls-riscv64 > $@
+
+# Create riscv opcodes
+opcodes.h:
+	make -C ../opcodes
 
 # Cleanup & installation
 

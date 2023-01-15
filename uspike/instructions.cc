@@ -30,66 +30,51 @@ void insnSpace_t::loadelf(const char* elfname)
   substitute_cas(_base, _limit);
 }
 
-Insn_t reg1insn(Opcode_t code, int8_t rd, int8_t rs1)
+
+Insn_t::Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3, int16_t imm)
 {
-  Insn_t i(code);
-  i.op_rd  = rd;
-  i.op_rs1 = rs1;
-  return i;
+  op_code = code;
+  op_rd = rd;
+  op_rs1 = rs1;
+  op.rs2 = rs2;
+  op.rs3 = rs3;
+  setimm(imm);
 }
 
-Insn_t reg2insn(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2)
+Insn_t::Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm)
 {
-  Insn_t i(code);
-  i.op_rd  = rd;
-  i.op_rs1 = rs1;
-  i.op.rs2 = rs2;
-  return i;
+  op_code = code;
+  op_rd = rd;
+  op_rs1 = rs1;
+  op.rs2 = rs2;
+  op.rs3 = NOREG;
+  setimm(imm);
 }
 
-Insn_t reg3insn(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3)
+Insn_t::Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int32_t longimmed)
 {
-  Insn_t i(code);
-  i.op_rd  = rd;
-  i.op_rs1 = rs1;
-  i.op.rs2 = rs2;
-  i.op.rs3 = rs3;
-  return i;
+  op_code = code;
+  op_rd = rd;
+  op_rs1 = rs1;
+  op_longimm = longimmed;
 }
 
-Insn_t reg0imm(Opcode_t code, int8_t rd, int32_t longimmed)
+Insn_t::Insn_t(Opcode_t code, int8_t rd, int32_t longimmed)
 {
-  Insn_t i(code);
-  i.op_rd = rd;
-  i.op_longimm = longimmed;
-  return i;
-}
-
-Insn_t reg1imm(Opcode_t code, int8_t rd, int8_t rs1, int16_t imm)
-{
-  Insn_t i(code, rd, imm);
-  i.op_rs1 = rs1;
-  return i;
-}
-
-Insn_t reg2imm(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm)
-{
-  Insn_t i(code, rd, imm);
-  i.op_rs1 = rs1;
-  i.op.rs2 = rs2;
-  return i;
+  op_code = code;
+  op_rd = rd;
+  op_rs1 = NOREG;
+  op_longimm = longimmed;
 }
 
 Insn_t decoder(int b, long pc)
 {
-  Insn_t i(Op_UNKNOWN);	       // recall all registers set to NOREG by default
 #define x( lo, len) ((b >> lo) & ((1 << len)-1))
 #define xs(lo, len) (b << (32-lo-len) >> (32-len))
   
 #include "decoder.h"
-  
- opcode_found:
-  return i;
+
+  die("Unknown opcode")
 }
 
 void redecode(long pc)
@@ -174,7 +159,7 @@ void substitute_cas(long lo, long hi)
     Opcode_t op;
     if (len == 8) op = (i.opcode() == Op_lr_w) ? Op_cas12_w : Op_cas12_d;
     else          op = (i.opcode() == Op_lr_w) ? Op_cas10_w : Op_cas10_d;
-    code.set(pc, reg3insn(op, flag_reg, addr_reg, test_reg, newv_reg));
+    code.set(pc, Insn_t(op, flag_reg, addr_reg, test_reg, newv_reg, i2.immed()));
     replaced++;
   }
   if (replaced != possible) {

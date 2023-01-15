@@ -11,8 +11,52 @@
 #include "options.h"
 #include "uspike.h"
 #include "instructions.h"
-#include "spike_link.h"
+#include "mmu.h"
 #include "hart.h"
+
+
+inline uint64_t mulhu(uint64_t a, uint64_t b)
+{
+  uint64_t t;
+  uint32_t y1, y2, y3;
+  uint64_t a0 = (uint32_t)a, a1 = a >> 32;
+  uint64_t b0 = (uint32_t)b, b1 = b >> 32;
+
+  t = a1*b0 + ((a0*b0) >> 32);
+  y1 = t;
+  y2 = t >> 32;
+
+  t = a0*b1 + y1;
+  y1 = t;
+
+  t = a1*b1 + y2 + (t >> 32);
+  y2 = t;
+  y3 = t >> 32;
+
+  return ((uint64_t)y3 << 32) | y2;
+}
+
+inline int64_t mulh(int64_t a, int64_t b)
+{
+  int negate = (a < 0) != (b < 0);
+  uint64_t res = mulhu(a < 0 ? -a : a, b < 0 ? -b : b);
+  return negate ? ~res + (a * b == 0) : res;
+}
+
+inline int64_t mulhsu(int64_t a, uint64_t b)
+{
+  int negate = a < 0;
+  uint64_t res = mulhu(a < 0 ? -a : a, b);
+  return negate ? ~res + (a * b == 0) : res;
+}
+
+
+
+
+
+
+
+
 
 #define THREAD_STACK_SIZE  (1<<14)
 
@@ -86,24 +130,32 @@ template<class T> bool hart_t::cas(long pc)
 
 extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* p);
 
-#define wrd(e)	xpr[i.rd()]=(e)
-#define r1	xpr[i.rs1()]
-#define r2	xpr[i.rs2()]
+#define wrd(e)	xrf[i.rd()]=(e)
+#define r1	xrf[i.rs1()]
+#define r2	xrf[i.rs2()]
 #define imm	i.immed()
 
+#if 0
 #define wfd(e)	STATE.FPR.write((i.rd()-FPREG), freg(e)), dirty_fp_state
 #define f1	READ_FREG(i.rs1()-FPREG)
 #define f2	READ_FREG(i.rs2()-FPREG)
 //#define f3	READ_FREG(i.rs3()-FPREG)
 #define f3	FRS3
+#endif
+
+#define wfd(e)	frf[i.rd()-FPREG] = freg(e)
+#define f1	frf[i.rs1()-FPREG]
+#define f2	frf[i.rs2()-FPREG]
+#define f3	frf[i.rs3()-FPREG]
 
 #define MMU	(*mmu())
 #define wpc(npc)  pc=MMU.jump_model(npc, pc)
+#define serialize()
 
 bool hart_t::interpreter(long how_many)
 {
-  processor_t* p = spike();
-  long* xpr = reg_file();
+  //  processor_t* p = spike();
+  //  long* xreg = reg_file();
   long pc = read_pc();
   long insns = 0;
 #ifdef DEBUG
@@ -115,11 +167,19 @@ bool hart_t::interpreter(long how_many)
     oldpc = pc;
     debug.insert(executed()+insns+1, pc);
 #endif
+
     mmu()->insn_model(pc);
     Insn_t i = code.at(pc);
-    insn_t insn = (long)(*(int32_t*)pc);
+
+#if 0
+    labelpc(pc);
+    disasm(pc);
+#endif
+    
+    //    insn_t insn = (long)(*(int32_t*)pc);
     switch ((Opcode_t)i.opcode()) {
     case Op_ZERO:  die("Op_ZERO opcode");
+      //    case Op_ZERO:  diesegv();
 
     case Op_c_addi4spn:  wrd(r1+imm); pc+=2; break;
     case Op_c_fld: wfd(f64(MMU.load_uint64(r1+imm)));  pc+=2; break;
@@ -153,7 +213,7 @@ bool hart_t::interpreter(long how_many)
     case Op_c_ldsp:  wrd(MMU.load_int64(r1+imm)); pc+=2; break;
     case Op_c_jr:  wpc(r1); break; pc+=2; break;
     case Op_c_mv:  wrd(r2); pc+=2; break;
-    case Op_c_ebreak:  throw trap_breakpoint(pc);
+    case Op_c_ebreak:  die("breakpoint not implemented");
     case Op_c_jalr:  { long t=pc+2; wpc(r1); wrd(t); break; }; pc+=2; break;
     case Op_c_add:  wrd(r1 + r2); pc+=2; break;
     case Op_c_fsdsp: MMU.store_uint64(r1+imm, f2.v[0]); pc+=2; break;
@@ -204,17 +264,17 @@ bool hart_t::interpreter(long how_many)
 
     case Op_fence:                       pc+=4; break; 
     case Op_fence_i: MMU.flush_icache(); pc+=4; break; 
-    case Op_ecall:  write_pc(pc); proxy_ecall(insns);; pc+=4; break;
+    case Op_ecall:   proxy_ecall(insns); pc+=4; break;
       //    case Op_ecall:  write_pc(pc); throw trap_user_ecall();
-    case Op_ebreak:  throw trap_breakpoint(pc);
+    case Op_ebreak:  die("breakpoint not implemented");
       
 #define r1n0  i.rs1()!=0
-    case Op_csrrw:   { int csr=imm;       reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr,                r1      ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
-    case Op_csrrwi:  { int csr=imm&0xFFF; reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr,                imm>>12 ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
-    case Op_csrrs:   { int csr=imm;       reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr, old |          r1      ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
-    case Op_csrrsi:  { int csr=imm&0xFFF; reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr, old |          imm>>12 ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
-    case Op_csrrc:   { int csr=imm;       reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr, old & ~        r1      ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
-    case Op_csrrci:  { int csr=imm&0xFFF; reg_t old=p->get_csr(csr, insn, r1n0); if (r1n0) p->set_csr(csr, old & ~(reg_t)(imm>>12)); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrw:   { int csr=imm;       long old=get_csr(csr, r1n0); if (r1n0) set_csr(csr,                r1      ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrwi:  { int csr=imm&0xFFF; long old=get_csr(csr, r1n0); if (r1n0) set_csr(csr,                imm>>12 ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrs:   { int csr=imm;       long old=get_csr(csr, r1n0); if (r1n0) set_csr(csr, old |          r1      ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrsi:  { int csr=imm&0xFFF; long old=get_csr(csr, r1n0); if (r1n0) set_csr(csr, old |          imm>>12 ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrc:   { int csr=imm;       long old=get_csr(csr, r1n0); if (r1n0) set_csr(csr, old & ~        r1      ); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
+    case Op_csrrci:  { int csr=imm&0xFFF; long old=get_csr(csr, r1n0); if (r1n0) set_csr(csr, old & ~(long)(imm>>12)); wrd(sext_xlen(old)); serialize(); pc+=4; break; }
       
     case Op_lwu: wrd(MMU.load_uint32(r1+imm)); pc+=4; break;
     case Op_ld:  wrd(MMU.load_int64 (r1+imm)); pc+=4; break;
@@ -254,11 +314,11 @@ bool hart_t::interpreter(long how_many)
 
 #undef RM
 #define RM ({ int rm = i.immed(); \
-              if(rm == 7) rm = STATE.frm; \
-              if(rm > 4) throw trap_illegal_instruction(insn.bits()); \
+              if(rm == 7) rm = fcsr.f.rm; \
+              if(rm > 4) die("Illegal instruction"); \
               rm; })
 #define srm  softfloat_roundingMode=RM
-#define sfx  set_fp_exceptions
+#define sfx  fcsr.f.flags |= softfloat_exceptionFlags;
 
 
 #define fmin_s_body() \
@@ -418,7 +478,7 @@ bool hart_t::interpreter(long how_many)
       }
 #endif
     } // switch (i.opcode())
-    xpr[0] = 0;
+    xrf[0] = 0;
 #ifdef DEBUG
     i = code.at(oldpc);
     int rn = i.rd()==NOREG ? i.rs2() : i.rd();
@@ -429,11 +489,4 @@ bool hart_t::interpreter(long how_many)
   incr_count(insns);
   return false;
 }
-
-#undef MMU
-long I_ZERO(long pc, mmu_t& MMU, hart_t* cpu)    { die("I_ZERO should never be dispatched!"); }
-long I_ILLEGAL(long pc, mmu_t& MMU, hart_t* cpu) { die("I_ILLEGAL at 0x%lx", pc); }
-long I_UNKNOWN(long pc, mmu_t& MMU, hart_t* cpu) { die("I_UNKNOWN at 0x%lx", pc); }
-
-#include "dispatch_table.h"
 
