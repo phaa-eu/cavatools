@@ -23,7 +23,6 @@
 
 #include "options.h"
 #include "uspike.h"
-#include "mmu.h"
 #include "hart.h"
 
 #include "elf_loader.h"

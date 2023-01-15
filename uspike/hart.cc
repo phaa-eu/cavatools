@@ -8,7 +8,6 @@
 #include "options.h"
 #include "uspike.h"
 #include "instructions.h"
-#include "mmu.h"
 #include "hart.h"
 
 volatile hart_t* hart_t::cpu_list =0;
@@ -89,9 +88,8 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 
 #endif
 
-#include "mmu.h"
 
-hart_t::hart_t(mmu_t* m, hart_t* from)
+hart_t::hart_t(hart_t* from)
 {
   if (from)
     memcpy(this, from, sizeof(hart_t));
@@ -100,7 +98,6 @@ hart_t::hart_t(mmu_t* m, hart_t* from)
     pc = code.entry();
   }
   my_tid = gettid();
-  caveat_mmu = m;
   _executed = 0;
   do {
     link = list();
@@ -122,7 +119,7 @@ void hart_t::set_tid()
 #define CSR_FRM		0x2
 #define CSR_FCSR	0x3
 
-long hart_t::get_csr(int what, bool write)
+long hart_t::get_csr(int what)
 {
   switch (what) {
   case CSR_FFLAGS:

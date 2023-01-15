@@ -162,19 +162,6 @@ diffcp('../uspike/decoder.h')
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
         (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
-        f.write('long I_{:s}(long pc, mmu_t& MMU, class processor_t* cpu);\n'.format(opcode.replace('.', '_')))
-    f.write('\n')
-    
-    f.write('long (*golden[])(long pc, mmu_t&MMU, class processor_t* cpu) = {')
-    n = 0
-    for opcode in opcodes:
-        if n % 4 == 0:
-            f.write('\n  ')
-        if opcode in instructions:
-            f.write('{:20s}'.format('&I_' + opcode.replace('.','_')+','))
-        else:
-            f.write('{:20s}'.format('0,'))
-        n += 1
-    f.write('\n};\n')
-diffcp('../uspike/dispatch_table.h')
+        f.write('    case {:20s} {:s}; pc+={:d}; break;\n'.format(opname+':', action, int(bytes)))
+diffcp('../uspike/semantics.h')
     

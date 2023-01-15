@@ -7,7 +7,6 @@
 #include "options.h"
 #include "uspike.h"
 #include "instructions.h"
-#include "mmu.h"
 #include "hart.h"
 #include "elf_loader.h"
 

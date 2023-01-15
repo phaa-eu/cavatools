@@ -28,32 +28,6 @@ struct Debug_t {
 };
 #endif
 
-#if 0
-class xreg_t {
-  long v;
-public:
-  operator  int64_t() { return { v }; }
-  operator uint64_t() { return { v }; }
-  operator  int32_t() { return { v }; }
-  operator uint32_t() { return { v }; }
-  void operator=(long w) { v=w; }
-};
-
-class freg_t {
-  union {
-    double d;
-    float f;
-    uint64_t ul;
-    uint32_t ui[2];
-  } v;
-public:
-  operator float64_t() { return { v.d }; }
-  operator float32_t() { return { v.f }; }
-  void operator=(float64_t w) { v.d=w; }
-  void operator=(float32_t w) { v.f=w; v.ui[1]=~0; }
-};
-#endif
-
 typedef int64_t		sreg_t;
 typedef uint64_t	reg_t;
 typedef float128_t	freg_t;
@@ -110,7 +84,6 @@ class hart_t {
     uint32_t ui;
   } fcsr;
 private:
-  class mmu_t* caveat_mmu;	// opaque pointer to our MMU
   static volatile hart_t* cpu_list;	// for find() using thread id
   hart_t* link;				// list of hart_t
   int my_tid;				// my Linux thread number
@@ -121,8 +94,8 @@ private:
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
 public:
-  hart_t(mmu_t* m, hart_t* p =0);
-  virtual hart_t* newcore() { return new hart_t(new mmu_t, this); }
+  hart_t(hart_t* p =0);
+  virtual hart_t* newcore() { return new hart_t(this); }
   //  virtual void proxy_syscall(long sysnum);
   void proxy_syscall(long sysnum);
   void proxy_ecall(long insns);
@@ -139,9 +112,6 @@ public:
   static hart_t* find(int tid);
   bool interpreter(long how_many);
   
-  //  class processor_t* spike() { return spike_cpu; }
-  class mmu_t* mmu() { return caveat_mmu; }
-  
   long read_reg(int n) { return xrf[n]; }
   void write_reg(int n, long value) { xrf[n]=value; }
   long* reg_file() { return (long*)xrf; }
@@ -149,10 +119,37 @@ public:
   void write_pc(long value) { pc=value; }
   long* ptr_pc() { return &pc; }
 
-  long get_csr(int what, bool write);
+  long get_csr(int what);
   void set_csr(int what, long value);
 
+  template<typename op>	uint64_t csr_func(uint64_t what, op f) {
+    uint64_t old = get_csr(what);
+    set_csr(what, f(old));
+    return old;
+  }
+
   template<class T> bool cas(long pc);
+
+  template<typename op>	uint32_t amo_uint32(long a, op f) {
+    uint32_t lhs, *ptr = (uint32_t*)a;
+    do lhs = *ptr;
+    while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
+    //    amo_model(a, pc);
+    return lhs;
+  }
+  template<typename op>	uint64_t amo_uint64(long a, op f) {
+    uint64_t lhs, *ptr = (uint64_t*)a;
+    do lhs = *ptr;
+    while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
+    //    amo_model(a, pc);
+    return lhs;
+  }
+
+  void acquire_reservation(long a) { }
+  void yield_reservation() { }
+  bool check_reservation(long a, long size) { return true; }
+  void flush_icache() { }
+  void flush_tlb() { }
 
 #ifdef DEBUG
   Debug_t debug;

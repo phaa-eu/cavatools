@@ -9,7 +9,6 @@
 #include "options.h"
 #include "uspike.h"
 #include "instructions.h"
-#include "mmu.h"
 #include "hart.h"
 
 option<long> conf_show("show",		0, 				"Trace execution after N gdb continue");
@@ -49,7 +48,7 @@ int main(int argc, const char* argv[], const char* envp[])
   start_time();
   code.loadelf(argv[0]);
   long sp = initialize_stack(argc, argv, envp);
-  hart_t* mycpu = new hart_t(new mmu_t());
+  hart_t* mycpu = new hart_t;
   mycpu->write_reg(2, sp);	// x2 is stack pointer
 
 #ifdef DEBUG
