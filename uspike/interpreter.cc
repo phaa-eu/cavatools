@@ -186,7 +186,7 @@ template<class T> bool hart_t::cas(long pc)
 #define f2	frf[i.rs2()-FPREG]
 #define f3	frf[i.rs3()-FPREG]
 
-#define wpc(npc)  pc=npc
+//#define wpc(npc)  pc=MMU.jump_model(npc, pc)
 
 
 #define ebreak()  die("breakpoint not implemented");
@@ -194,24 +194,28 @@ template<class T> bool hart_t::cas(long pc)
 #define fence(n)  
 
 
-template<typename T> inline T* MEM(long a) { return (T*)a; }
 
 bool hart_t::interpreter(long how_many)
 {
   //  processor_t* p = spike();
   //  long* xreg = reg_file();
-  long pc = read_pc();
+  //  long pc = read_pc();
   long insns = 0;
 #ifdef DEBUG
   long oldpc;
 #endif
   do {
+#if 0
+    labelpc(pc);
+    disasm(pc);
+#endif
+
 #ifdef DEBUG
     dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
     oldpc = pc;
     debug.insert(executed()+insns+1, pc);
 #endif
-
+    
     Insn_t i = code.at(pc);
     switch ((Opcode_t)i.opcode()) {
     case Op_ZERO:  die("Op_ZERO opcode");
@@ -235,7 +239,8 @@ bool hart_t::interpreter(long how_many)
     debug.addval(i.rd(), read_reg(rn));
 #endif
   } while (++insns < how_many);
-  write_pc(pc);
+  
+  //  write_pc(pc);
   incr_count(insns);
   return false;
 }

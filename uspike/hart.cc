@@ -89,7 +89,7 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 #endif
 
 
-hart_t::hart_t(hart_t* from)
+hart_t::hart_t(mmu_t* m, hart_t* from)
 {
   if (from)
     memcpy(this, from, sizeof(hart_t));
@@ -97,6 +97,7 @@ hart_t::hart_t(hart_t* from)
     memset(this, 0, sizeof(hart_t));
     pc = code.entry();
   }
+  mmu = m;
   my_tid = gettid();
   _executed = 0;
   do {

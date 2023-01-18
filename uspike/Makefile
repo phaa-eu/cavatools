@@ -8,14 +8,15 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-#MINUS_O := -Ofast -Wswitch
-#MINUS_O := -O0
+MINUS_O := -Ofast -Wswitch
 #MINUS_O := -O0 -DDEBUG
+
+#MINUS_O := -O0
 #MINUS_O := -O3 -DDEBUG
-MINUS_O := -O3 -Wswitch
+#MINUS_O := -O3 -Wswitch
 
 # Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
-HEADERS := options.h opcodes.h uspike.h instructions.h hart.h
+HEADERS := options.h opcodes.h uspike.h instructions.h hart.h mmu.h
 
 # Compiling options
 

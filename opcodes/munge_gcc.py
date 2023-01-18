@@ -5,6 +5,8 @@ import re
 opcode_line = re.compile('^([ +])\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
 reglist_field = re.compile('^(\S)\[(\d+):(\d+)\](\+\d+)?$')
 
+cava_comment = re.compile('\s*/\*\s*CAVA((?:\s+\w+)+)\s*\*/')
+
 def eprint(*args):
     sys.stderr.write(' '.join(map(str,args)) + '\n')
 
@@ -69,29 +71,9 @@ def ParseOpcode(bits):
     return (code, mask, pos/8, immed, immtyp)
 
 
-def ParseReglist(reglist):
-    rv = []
-    for r in reglist.split(','):
-        if r == '-':
-            rv.append('NOREG')
-            continue
-        elif r[0].isnumeric():
-            rv.append(r)
-            continue
-        m = reglist_field.match(r)
-        if not m:
-            eprint('Illegal register specifier', r, 'in', reglist)
-            exit(-1)
-        (typ, hi, lo, plus) = m.groups()
-        if not plus:
-            plus = ''
-        if   typ == 'x':  typ = '+GPREG'
-        elif typ == 'f':  typ = '+FPREG'
-        else:
-            eprint('unknown type of register', typ, 'in', reglist)
-            exit(-1)
-        rv.append('x({:d},{:d}){:s}{:s}'.format(int(lo), int(hi)-int(lo)+1, plus, typ))
-    return rv
+def ParseReglist(r):
+    return None
+
 
 def diffcp(fname):
     if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
@@ -99,69 +81,75 @@ def diffcp(fname):
     else:
         os.system('mv newcode.tmp '+fname)
 
+        
 instructions = {}
 for line in sys.stdin:
     m = opcode_line.match(line)
     if not m: continue
     (kind, opcode, asm, isa, req, bits, reglist, action) = m.groups()
+    if kind != '+':
+        continue
     opname = 'Op_' + opcode.replace('.', '_')
     reglist = ParseReglist(reglist)
     (code, mask, bytes, immed, immtyp) = ParseOpcode(bits)
     instructions[opcode] = (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action)
-    if bytes == 2:
-        last_compressed_opcode = opcode
 
 opcodes = ['ZERO'] + [key for key in instructions] + ['cas10_w', 'cas10_d', 'cas12_w', 'cas12_d'] + ['ILLEGAL', 'UNKNOWN']
 
 
-with open('newcode.tmp', 'w') as f:
-    f.write('enum Opcode_t : short {')
-    n = 0
-    for opcode in opcodes:
-        if n % 4 == 0:
-            f.write('\n  ')
-        f.write('{:20s}'.format('Op_' + opcode.replace('.','_') + ','))
-        n += 1
-    f.write('\n};\n\n')
-    f.write('const Opcode_t Last_Compressed_Opcode = Op_{:s};\n'.format(last_compressed_opcode.replace('.','_')))
-diffcp('../uspike/opcodes.h')
-
-
-with open('newcode.tmp', 'w') as f:
-    f.write('const char* op_name[] = {')
-    n = 0
-    for opcode in opcodes:
-        if n % 4 == 0:
-            f.write('\n  ')
-        f.write('{:20s}'.format('"' + opcode.replace('.','_') + '",'))
-        n += 1
-    f.write('\n};\n')
-diffcp('../uspike/constants.h')
-
-
-with open('newcode.tmp', 'w') as f:
-    for opcode, t in instructions.items():
-        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
-        f.write('  if((b&{:s})=={:s}) return '.format(mask, code))
-        if len(reglist) == 4:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], reglist[2], reglist[3], immed))
-        elif len(reglist) == 3:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], reglist[2], immed))
-        elif len(reglist) == 2:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], immed))
-        elif len(reglist) == 1:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], immed))
-        elif len(reglist) == 0:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s})'.format(opname, 'NOREG', immed))
-        else:
-            eprint('reglist length not 0-4')
-            exit(-1)
-        f.write(';\n')
-diffcp('../uspike/decoder.h')
-
-with open('newcode.tmp', 'w') as f:
-    for opcode, t in instructions.items():
-        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
-        f.write('    case {:20s} {:s}; pc+={:d}; break;\n'.format(opname+':', action, int(bytes)))
-diffcp('../uspike/semantics.h')
+def munge_riscv_opc_files(s, f):
+    line = s.readline()
+    while line:
+        m = cava_comment.match(line)
+        if  m:
+            directive = m.group(1)
+            if 'begin' in directive:
+                what = directive.split()[1]
+                f.write(line)
+                # Skip old stuff between begin and end
+                while True:
+                    line = s.readline()
+                    m = cava_comment.match(line)
+                    if m:  break
+                # make sure end is same as begin
+                if m.group(1).split()[1] != what:
+                    print('CAVA end does not match CAVA begin')
+                    exit(-1)
+                if what == 'define':
+                    for opcode, t in instructions.items():
+                        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
+                        upper_op = opname.upper()
+                        f.write('#define MATCH_{:s}  {:s}\n'.format(upper_op, code))
+                        f.write('#define MASK_{:s}  {:s}\n'.format(upper_op, mask))
+                elif what == 'declare':
+                    for opcode, t in instructions.items():
+                        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
+                        upper_op = opname.upper()
+                        f.write('DECLARE_INSN({:s}, MATCH_{:s}, MASK_{:s})\n'.format(opname, upper_op, upper_op))
+                elif what == 'opcode':
+                    for opcode, t in instructions.items():
+                        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
+                        upper_op = opname.upper()
+                        clas = 'I'
+                        f.write('{{{:17} {:2d}, INSN_CLASS_{:s}, {:11s} MATCH_{:s}, MASK_{:s}, match_opcode, 0 }},\n'
+                                .format('"'+opcode+'",', 0, clas, '"'+asm+'",', upper_op, upper_op)) 
+                else:
+                    print('Unrecognizable CAVA directive', what)
+                    exit(-1)
+        f.write(line)
+        line = s.readline()
     
+    
+repo = '/opt/riscv-gnu-toolchain/'
+files = [ repo+'gdb/include/opcode/riscv-opc.h',
+          repo+'/binutils/include/opcode/riscv-opc.h',
+          repo+'gdb/opcodes/riscv-opc.c',
+          repo+'/binutils/opcodes/riscv-opc.c'
+         ]
+
+for n in files:
+    with open(n, 'r') as s, open('newcode.tmp', 'w') as f:
+        munge_riscv_opc_files(s, f)
+    diffcp(n)
+
+

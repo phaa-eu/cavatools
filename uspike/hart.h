@@ -6,6 +6,7 @@ extern "C" {
 #include "softfloat.h"
 #include "softfloat_types.h"
 };
+#include "mmu.h"
 
 #ifdef DEBUG
 struct pctrace_t {
@@ -73,6 +74,7 @@ inline freg_t freg(float128_t f) { return f; }
 
 class hart_t {
   //  class processor_t* spike_cpu;	// opaque pointer to Spike structure
+  mmu_t* mmu;
   reg_t  xrf[32];
   freg_t frf[32];
   long pc;
@@ -94,8 +96,8 @@ private:
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
 public:
-  hart_t(hart_t* p =0);
-  virtual hart_t* newcore() { return new hart_t(this); }
+  hart_t(mmu_t* m, hart_t* p);
+  virtual hart_t* newcore() { return new hart_t(0, this); }
   //  virtual void proxy_syscall(long sysnum);
   void proxy_syscall(long sysnum);
   void proxy_ecall(long insns);
@@ -129,6 +131,15 @@ public:
   }
 
   template<class T> bool cas(long pc);
+
+  template<typename T> inline T*  MEM(long a) { return (T*)mmu->load_model (a, pc); }
+  template<typename T> inline T* WMEM(long a) { return (T*)mmu->store_model(a, pc); }
+  template<typename T> inline T* AMEM(long a) { return (T*)mmu->store_model(a, pc); }
+
+  template<typename T> inline T*  VMEM(long a) { return (T*)mmu->vload_model (a, pc); }
+  template<typename T> inline T* WVMEM(long a) { return (T*)mmu->vstore_model(a, pc); }
+
+  void wpc(long npc) { pc=mmu->jump_model(npc, pc); }
 
   template<typename op>	uint32_t amo_uint32(long a, op f) {
     uint32_t lhs, *ptr = (uint32_t*)a;

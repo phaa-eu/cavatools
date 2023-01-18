@@ -6,9 +6,9 @@
    c.fld	CD,Cl(Cs)	C,D	fp,mmu		"001 {5:3} ... {7:6} ... 00"			f[4:2]+8,x[9:7]+8,-,-			"wfd(f64(*MEM<uint64_t>(r1+imm)))"
    c.lw		Ct,Cl(Cs)	C	mmu		"010 {5:3} ... {2|6} ... 00"			x[4:2]+8,x[9:7]+8,-,-			"wrd(*MEM<int32_t>(r1+imm))"
    c.ld		Ct,Cl(Cs)	C,F	fp,mmu		"011 {5:3} ... {7:6} ... 00"			x[4:2]+8,x[9:7]+8,-,-			"wrd(*MEM<int64_t>(r1+imm))"
-   c.fsd	CD,Cl(Cs)	C,D	fp,mmu		"101 {5:3} ... {7:6} ... 00"			-,x[9:7]+8,f[4:2]+8,-			"*WMEM<uint64_t>(r1+imm) = f2.v[0]"
-   c.sw		Ct,Cl(Cs)	C	mmu		"110 {5:3} ... {2|6} ... 00"			-,x[9:7]+8,x[4:2]+8,-			"*WMEM<int32_t>(r1+imm) = r2"
-   c.sd		Ct,Cl(Cs)	C,F	fp,mmu		"111 {5:3} ... {7:6} ... 00"			-,x[9:7]+8,x[4:2]+8,-			"*WMEM<int64_t>(r1+imm) = r2"
+   c.fsd	CD,Cl(Cs)	C,D	fp,mmu		"101 {5:3} ... {7:6} ... 00"			-,x[9:7]+8,f[4:2]+8,-			"*MEM<uint64_t>(r1+imm) = f2.v[0]"
+   c.sw		Ct,Cl(Cs)	C	mmu		"110 {5:3} ... {2|6} ... 00"			-,x[9:7]+8,x[4:2]+8,-			"*MEM<int32_t>(r1+imm) = r2"
+   c.sd		Ct,Cl(Cs)	C,F	fp,mmu		"111 {5:3} ... {7:6} ... 00"			-,x[9:7]+8,x[4:2]+8,-			"*MEM<int64_t>(r1+imm) = r2"
 
 # RVC Compressed Instruction Set, Quadrant 1
 "
@@ -41,9 +41,9 @@
    c.ebreak	-		-	-		"100 1 00000 00000 10"				-,-,-,-					"ebreak()"
    c.jalr	rs1		C	pc		"100 1 ..... 00000 10"				1,x[11:7],-,-				"{ long t=pc+2; wpc(r1); wrd(t); break; }"
    c.add	rd,rs2		-	-		"100 1 ..... ..... 10"				x[11:7],x[11:7],x[6:2],-		"wrd(r1 + r2)"
-   c.fsdsp	fs2		C,D	fp,mmu		"101 {5:3|8:6} ..... 10"			-,2,f[6:2],-				"*WMEM<uint64_t>(r1+imm) = f2.v[0]"
-   c.swsp	rs2		C	mmu		"110 {5:2|7:6} ..... 10"			-,2,x[6:2],-				"*WMEM<int32_t>(r1+imm) = r2"
-   c.sdsp	rs2		C,F	fp,mmu		"111 {5:3|8:6} ..... 10"			-,2,x[6:2],-				"*WMEM<int64_t>(r1+imm) = r2"
+   c.fsdsp	fs2		C,D	fp,mmu		"101 {5:3|8:6} ..... 10"			-,2,f[6:2],-				"*MEM<uint64_t>(r1+imm) = f2.v[0]"
+   c.swsp	rs2		C	mmu		"110 {5:2|7:6} ..... 10"			-,2,x[6:2],-				"*MEM<int32_t>(r1+imm) = r2"
+   c.sdsp	rs2		C,F	fp,mmu		"111 {5:3|8:6} ..... 10"			-,2,x[6:2],-				"*MEM<int64_t>(r1+imm) = r2"
 
 # RV32I Base Instruction Set
 
@@ -64,9 +64,9 @@
    lw		d,o(s)		I	mmu		"{-11:0} ..... 010 ..... 0000011"		x[11:7],x[19:15],-,-			"wrd(*MEM< int32_t>(r1+imm))"
    lbu		d,o(s)		I	mmu		"{-11:0} ..... 100 ..... 0000011"		x[11:7],x[19:15],-,-			"wrd(*MEM<uint8_t> (r1+imm))"
    lhu		d,o(s)		I	mmu		"{-11:0} ..... 101 ..... 0000011"		x[11:7],x[19:15],-,-			"wrd(*MEM<uint16_t>(r1+imm))"
-   sb		t,q(s)		I	mmu		"{-11:5} ..... ..... 000 {4:0} 0100011"		-,x[19:15],x[24:20],-			"*WMEM<int8_t> (r1+imm) = r2"
-   sh		t,q(s)		I	mmu		"{-11:5} ..... ..... 001 {4:0} 0100011"		-,x[19:15],x[24:20],-			"*WMEM<int16_t>(r1+imm) = r2"
-   sw		t,q(s)		I	mmu		"{-11:5} ..... ..... 010 {4:0} 0100011"		-,x[19:15],x[24:20],-			"*WMEM<int32_t>(r1+imm) = r2"
+   sb		t,q(s)		I	mmu		"{-11:5} ..... ..... 000 {4:0} 0100011"		-,x[19:15],x[24:20],-			"*MEM<int8_t> (r1+imm) = r2"
+   sh		t,q(s)		I	mmu		"{-11:5} ..... ..... 001 {4:0} 0100011"		-,x[19:15],x[24:20],-			"*MEM<int16_t>(r1+imm) = r2"
+   sw		t,q(s)		I	mmu		"{-11:5} ..... ..... 010 {4:0} 0100011"		-,x[19:15],x[24:20],-			"*MEM<int32_t>(r1+imm) = r2"
 
    addi		d,s,j		-	-		"{-11:0} ..... 000 ..... 0010011"		x[11:7],x[19:15],-,-			"wrd(r1 + imm)"
    slti		d,s,j		-	-		"{-11:0} ..... 010 ..... 0010011"		x[11:7],x[19:15],-,-			"wrd( int64_t(r1) <  int64_t(imm))"
@@ -105,7 +105,7 @@
 
    lwu		d,o(s)		I	mmu		"{-11:0} ..... 110 ..... 0000011"		x[11:7],x[19:15],-,-			"wrd(*MEM<uint32_t>(r1+imm))"
    ld		d,o(s)		I	mmu		"{-11:0} ..... 011 ..... 0000011"		x[11:7],x[19:15],-,-			"wrd(*MEM<int64_t> (r1+imm))"
-   sd		t,q(s)		I	mmu		"{-11:5} ..... ..... 011 {4:0} 0100011"		-,x[19:15],x[24:20],-			"*WMEM<int64_t>(r1+imm) = r2"
+   sd		t,q(s)		I	mmu		"{-11:5} ..... ..... 011 {4:0} 0100011"		-,x[19:15],x[24:20],-			"*MEM<int64_t>(r1+imm) = r2"
 
    addiw	d,s,j		-	-		"{-11:0} ..... 000 ..... 0011011"		x[11:7],x[19:15],-,-			"wrd( int32_t(r1) +  int32_t(imm))"
    slliw	d,s,<		-	-		"0000000 {4:0} ..... 001 ..... 0011011"		x[11:7],x[19:15],-,-			"wrd(uint32_t(r1) << imm)"
@@ -139,8 +139,8 @@
 
 # RV32A Standard Extension
 
-   lr.w		d,0(s)		A	mmu,lrsc	"00010 {1:0} 00000 ..... 010 ..... 0101111"	x[11:7],x[19:15],-,-			"{ int32_t rv=*MEM<int32_t>(r1);                                 acquire_reservation(r1); wrd( rv); }"
-   sc.w		d,t,0(s)	A	mmu,lrsc	"00011 {1:0} ..... ..... 010 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"{ bool ok=check_reservation(r1, 4); if (ok) *AMEM<uint32_t>(r1)=r2; yield_reservation(); wrd(!ok); }"
+   lr.w		d,0(s)		A	mmu,lrsc	"00010 {1:0} 00000 ..... 010 ..... 0101111"	x[11:7],x[19:15],-,-			"{ int32_t rv=*MEM<int32_t>(r1);                                acquire_reservation(r1); wrd( rv); }"
+   sc.w		d,t,0(s)	A	mmu,lrsc	"00011 {1:0} ..... ..... 010 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"{ bool ok=check_reservation(r1, 4); if (ok) *MEM<uint32_t>(r1)=r2; yield_reservation(); wrd(!ok); }"
    amoswap.w	d,t,0(s)	A	mmu,amo		"00001 {1:0} ..... ..... 010 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return       r2; } )))"
    amoadd.w	d,t,0(s)	A	mmu,amo		"00000 {1:0} ..... ..... 010 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"wrd(sext32(amo_uint32(r1, [&]( int32_t lhs) { return lhs + r2; } )))"
    amoxor.w	d,t,0(s)	A	mmu,amo		"00100 {1:0} ..... ..... 010 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return lhs ^ r2; } )))"
@@ -151,8 +151,8 @@
    amominu.w	d,t,0(s)	A	mmu,amo		"11000 {1:0} ..... ..... 010 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return std::min(lhs, uint32_t(r2)); } )))"
    amomaxu.w	d,t,0(s)	A	mmu,amo		"11100 {1:0} ..... ..... 010 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); } )))"
 
-   lr.d		d,0(s)		A	mmu,lrsc	"00010 {1:0} 00000 ..... 011 ..... 0101111"	x[11:7],x[19:15],-,-			"{ int64_t rv=*MEM<int64_t>(r1);                                 acquire_reservation(r1); wrd( rv); }"
-   sc.d		d,t,0(s)	A	mmu,lrsc	"00011 {1:0} ..... ..... 011 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"{ bool ok=check_reservation(r1, 4); if (ok) *AMEM<uint64_t>(r1)=r2; yield_reservation(); wrd(!ok); }"
+   lr.d		d,0(s)		A	mmu,lrsc	"00010 {1:0} 00000 ..... 011 ..... 0101111"	x[11:7],x[19:15],-,-			"{ int64_t rv=*MEM<int64_t>(r1);                                acquire_reservation(r1); wrd( rv); }"
+   sc.d		d,t,0(s)	A	mmu,lrsc	"00011 {1:0} ..... ..... 011 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"{ bool ok=check_reservation(r1, 4); if (ok) *MEM<uint64_t>(r1)=r2; yield_reservation(); wrd(!ok); }"
    amoswap.d	d,t,0(s)	A	mmu,amo		"00001 {1:0} ..... ..... 011 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"wrd(      (amo_uint64(r1, [&](uint64_t lhs) { return       r2; } )))"
    amoadd.d	d,t,0(s)	A	mmu,amo		"00000 {1:0} ..... ..... 011 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"wrd(      (amo_uint64(r1, [&]( int64_t lhs) { return lhs + r2; } )))"
    amoxor.d	d,t,0(s)	A	mmu,amo		"00100 {1:0} ..... ..... 011 ..... 0101111"	x[11:7],x[19:15],x[24:20],-		"wrd(      (amo_uint64(r1, [&](uint64_t lhs) { return lhs ^ r2; } )))"
@@ -165,8 +165,8 @@
 
 # RV32F Standard Extension
 
-   flw		D,o(s)		F	fp,mmu		"{-11:0} ..... 010 ..... 0000111"		f[11:7],x[19:15],-,-			"wfd(f32(*MEM<uint32_t>(r1+imm)))"
-   fsw		T,q(s)		F	fp,mmu		"{-11:5} ..... ..... 010 {4:0} 0100111"		-,x[19:15],f[24:20],-			"*WMEM<uint32_t>(r1+imm) = f2.v[0]"
+   flw		d,o(s)		F	fp,mmu		"{-11:0} ..... 010 ..... 0000111"		f[11:7],x[19:15],-,-			"wfd(f32(*MEM<uint32_t>(r1+imm)))"
+   fsw		t,q(s)		F	fp,mmu		"{-11:5} ..... ..... 010 {4:0} 0100111"		-,x[19:15],f[24:20],-			"*MEM<uint32_t>(r1+imm) = f2.v[0]"
 
    fmadd.s	D,S,T,R,m	F	fp		"..... 00 ..... ..... {2:0} ..... 1000011"	f[11:7],f[19:15],f[24:20],f[31:27]	"srm; wfd(f32_mulAdd(f32(f1),                 f32(f2),     f32(f3)            )); sfx"
    fmsub.s	D,S,T,R,m	F	fp		"..... 00 ..... ..... {2:0} ..... 1000111"	f[11:7],f[19:15],f[24:20],f[31:27]	"srm; wfd(f32_mulAdd(f32(f1),                 f32(f2), f32(f32(f3).v^F32_SIGN))); sfx"
@@ -207,8 +207,8 @@
 
 # RV32D Standard Extension
 
-   fld		D,o(s)		D	fp,mmu		"{-11:0} ..... 011 ..... 0000111"		f[11:7],x[19:15],-,-			"wfd(f64(*MEM<uint64_t>(r1+imm)))"
-   fsd		T,q(s)		D	fp,mmu		"{-11:5} ..... ..... 011 {4:0} 0100111"		-,x[19:15],f[24:20],-			"*WMEM<uint64_t>(r1+imm) = f2.v[0]"
+   fld		d,o(s)		D	fp,mmu		"{-11:0} ..... 011 ..... 0000111"		f[11:7],x[19:15],-,-			"wfd(f64(*MEM<uint64_t>(r1+imm)))"
+   fsd		t,q(s)		D	fp,mmu		"{-11:5} ..... ..... 011 {4:0} 0100111"		-,x[19:15],f[24:20],-			"*MEM<uint64_t>(r1+imm) = f2.v[0]"
 
    fmadd.d	D,S,T,R,m	D	fp		"..... 01 ..... ..... {2:0} ..... 1000011"	f[11:7],f[19:15],f[24:20],f[31:27]	"srm; wfd(f64_mulAdd(f64(f1),                 f64(f2),     f64(f3)            )); sfx"
    fmsub.d	D,S,T,R,m	D	fp		"..... 01 ..... ..... {2:0} ..... 1000111"	f[11:7],f[19:15],f[24:20],f[31:27]	"srm; wfd(f64_mulAdd(f64(f1),                 f64(f2), f64(f64(f3).v^F64_SIGN))); sfx"
@@ -248,21 +248,3 @@
    fcvt.d.l	D,s,m		D	fp		"1101001 00010 ..... {2:0} ..... 1010011"	f[11:7],x[19:15],-,-			"wfd(i64_to_f64( ( int64_t)r1));              sfx"
    fcvt.d.lu	D,s,m		D	fp		"1101001 00011 ..... {2:0} ..... 1010011"	f[11:7],x[19:15],-,-			"wfd(ui64_to_f64((uint64_t)r1));              sfx"
    fmv.d.x	D,s		D	fp		"1111001 00000 ..... 000 ..... 1010011"		f[11:7],x[19:15],-,-			"wfd(f64(r1))"
-
-# Custom Instructions
-
-+  lvb		d,o(s)		I	mmu		"{-11:0}       ..... 000 ..... 0001011"		x[11:7],x[19:15],-,-			"wrd(*VMEM< int8_t> (r1+imm))"
-+  lvh		d,o(s)		I	mmu		"{-11:0}       ..... 001 ..... 0001011"		x[11:7],x[19:15],-,-			"wrd(*VMEM< int16_t>(r1+imm))"
-+  lvw		d,o(s)		I	mmu		"{-11:0}       ..... 010 ..... 0001011"		x[11:7],x[19:15],-,-			"wrd(*VMEM< int32_t>(r1+imm))"
-+  lvbu		d,o(s)		I	mmu		"{-11:0}       ..... 100 ..... 0001011"		x[11:7],x[19:15],-,-			"wrd(*VMEM<uint8_t> (r1+imm))"
-+  lvhu		d,o(s)		I	mmu		"{-11:0}       ..... 101 ..... 0001011"		x[11:7],x[19:15],-,-			"wrd(*VMEM<uint16_t>(r1+imm))"
-
-+  lvwu		d,o(s)		I	mmu		"{-11:0}       ..... 110 ..... 0001011"		x[11:7],x[19:15],-,-			"wrd(*VMEM<uint32_t>(r1+imm))"
-+  lvd		d,o(s)		I	mmu		"{-11:0}       ..... 011 ..... 0001011"		x[11:7],x[19:15],-,-			"wrd(*VMEM<int64_t> (r1+imm))"
-
-+  flvw		D,o(s)		F	fp,mmu		"{-11:0}       ..... 010 ..... 0100111"		f[11:7],x[19:15],-,-			"wfd(f32(*VMEM<uint32_t>(r1+imm)))"
-+  fsvw		T,q(s)		F	fp,mmu		"{-11:5} ..... ..... 110 {4:0} 0100111"		-,x[19:15],f[24:20],-			"*WVMEM<uint32_t>(r1+imm) = f2.v[0]"
-
-+  flvd		D,o(s)		D	fp,mmu		"{-11:0}       ..... 011 ..... 0100111"		f[11:7],x[19:15],-,-			"wfd(f64(*VMEM<uint64_t>(r1+imm)))"
-+  fsvd		T,q(s)		D	fp,mmu		"{-11:5} ..... ..... 111 {4:0} 0100111"		-,x[19:15],f[24:20],-			"*WVMEM<uint64_t>(r1+imm) = f2.v[0]"
-

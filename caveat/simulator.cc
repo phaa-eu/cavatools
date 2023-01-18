@@ -9,10 +9,10 @@
 #include "options.h"
 #include "uspike.h"
 #include "instructions.h"
-#include "mmu.h"
 #include "hart.h"
 #include "cache.h"
 #include "perf.h"
+#include "mmu.h"
 
 using namespace std;
 void* operator new(size_t size);
@@ -20,37 +20,58 @@ void operator delete(void*) noexcept;
 
 option<long> conf_Jump("jump",	2,		"Taken branch pipeline flush cycles");
 
-option<int> conf_Imiss("imiss",	15,		"Instruction cache miss penalty");
+option<int> conf_Imiss("imiss",	100,		"Instruction cache miss penalty");
 option<int> conf_Iways("iways", 4,		"Instruction cache number of ways associativity");
 option<int> conf_Iline("iline",	6,		"Instruction cache log-base-2 line size");
 option<int> conf_Irows("irows",	6,		"Instruction cache log-base-2 number of rows");
 
-option<int> conf_Dmiss("dmiss",	15,		"Data cache miss penalty");
+option<int> conf_Dmiss("dmiss",	100,		"Data cache miss penalty");
 option<int> conf_Dways("dways", 4,		"Data cache number of ways associativity");
 option<int> conf_Dline("dline",	6,		"Data cache log-base-2 line size");
-option<int> conf_Drows("drows",	6,		"Data cache log-base-2 number of rows");
+option<int> conf_Drows("drows",	8,		"Data cache log-base-2 number of rows");
+
+option<int> conf_Vmiss("vmiss",	100,		"Vector cache miss penalty");
+option<int> conf_Vways("vways", 4,		"Vector cache number of ways associativity");
+option<int> conf_Vline("vline",	10,		"Vector cache log-base-2 line size");
+option<int> conf_Vrows("vrows",	4,		"Vector cache log-base-2 number of rows");
+
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
 option<>    conf_perf( "perf",	"caveat",	"Name of shared memory segment");
 
-class mem_t : public mmu_t, public perf_t {
-public:
+class core_t : public mmu_t, public hart_t, public perf_t {
+  static volatile long global_time;
   long local_time;
-  mem_t(long n);
+  cache_t ic;
+  cache_t dc;
+  cache_t vdc;
+public:
+  core_t();
+  //  core_t* newcore() { return new core_t(this); }
+  void proxy_syscall(long sysnum);
+  
+  static core_t* list() { return (core_t*)hart_t::list(); }
+  core_t* next() { return (core_t*)hart_t::next(); }
+
+  long system_clock() { return global_time; }
+  long local_clock() { return local_time; }
+  void update_time();
+  
   void insn_model(long pc);
   long jump_model(long npc, long pc);
   long load_model( long a,  long pc);
   long store_model(long a,  long pc);
   void amo_model(  long a,  long pc);
+
+  long vload_model( long a,  long pc);
+  long vstore_model(long a,  long pc);
+  
   cache_t* dcache() { return &dc; }
-  long clock() { return local_time; }
+  cache_t* vdcache() { return &vdc; }
   void print();
-private:
-  cache_t ic;
-  cache_t dc;
 };
 
-inline void mem_t::insn_model(long pc)
+inline void core_t::insn_model(long pc)
 {
   if (!ic.lookup(pc)) {
     local_time += ic.penalty();
@@ -62,14 +83,14 @@ inline void mem_t::insn_model(long pc)
   local_time += 1;
 }
 
-inline long mem_t::jump_model(long npc, long pc)
+inline long core_t::jump_model(long npc, long pc)
 {
   local_time += conf_Jump;
   inc_cycle(npc, conf_Jump);
   return npc;
 }
 
-inline long mem_t::load_model(long a, long pc)
+inline long core_t::load_model(long a, long pc)
 {
   if (!dc.lookup(a)) {
     inc_dmiss(pc);
@@ -79,7 +100,7 @@ inline long mem_t::load_model(long a, long pc)
   return a;
 }
 
-inline long mem_t::store_model(long a, long pc)
+inline long core_t::store_model(long a, long pc)
 {
   if (!dc.lookup(a, true)) {
     inc_dmiss(pc);
@@ -89,7 +110,7 @@ inline long mem_t::store_model(long a, long pc)
   return a;
 }
 
-inline void mem_t::amo_model(long a, long pc)
+inline void core_t::amo_model(long a, long pc)
 {
   if (!dc.lookup(a, true)) {
     inc_dmiss(pc);
@@ -98,48 +119,47 @@ inline void mem_t::amo_model(long a, long pc)
   }
 }
 
-class core_t : public mem_t, public hart_t {
-  static volatile long global_time;
-public:
-  core_t();
-  core_t(core_t* p);
-  core_t* newcore() { return new core_t(this); }
-  void proxy_syscall(long sysnum);
-  
-  static core_t* list() { return (core_t*)hart_t::list(); }
-  core_t* next() { return (core_t*)hart_t::next(); }
-  mem_t* mem() { return static_cast<mem_t*>(this); }
-  cache_t* dcache() { return mem()->dcache(); }
 
-  long system_clock() { return global_time; }
-  long local_clock() { return mem()->clock(); }
-  void update_time();
-};
-
-volatile long core_t::global_time;
-
-mem_t::mem_t(long n)
-  : perf_t(n),
-    ic("Instruction", conf_Imiss, conf_Iways, conf_Iline, conf_Irows, false),
-    dc("Data",        conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true)
-		 
+inline long core_t::vload_model(long a, long pc)
 {
-  local_time = 0;
+  if (!vdc.lookup(a)) {
+    inc_dmiss(pc);
+    local_time += vdc.penalty();
+    inc_cycle(pc, vdc.penalty());
+  }
+  return a;
 }
 
-void mem_t::print()
+inline long core_t::vstore_model(long a, long pc)
+{
+  if (!vdc.lookup(a, true)) {
+    inc_dmiss(pc);
+    local_time += vdc.penalty();
+    inc_cycle(pc, vdc.penalty());
+  }
+  return a;
+}
+
+
+
+void core_t::print()
 {
   ic.print();
   dc.print();
+  vdc.print();
 }
 
-core_t::core_t() : hart_t(mem()), mem_t(number())
-{
-}
+volatile long core_t::global_time;
 
-core_t::core_t(core_t* p) : hart_t(p, mem()), mem_t(number())
+core_t::core_t()
+  : hart_t(this, 0),
+    perf_t(number()),
+    ic("Instruction", conf_Imiss, conf_Iways, conf_Iline, conf_Irows, false),
+    dc("Data",        conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true),
+    vdc("Vector",     conf_Vmiss, conf_Vways, conf_Vline, conf_Vrows, true)
+		 
 {
-  local_time = p->local_time;
+  local_time = 0;
 }
 
 
@@ -189,7 +209,7 @@ void exitfunc()
   fprintf(stderr, "\n--------\n");
   for (core_t* p=core_t::list(); p; p=p->next()) {
     fprintf(stderr, "Core [%ld] ", p->tid());
-    p->mem()->print();
+    p->print();
   }
   fprintf(stderr, "\n");
   status_report();
@@ -238,12 +258,15 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
 
   while (1) {
-    mycpu->interpreter(10000000L);
+    mycpu->interpreter(100000000L);
     double realtime = elapse_time();
-    fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS IPC", core_t::total_count(), realtime, core_t::total_count()/1e6/realtime);
+    fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS IPC(D$,V$)", core_t::total_count(), realtime,
+	    core_t::total_count()/1e6/realtime);
     char separator = '=';
     for (core_t* p=core_t::list(); p; p=p->next()) {
-      fprintf(stderr, "%c%4.2f", separator, (double)p->executed()/p->local_clock());
+      double N = p->executed();
+      fprintf(stderr, "%c%4.2f(%g%%,%g%%)", separator, N/p->local_clock(),
+	      100.0*p->dcache()->misses()/N, 100.0*p->vdcache()->misses()/N);
       separator = ',';
     }
   }
