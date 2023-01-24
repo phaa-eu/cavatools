@@ -36,13 +36,13 @@ extern option<bool> conf_quiet;
 //extern option<>     conf_gdb;
 
 void status_report();
-class hart_t* initial_cpu(long entry, long sp);
+class strand_t* initial_cpu(long entry, long sp);
 void show_insn(long pc, int tid);
 
 static inline bool find_symbol(const char* name, long &begin, long &end) { return elf_find_symbol(name, &begin, &end) != 0; }
 static inline const char* find_pc(long pc, long &offset) { return elf_find_pc(pc, &offset); }
 
-void show(hart_t* cpu, long pc, FILE* f =stderr);
+void show(strand_t* cpu, long pc, FILE* f =stderr);
 
 void start_time();
 double elapse_time();

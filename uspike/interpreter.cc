@@ -9,9 +9,11 @@
 #include <linux/futex.h>
 
 #include "options.h"
-#include "uspike.h"
+#include "caveat.h"
 #include "instructions.h"
-#include "hart.h"
+#include "strand.h"
+
+option<long> conf_report("report", 100000000, "Status report frequency");
 
 
 inline uint64_t mulhu(uint64_t a, uint64_t b)
@@ -59,12 +61,6 @@ inline int64_t mulhsu(int64_t a, uint64_t b)
 
 #define THREAD_STACK_SIZE  (1<<14)
 
-option<>     conf_isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
-option<>     conf_vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
-option<long> conf_stat("stat",		100,				"Status every M instructions");
-option<bool> conf_ecall("ecall",	false, true,			"Show system calls");
-option<bool> conf_quiet("quiet",	false, true,			"No status report");
-
 
 struct syscall_map_t {
   int sysnum;
@@ -76,24 +72,6 @@ struct syscall_map_t rv_to_host[] = {
 };
 const int highest_ecall_num = HIGHEST_ECALL_NUM;
 
-void status_report()
-{
-  if (conf_quiet)
-    return;
-  double realtime = elapse_time();
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", hart_t::total_count(), realtime, hart_t::total_count()/1e6/realtime);
-  if (hart_t::threads() <= 16) {
-    char separator = '(';
-    for (hart_t* p=hart_t::list(); p; p=p->next()) {
-      fprintf(stderr, "%c%1ld%%", separator, 100*p->executed()/hart_t::total_count());
-      separator = ',';
-    }
-    fprintf(stderr, ")");
-  }
-  else if (hart_t::threads() > 1)
-    fprintf(stderr, "(%d cores)", hart_t::threads());
-}
-
 /* RISCV-V clone() system call arguments not same as X86_64:
    a0 = flags
    a1 = child_stack
@@ -102,35 +80,10 @@ void status_report()
    a4 = child_tidptr
 */
 
-void show(hart_t* cpu, long pc, FILE* f)
-{
-  Insn_t i = code.at(pc);
-  int rn = i.rd()==NOREG ? i.rs2() : i.rd();
-  long rv = cpu->read_reg(rn);
-  if (rn != NOREG)
-    fprintf(stderr, "%6ld: %4s[%16lx] ", cpu->tid(), reg_name[rn], rv);
-  else
-    fprintf(stderr, "%6ld: %4s[%16s] ", cpu->tid(), "", "");
-  labelpc(pc);
-  disasm(pc);
-}
-
-template<class T> bool hart_t::cas(long pc)
-{
-  Insn_t i = code.at(pc);
-  T* ptr = (T*)read_reg(i.rs1());
-  T expect  = read_reg(i.rs2());
-  T replace = read_reg(i.rs3());
-  T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
-  write_reg(code.at(pc+4).rs1(), oldval);
-  if (oldval == expect)  write_reg(i.rd(), 0);	/* sc was successful */
-  return oldval == expect;
-}
-
 //extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* p);
 
 #undef RM
-#define RM ({ int rm = i.immed(); \
+#define RM ({ int rm = i->immed(); \
               if(rm == 7) rm = fcsr.f.rm; \
               if(rm > 4) die("Illegal instruction"); \
               rm; })
@@ -174,74 +127,105 @@ template<class T> bool hart_t::cas(long pc)
 	  wfd(greater || isNaNF64UI(f64(f2).v) ? f1 : f2); \
       }
 
-#define r1n0  i.rs1()!=0
+#define r1n0  i->rs1()!=0
 
-#define wrd(e)	xrf[i.rd()] = (e)
-#define r1	xrf[i.rs1()]
-#define r2	xrf[i.rs2()]
-#define imm	i.immed()
+#define wrd(e)	xrf[i->rd()] = (e)
+#define r1	xrf[i->rs1()]
+#define r2	xrf[i->rs2()]
+#define imm	i->immed()
 
-#define wfd(e)	frf[i.rd()-FPREG] = freg(e)
-#define f1	frf[i.rs1()-FPREG]
-#define f2	frf[i.rs2()-FPREG]
-#define f3	frf[i.rs3()-FPREG]
+#define wfd(e)	frf[i->rd()-FPREG] = freg(e)
+#define f1	frf[i->rs1()-FPREG]
+#define f2	frf[i->rs2()-FPREG]
+#define f3	frf[i->rs3()-FPREG]
 
-//#define wpc(npc)  pc=MMU.jump_model(npc, pc)
+#define stop  goto end_basic_block
+#define wpc(npc)  pc=(npc)
 
 
 #define ebreak()  die("breakpoint not implemented");
-#define ecall()  proxy_ecall(insns)
-#define fence(n)  
+//#define ecall()  proxy_ecall(); wpc(pc+4); stop
+#define fence(n)
+
+//#define LOAD(typ, addr) *(typ*)(*ap++=addr)
+//#define STORE(typ, addr, val) *(typ*)(*ap++=addr)=val
+
+//#define LOAD(typ, addr) *(typ*)(addr)
+//#define STORE(typ, addr, val) *(typ*)(addr)=(val)
+
+#define LOAD(typ, addr) *Load<typ>(*ap++=addr)
+#define STORE(typ, addr, val) Store<typ>(*ap++=addr, val)
 
 
 
-bool hart_t::interpreter(long how_many)
+void strand_t::interpreter(simfunc_t simulator, statfunc_t my_status)
 {
-  //  processor_t* p = spike();
-  //  long* xreg = reg_file();
-  //  long pc = read_pc();
-  long insns = 0;
+  while (1) {			// once per basic block
+    long begin_pc = pc;
+    Insn_t* begin_i = code.descr(pc);
+    Insn_t* i = begin_i;
+    long count = 0;
+    long* ap = addresses;
+    while (2) {			// once per instruction
 #ifdef DEBUG
-  long oldpc;
+      int8_t old_rd = i->rd();
+      debug.insert(executed()+1, pc, i);
 #endif
-  do {
+      count++;
+      xrf[0] = 0;
+      i = code.descr(pc);
+      //print_trace(pc, i);
+      switch (i->opcode()) {
+      case Op_ZERO:  die("Op_ZERO opcode");
+
+#include "semantics.h"		// jumps goto end_basic_block
+	
+      case Op_cas12_w:  wpc(!cas<int32_t>(pc) ? pc+code.at(pc+4).immed()+4 : pc+12); stop;
+      case Op_cas12_d:  wpc(!cas<int64_t>(pc) ? pc+code.at(pc+4).immed()+4 : pc+12); stop;
+      case Op_cas10_w:  wpc(!cas<int32_t>(pc) ? pc+code.at(pc+4).immed()+4 : pc+10); stop;
+      case Op_cas10_d:  wpc(!cas<int64_t>(pc) ? pc+code.at(pc+4).immed()+4 : pc+10); stop;
+
+      case Op_ILLEGAL:  die("Op_ILLEGAL opcode");
+      case Op_UNKNOWN:  die("Op_UNKNOWN opcode");
+      } // switch
+#ifdef DEBUG
+      debug.addval(i->rd()!=NOREG ? xrf[i->rd()] : xrf[i->rs2()]);
+#endif
+      //      i += i->compressed() ? 1 : 2;
+      //      dieif(i!=code.descr(pc), "i=%p != %p=code.descr(pc=%lx)", i, code.descr(pc), pc);
+    } // while (2)
+  end_basic_block:
+
 #if 0
-    labelpc(pc);
-    disasm(pc);
+    {
+      static long callstack[1024];
+      static int top = 1;
+      if (i->opcode()==Op_c_jalr || i->opcode()==Op_jal || i->opcode()==Op_jalr) {
+	callstack[top++] = pc;
+	fprintf(stderr, "%*s", 2*top, "");
+	labelpc(pc, stderr);
+	//	fprintf(stderr, "%08lx", pc);
+	fprintf(stderr, "\n");
+      }
+      else if ((i->opcode()==Op_c_ret || i->opcode()==Op_ret) && i->rs1()==1)
+	--top;
+    }
 #endif
 
 #ifdef DEBUG
-    dieif(!code.valid(pc), "Invalid PC %lx, oldpc=%lx", pc, oldpc);
-    oldpc = pc;
-    debug.insert(executed()+insns+1, pc);
+    debug.addval(xrf[i->rd()]);
 #endif
-    
-    Insn_t i = code.at(pc);
-    switch ((Opcode_t)i.opcode()) {
-    case Op_ZERO:  die("Op_ZERO opcode");
+    _executed += count;
+    if (_executed >= next_report) {
+      status_report(my_status);
+      next_report += conf_report;
+    }
+    simulator(hart, begin_pc, begin_i, count, addresses);
+  } // while (1)
+}
 
-#include "semantics.h"
-      
-      
-    case Op_cas12_w:  if (!cas<int32_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=12; break;
-    case Op_cas12_d:  if (!cas<int64_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=12; break;
-    case Op_cas10_w:  if (!cas<int32_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=10; break;
-    case Op_cas10_d:  if (!cas<int64_t>(pc)) { wpc(pc+code.at(pc+4).immed()+4); break; }; pc+=10; break;
-
-    case Op_ILLEGAL:  die("Op_ILLEGAL opcode");
-    case Op_UNKNOWN:  die("Op_UNKNOWN opcode");
-    } // switch (i.opcode())
-    xrf[0] = 0;
-    
-#ifdef DEBUG
-    i = code.at(oldpc);
-    int rn = i.rd()==NOREG ? i.rs2() : i.rd();
-    debug.addval(i.rd(), read_reg(rn));
-#endif
-  } while (++insns < how_many);
-  
-  //  write_pc(pc);
-  incr_count(insns);
-  return false;
+void strand_t::single_step()
+{
+  abort();
 }
 

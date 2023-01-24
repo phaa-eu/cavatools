@@ -7,32 +7,45 @@
 #include <setjmp.h>
 
 #include "options.h"
-#include "uspike.h"
+#include "caveat.h"
 #include "instructions.h"
-#include "hart.h"
+#include "strand.h"
 
-option<long> conf_show("show",		0, 				"Trace execution after N gdb continue");
-option<>     conf_gdb("gdb",		0, "localhost:1234", 		"Remote GDB on socket");
+option<bool> conf_quiet("quiet",	false, true,			"No status report");
+
+void my_status(class hart_t* p)
+{
+  fprintf(stderr, "%1ld%%", 100*p->executed()/hart_t::total_count());
+}
+
+void status_report(statfunc_t my_status)
+{
+  if (conf_quiet)
+    return;
+  double realtime = elapse_time();
+  long total = hart_t::total_count();
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
+  if (hart_t::threads() <= 16) {
+    char separator = '(';
+    for (hart_t* p=hart_t::list(); p; p=p->next()) {
+      fprintf(stderr, "%c", separator);
+      //      fprintf(stderr, "%1ld%%", 100*p->executed()/total);
+      my_status(p);
+      separator = ',';
+    }
+    fprintf(stderr, ")");
+  }
+  else if (hart_t::threads() > 1)
+    fprintf(stderr, "(%d cores)", hart_t::threads());
+}
 
 void exit_func()
 {
   fprintf(stderr, "\n");
   fprintf(stderr, "EXIT_FUNC() called\n\n");
-  status_report();
+  status_report(my_status);
   fprintf(stderr, "\n");
 }  
-
-extern "C" {
-  extern int lastGdbSignal;
-  extern jmp_buf mainGdbJmpBuf;
-  void signal_handler(int nSIGnum);
-  void ProcessGdbCommand();
-  void ProcessGdbException();
-  void OpenTcpLink(const char* name);
-  extern long *gdb_pc;
-  extern long *gdb_reg;
-  extern long gdbNumContinue;
-};
 
 static jmp_buf return_to_top_level;
 
@@ -40,16 +53,19 @@ static void segv_handler(int, siginfo_t*, void*) {
   longjmp(return_to_top_level, 1);
 }
 
+void nop_simulator(class hart_t* p, long pc, Insn_t* begin, long count, long* addresses)
+{
+}
+  
+  
+
 int main(int argc, const char* argv[], const char* envp[])
 {
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
   if (argc == 0)
     help_exit();
   start_time();
-  code.loadelf(argv[0]);
-  long sp = initialize_stack(argc, argv, envp);
-  hart_t* mycpu = new hart_t(new mmu_t, 0);
-  mycpu->write_reg(2, sp);	// x2 is stack pointer
+  hart_t* mycpu = new hart_t(argc, argv, envp);
 
 #ifdef DEBUG
   static struct sigaction action;
@@ -63,11 +79,15 @@ int main(int argc, const char* argv[], const char* envp[])
   sigaction(SIGINT,  &action, NULL);
   if (setjmp(return_to_top_level) != 0) {
     fprintf(stderr, "SIGSEGV signal was caught\n");
-    mycpu->debug.print();
+    mycpu->print_debug_trace();
     exit(-1);
   }
 #endif
 
+  mycpu->interpreter(nop_simulator, my_status);
+}
+
+#if 0
   dieif(atexit(exit_func), "atexit failed");
   //  enum stop_reason reason;
   if (conf_gdb) {
@@ -84,30 +104,30 @@ int main(int argc, const char* argv[], const char* envp[])
       if (setjmp(mainGdbJmpBuf))
 	ProcessGdbException();
       ProcessGdbCommand();
-#if 1
       while (1) {
 	long oldpc = mycpu->read_pc();
-	if (!mycpu->interpreter(1))
-	  break;
-	if (gdbNumContinue > conf_show)
-	  show(mycpu, oldpc);
+	//	if (!mycpu->interpreter(1))
+	//	  break;
+	//	if (gdbNumContinue > conf_show)
+	//	  show(mycpu, oldpc);
       }
-#else
-      while (mycpu->single_step())
-	/* pass */ ;
-#endif
+      mycpu->single_step();
       lastGdbSignal = SIGTRAP;
       ProcessGdbException();
     }
   }
   else {
     while (1) {
-      mycpu->interpreter(conf_stat*1000000L);
+      mycpu->interpreter();
       status_report();
     }
   }
   return 0;
 }
+#endif
+
+
+#if 0
 
 extern "C" {
 
@@ -153,3 +173,5 @@ void *reallocarray(void *ptr, size_t nmemb, size_t size)
 }
 
 };
+
+#endif

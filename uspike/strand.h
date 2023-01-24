@@ -6,28 +6,7 @@ extern "C" {
 #include "softfloat.h"
 #include "softfloat_types.h"
 };
-#include "mmu.h"
-
-#ifdef DEBUG
-struct pctrace_t {
-  long count;
-  long pc;
-  long val;
-  int8_t rn;
-};
-
-#define PCTRACEBUFSZ  (1<<7)
-struct Debug_t {
-  pctrace_t trace[PCTRACEBUFSZ];
-  int cursor;
-  Debug_t() { cursor=0; }
-  pctrace_t get();
-  void insert(pctrace_t pt);
-  void insert(long c, long pc);
-  void addval(int rn, long val);
-  void print();
-};
-#endif
+//#include "mmu.h"
 
 typedef int64_t		sreg_t;
 typedef uint64_t	reg_t;
@@ -72,9 +51,33 @@ inline freg_t freg(float128_t f) { return f; }
 
 
 
-class hart_t {
-  //  class processor_t* spike_cpu;	// opaque pointer to Spike structure
-  mmu_t* mmu;
+
+
+#ifdef DEBUG
+struct pctrace_t {
+  long count;
+  long pc;
+  Insn_t* i;
+  reg_t val;
+};
+
+#define PCTRACEBUFSZ  (1<<7)
+struct Debug_t {
+  pctrace_t trace[PCTRACEBUFSZ];
+  int cursor;
+  Debug_t() { cursor=0; }
+  pctrace_t get();
+  void insert(pctrace_t pt);
+  void insert(long c, long pc, Insn_t* i);
+  void addval(reg_t val);
+  void print();
+};
+#endif
+
+
+class strand_t {
+  class hart_t* hart;			// simulation object
+  long* addresses;			// list of load/store addr
   reg_t  xrf[32];
   freg_t frf[32];
   long pc;
@@ -85,41 +88,27 @@ class hart_t {
     } f;
     uint32_t ui;
   } fcsr;
-private:
-  static volatile hart_t* cpu_list;	// for find() using thread id
-  hart_t* link;				// list of hart_t
-  int my_tid;				// my Linux thread number
-  static volatile int num_threads;	// allocated
-  int _number;				// index of this hart
-  static volatile long total_insns;	// instructions executed all threads
+  
+private:  
   long _executed;			// executed this thread
+  long next_report;
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
 public:
-  hart_t(mmu_t* m, hart_t* p);
-  virtual hart_t* newcore() { return new hart_t(0, this); }
+  strand_t(strand_t* p);
+  friend hart_t::hart_t(hart_t* from);
+  friend hart_t::hart_t(int argc, const char* argv[], const char* envp[]);
+  
+  //  virtual strand_t* newcore() { abort(); }
   //  virtual void proxy_syscall(long sysnum);
   void proxy_syscall(long sysnum);
-  void proxy_ecall(long insns);
+  void proxy_ecall();
   
-  static class hart_t* list() { return (class hart_t*)cpu_list; }
-  class hart_t* next() { return link; }
-  static int threads() { return num_threads; }
-  int number() { return _number; }
   long executed() { return _executed; }
-  void incr_count(long n);
-  static long total_count() { return total_insns; }
-  long tid() { return my_tid; }
-  void set_tid();
-  static hart_t* find(int tid);
-  bool interpreter(long how_many);
-  
-  long read_reg(int n) { return xrf[n]; }
-  void write_reg(int n, long value) { xrf[n]=value; }
-  long* reg_file() { return (long*)xrf; }
-  long read_pc() { return pc; }
-  void write_pc(long value) { pc=value; }
-  long* ptr_pc() { return &pc; }
+  static long total_count();
+  void interpreter(simfunc_t f, statfunc_t s);
+  void single_step();
+  void print_trace(long pc, Insn_t* i);
 
   long get_csr(int what);
   void set_csr(int what, long value);
@@ -130,16 +119,17 @@ public:
     return old;
   }
 
-  template<class T> bool cas(long pc);
-
-  template<typename T> inline T*  MEM(long a) { return (T*)mmu->load_model (a, pc); }
-  template<typename T> inline T* WMEM(long a) { return (T*)mmu->store_model(a, pc); }
-  template<typename T> inline T* AMEM(long a) { return (T*)mmu->store_model(a, pc); }
-
-  template<typename T> inline T*  VMEM(long a) { return (T*)mmu->vload_model (a, pc); }
-  template<typename T> inline T* WVMEM(long a) { return (T*)mmu->vstore_model(a, pc); }
-
-  void wpc(long npc) { pc=mmu->jump_model(npc, pc); }
+  template<class T> bool cas(long pc)
+  {
+    Insn_t i = code.at(pc);
+    T* ptr = (T*)xrf[i.rs1()];
+    T expect  =  xrf[i.rs2()];
+    T replace =  xrf[i.rs3()];
+    T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
+    xrf[code.at(pc+4).rs1()] = oldval;
+    if (oldval == expect)  xrf[i.rd()] = 0;;	/* sc was successful */
+    return oldval == expect;
+  }
 
   template<typename op>	uint32_t amo_uint32(long a, op f) {
     uint32_t lhs, *ptr = (uint32_t*)a;
@@ -156,6 +146,9 @@ public:
     return lhs;
   }
 
+  template<typename T> inline T* Load(long a) { return (T*)a; }
+  template<typename T> inline void Store(long a, T v) { *(T*)a = v; }
+
   void acquire_reservation(long a) { }
   void yield_reservation() { }
   bool check_reservation(long a, long size) { return true; }
@@ -167,4 +160,4 @@ public:
 #endif
 };
 
-class hart_t* find_cpu(int tid);
+class strand_t* find_cpu(int tid);

@@ -5,10 +5,14 @@
 #include <stdio.h>
 
 #include "options.h"
-#include "uspike.h"
+#include "caveat.h"
 #include "instructions.h"
-#include "hart.h"
+#include "strand.h"
 #include "elf_loader.h"
+
+extern "C" {
+  void redecode(long pc);
+};
 
 insnSpace_t code;
 
@@ -73,7 +77,7 @@ Insn_t decoder(int b, long pc)
   
 #include "decoder.h"
 
-  die("Unknown opcode")
+  die("Unknown opcode at 0x%lx", pc)
 }
 
 void redecode(long pc)
@@ -101,9 +105,8 @@ void labelpc(long pc, FILE* f)
   fprintf(f, "%s", buffer);
 }
 
-int sdisasm(char* buf, long pc)
+int sdisasm(char* buf, long pc, Insn_t i)
 {
-  Insn_t i = code.at(pc);
   if (i.opcode() == Op_ZERO)
     i = decoder(code.image(pc), pc);
   uint32_t b = code.image(pc);
@@ -128,7 +131,7 @@ int sdisasm(char* buf, long pc)
 void disasm(long pc, const char* end, FILE* f)
 {
   char buffer[1024];
-  sdisasm(buffer, pc);
+  sdisasm(buffer, pc, code.at(pc));
   fprintf(f, "%s%s", buffer, end);
 }
 

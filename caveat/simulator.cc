@@ -7,12 +7,8 @@
 #include <linux/futex.h>
 
 #include "options.h"
-#include "uspike.h"
-#include "instructions.h"
-#include "hart.h"
+#include "caveat.h"
 #include "cache.h"
-#include "perf.h"
-#include "mmu.h"
 
 using namespace std;
 void* operator new(size_t size);
@@ -39,16 +35,20 @@ option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
 option<>    conf_perf( "perf",	"caveat",	"Name of shared memory segment");
 
-class core_t : public mmu_t, public hart_t, public perf_t {
+class core_t : public hart_t {
   static volatile long global_time;
   long local_time;
-  cache_t ic;
-  cache_t dc;
-  cache_t vdc;
 public:
-  core_t();
+  cache_t dc;
+  cache_t vc;
+  core_t(core_t* from);
+  core_t(int argc, const char* argv[], const char* envp[]);
+  
+  friend void simulator(hart_t* h, long pc, Insn_t* i, long count, long* addresses);
+  friend void my_status(hart_t* h);
+  
   //  core_t* newcore() { return new core_t(this); }
-  void proxy_syscall(long sysnum);
+  //  void proxy_syscall(long sysnum);
   
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
@@ -57,106 +57,51 @@ public:
   long local_clock() { return local_time; }
   void update_time();
   
-  void insn_model(long pc);
-  long jump_model(long npc, long pc);
-  long load_model( long a,  long pc);
-  long store_model(long a,  long pc);
-  void amo_model(  long a,  long pc);
-
-  long vload_model( long a,  long pc);
-  long vstore_model(long a,  long pc);
-  
   cache_t* dcache() { return &dc; }
-  cache_t* vdcache() { return &vdc; }
+  cache_t* vcache() { return &vc; }
   void print();
 };
 
-inline void core_t::insn_model(long pc)
-{
-  if (!ic.lookup(pc)) {
-    local_time += ic.penalty();
-    inc_imiss(pc);
-    inc_cycle(pc, ic.penalty());
-  }
-  inc_count(pc);
-  inc_cycle(pc);
-  local_time += 1;
-}
 
-inline long core_t::jump_model(long npc, long pc)
+void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a)
 {
-  local_time += conf_Jump;
-  inc_cycle(npc, conf_Jump);
-  return npc;
-}
-
-inline long core_t::load_model(long a, long pc)
-{
-  if (!dc.lookup(a)) {
-    inc_dmiss(pc);
-    local_time += dc.penalty();
-    inc_cycle(pc, dc.penalty());
-  }
-  return a;
-}
-
-inline long core_t::store_model(long a, long pc)
-{
-  if (!dc.lookup(a, true)) {
-    inc_dmiss(pc);
-    local_time += dc.penalty();
-    inc_cycle(pc, dc.penalty());
-  }
-  return a;
-}
-
-inline void core_t::amo_model(long a, long pc)
-{
-  if (!dc.lookup(a, true)) {
-    inc_dmiss(pc);
-    local_time += dc.penalty();
-    inc_cycle(pc, dc.penalty());
+  core_t* p = (core_t*)h;
+  for (; count>0; count--) {
+    p->local_time++;
+    uint64_t attr = attributes[i->opcode()];
+    if (attr & ATTR_ld|ATTR_st) {
+      if (attr & ATTR_vec) {
+	if (!p->vc.lookup(*a++, (attr&ATTR_st)))
+	  p->local_time += p->vc.penalty();
+      }
+      else
+	p->dc.lookup(*a++, (attr&ATTR_st));
+    }
+    pc += i->compressed() ? 2 : 4;
+    i +=  i->compressed() ? 1 : 2;
   }
 }
-
-
-inline long core_t::vload_model(long a, long pc)
-{
-  if (!vdc.lookup(a)) {
-    inc_dmiss(pc);
-    local_time += vdc.penalty();
-    inc_cycle(pc, vdc.penalty());
-  }
-  return a;
-}
-
-inline long core_t::vstore_model(long a, long pc)
-{
-  if (!vdc.lookup(a, true)) {
-    inc_dmiss(pc);
-    local_time += vdc.penalty();
-    inc_cycle(pc, vdc.penalty());
-  }
-  return a;
-}
-
-
 
 void core_t::print()
 {
-  ic.print();
   dc.print();
-  vdc.print();
+  vc.print();
 }
 
 volatile long core_t::global_time;
 
-core_t::core_t()
-  : hart_t(this, 0),
-    perf_t(number()),
-    ic("Instruction", conf_Imiss, conf_Iways, conf_Iline, conf_Irows, false),
-    dc("Data",        conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true),
-    vdc("Vector",     conf_Vmiss, conf_Vways, conf_Vline, conf_Vrows, true)
+core_t::core_t(core_t* from)
+  : hart_t(from),
+    dc("Data",   conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true),
+    vc("Vector", conf_Vmiss, conf_Vways, conf_Vline, conf_Vrows, true)
+{
+  local_time = 0;
+}
+
+core_t::core_t(int argc, const char* argv[], const char* envp[])
+  : hart_t(argc, argv, envp),
+    dc("Data",   conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true),
+    vc("Vector", conf_Vmiss, conf_Vways, conf_Vline, conf_Vrows, true)
 		 
 {
   local_time = 0;
@@ -165,6 +110,7 @@ core_t::core_t()
 
 #define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
 
+#if 0
 #define SYSCALL_OVERHEAD 100
 void core_t::proxy_syscall(long sysnum)
 {
@@ -187,6 +133,7 @@ void core_t::proxy_syscall(long sysnum)
   futex((int*)&global_time, FUTEX_WAKE, INT_MAX);
   */
 }
+#endif
 
 void core_t::update_time()
 {
@@ -202,7 +149,34 @@ void core_t::update_time()
 
 void start_time();
 double elapse_time();
-void status_report();
+
+void my_status(hart_t* h)
+{
+  core_t* p = (core_t*)h;
+  double N = p->executed();
+  double M = p->dc.refs() + p->vc.refs();
+  fprintf(stderr, "%4.2f(%3.1f%%:%5.3f%%,%3.1f%%:%5.3f%%)", N/p->local_clock(),
+	  100.0*p->dc.refs()/M, 100.0*p->dc.misses()/N,
+	  100.0*p->vc.refs()/M, 100.0*p->vc.misses()/N);
+}
+
+void status_report(statfunc_t my_status)
+{
+  double realtime = elapse_time();
+  long total = hart_t::total_count();
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
+  if (hart_t::threads() <= 16) {
+    char separator = '(';
+    for (hart_t* p=hart_t::list(); p; p=p->next()) {
+      fprintf(stderr, "%c", separator);
+      my_status(p);
+      separator = ',';
+    }
+    fprintf(stderr, ")");
+  }
+  else if (hart_t::threads() > 1)
+    fprintf(stderr, "(%d cores)", hart_t::threads());
+}
 
 void exitfunc()
 {
@@ -212,7 +186,7 @@ void exitfunc()
     p->print();
   }
   fprintf(stderr, "\n");
-  status_report();
+  status_report(my_status);
   fprintf(stderr, "\n");
 }
 
@@ -234,85 +208,11 @@ void signal_handler(int nSIGnum)
 
 int main(int argc, const char* argv[], const char* envp[])
 {
-  parse_options(argc, argv, "caveat: user-mode RISC-V parallel simulator");
+  parse_options(argc, argv, "cachesim: RISC-V cache simulator");
   if (argc == 0)
     help_exit();
   start_time();
-  code.loadelf(argv[0]);
-  perf_t::create(code.base(), code.limit(), conf_cores, conf_perf);
-  for (int i=0; i<perf_t::cores(); i++)
-    new perf_t(i);
-  long sp = initialize_stack(argc, argv, envp);
-  core_t* mycpu = new core_t();
-  mycpu->write_reg(2, sp);	// x2 is stack pointer
-  
+  core_t* mycpu = new core_t(argc, argv, envp);
   atexit(exitfunc);
-
-#ifdef DEBUG
-  static struct sigaction action;
-  sigemptyset(&action.sa_mask);
-  sigemptyset(&action.sa_mask);
-  action.sa_flags = 0;
-  action.sa_handler = signal_handler;
-  sigaction(SIGSEGV, &action, NULL);
-#endif
-
-  while (1) {
-    mycpu->interpreter(100000000L);
-    double realtime = elapse_time();
-    fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS IPC(D$,V$)", core_t::total_count(), realtime,
-	    core_t::total_count()/1e6/realtime);
-    char separator = '=';
-    for (core_t* p=core_t::list(); p; p=p->next()) {
-      double N = p->executed();
-      fprintf(stderr, "%c%4.2f(%g%%,%g%%)", separator, N/p->local_clock(),
-	      100.0*p->dcache()->misses()/N, 100.0*p->vdcache()->misses()/N);
-      separator = ',';
-    }
-  }
+  mycpu->interpreter(&simulator, &my_status);
 }
-
-extern "C" {
-
-#define poolsize  (1<<30)	/* size of simulation memory pool */
-
-static char simpool[poolsize];	/* base of memory pool */
-static volatile char* pooltop = simpool; /* current allocation address */
-
-void *malloc(size_t size)
-{
-  char volatile *rv, *newtop;
-  do {
-    volatile char* after = pooltop + size + 16; /* allow for alignment */
-    if (after > simpool+poolsize) {
-      fprintf(stderr, " failed\n");
-      return 0;
-    }
-    rv = pooltop;
-    newtop = (char*)((unsigned long)after & ~0xfL); /* always align to 16 bytes */
-  } while (!__sync_bool_compare_and_swap(&pooltop, rv, newtop));
-      
-  return (void*)rv;
-}
-
-void free(void *ptr)
-{
-  /* we don't free stuff */
-}
-
-void *calloc(size_t nmemb, size_t size)
-{
-  return malloc(nmemb * size);
-}
-
-void *realloc(void *ptr, size_t size)
-{
-  return 0;
-}
-
-void *reallocarray(void *ptr, size_t nmemb, size_t size)
-{
-  return 0;
-}
-
-};

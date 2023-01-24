@@ -9,16 +9,17 @@ CAVA := $(HOME)
 endif
 
 B := $(RVTOOLS)/riscv-isa-sim
-L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
+#L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
+
 
 CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -Ofast
 #CXXFLAGS := -I$(CAVA)/include/cava -g -O0 -DDEBUG
+LIBS := ~/lib/libsoftfloat.a $(CAVA)/lib/libcava.a
 LDFLAGS := -Wl,-Ttext=70000000
 
-install:  caveat perf.o perf.h
+install:  caveat
 	cp caveat $(CAVA)/bin/.
-	ar r $(CAVA)/lib/libcava.a perf.o
-	cp perf.h $(CAVA)/include/cava/.
+#	cp perf.h $(CAVA)/include/cava/.
 
 clean:
 	rm -f *.o *~ ./#*# *.tmp
@@ -26,11 +27,12 @@ clean:
 	rm -f caveat
 
 
-caveat:  simulator.o cache.o perf.o $(CAVA)/lib/libcava.a
-	g++ -o caveat $^ $(LDFLAGS) $L -ldl -lrt
+caveat:  simulator.o cache.o $(LIBS)
+	g++ -o caveat $^ $(LDFLAGS) $(LIBS)
+#	g++ -o caveat $^ $(LDFLAGS) $(LIBS) -ldl -lrt
 
 cache.o simulator.o:  cache.h
-perf.o simulator.o: perf.h
+#perf.o simulator.o: perf.h
 
 simulator.o: lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
 

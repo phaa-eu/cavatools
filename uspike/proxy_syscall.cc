@@ -22,12 +22,15 @@
 #include <sched.h>
 
 #include "options.h"
-#include "uspike.h"
-#include "hart.h"
+#include "caveat.h"
+#include "instructions.h"
+#include "strand.h"
 
 #include "elf_loader.h"
 
 #define THREAD_STACK_SIZE (1<<16)
+
+option<bool> conf_ecall("ecall",	false, true,			"Show system calls");
 
 static timeval start_tv;
 
@@ -78,10 +81,10 @@ static struct syscall_map_t rv_to_host[] = {
 #include "ecall_nums.h"
 };
 
-void hart_t::proxy_ecall(long insns)
+void strand_t::proxy_ecall()
 {
-  incr_count(insns);		// make _count correct for inspection/exit
-  long rvnum = read_reg(17);
+  //fprintf(stderr, "proxy_ecall(a0=%ld)\n", xrf[17]);
+  long rvnum = xrf[17];
   if (rvnum<0 || rvnum>HIGHEST_ECALL_NUM || !rv_to_host[rvnum].name) {
     fprintf(stderr, "Illegal ecall number %ld\n", rvnum);
     abort();
@@ -98,18 +101,19 @@ void hart_t::proxy_ecall(long insns)
       abort();
     }
   }
+  //fprintf(stderr, "ecall %ld --> x86 syscall %ld %s\n", rvnum, sysnum, name);
   if (conf_ecall)
     fprintf(stderr, "Ecall %s\n", name);
   proxy_syscall(sysnum);
-  incr_count(-insns);		// put back old value
 }
 
 #define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
 
 int thread_interpreter(void* arg)
 {
-  hart_t* oldcpu = (hart_t*)arg;
-  hart_t* newcpu = oldcpu->newcore();
+#if 0
+  strand_t* oldcpu = (strand_t*)arg;
+  strand_t* newcpu = oldcpu->newcore();
   newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
   newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
   newcpu->write_reg(10, 0);	// indicating we are child thread
@@ -117,21 +121,47 @@ int thread_interpreter(void* arg)
   newcpu->set_tid();
   oldcpu->clone_lock = 0;
   futex(&oldcpu->clone_lock, FUTEX_WAKE, 1);
-  while (1) {
-    newcpu->interpreter(conf_stat*1000000L);
-    status_report();
-  }
+  newcpu->interpreter();
+#endif
+  abort();
   return 0;
 }
 
-void hart_t::proxy_syscall(long sysnum)
+long emulate_brk(long addr, struct pinfo_t* info)
 {
-  long a0=read_reg(10), a1=read_reg(11), a2=read_reg(12), a3=read_reg(13), a4=read_reg(14), a5=read_reg(15);
+  long newbrk = addr;
+  if (addr < info->brk_min)
+    newbrk = info->brk_min;
+  else if (addr > info->brk_max)
+    newbrk = info->brk_max;
+
+  if (info->brk == 0)
+    info->brk = ROUNDUP(info->brk_min, RISCV_PGSIZE);
+
+  long newbrk_page = ROUNDUP(newbrk, RISCV_PGSIZE);
+  if (info->brk > newbrk_page)
+    munmap((void*)newbrk_page, info->brk - newbrk_page);
+  else if (info->brk < newbrk_page)
+    assert(mmap((void*)info->brk, newbrk_page - info->brk, -1, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0) == (void*)info->brk);
+  info->brk = newbrk_page;
+
+  return newbrk;
+}
+
+void strand_t::proxy_syscall(long sysnum)
+{
+  long a0=xrf[10], a1=xrf[11], a2=xrf[12], a3=xrf[13], a4=xrf[14], a5=xrf[15];
   long retval=0;
   switch (sysnum) {
   case SYS_exit:
   case SYS_exit_group:
     exit(a0);
+  case SYS_brk:
+    //fprintf(stderr, "SYS_brk(%lx)\n", a0);
+    //    retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
+    //fprintf(stderr, "current.brk = 0x%lx\n", current.brk);
+    retval = emulate_brk(a0, &current);
+    break;
   case SYS_clone:
     {
       char* interp_stack = new char[THREAD_STACK_SIZE];
@@ -146,5 +176,5 @@ void hart_t::proxy_syscall(long sysnum)
   default:
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
   }
-  write_reg(10, retval);
+  xrf[10] = retval;
 }

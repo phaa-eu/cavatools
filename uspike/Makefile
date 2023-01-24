@@ -9,18 +9,19 @@ CAVA := $(HOME)
 endif
 
 MINUS_O := -Ofast -Wswitch
-#MINUS_O := -O0 -DDEBUG
+#MINUS_O := -O3 -DDEBUG -Wswitch
+#MINUS_O := -O0 -DDEBUG -Wswitch
 
 #MINUS_O := -O0
-#MINUS_O := -O3 -DDEBUG
 #MINUS_O := -O3 -Wswitch
 
 # Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
-HEADERS := options.h opcodes.h uspike.h instructions.h hart.h mmu.h
+#HEADERS := options.h opcodes.h uspike.h instructions.h strand.h mmu.h
+HEADERS := options.h opcodes.h instructions.h caveat.h
 
 # Compiling options
 
-libfiles := options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o hart.o
+libfiles := options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o strand.o
 bins := main.o gdblink.o $(libfiles)
 
 CXXFLAGS := -g $(MINUS_O)
@@ -33,12 +34,13 @@ uspike: $(bins)
 
 # Dependencies
 
-main.o instructions.o interpreter.o: uspike.h opcodes.h instructions.h
+main.o instructions.o strand.o interpreter.o: caveat.h opcodes.h options.h
+main.o instructions.o interpreter.o: caveat.h opcodes.h instructions.h
 main.o options.o: options.h
-instructions.o: decoder.h constants.h 
+instructions.o: instructions.h decoder.h constants.h
 elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h
-interpreter.o:  hart.h semantics.h
-hart.o: hart.h
+interpreter.o:  strand.h semantics.h
+strand.o: strand.h
 proxy_syscall.o: ecall_nums.h
 
 # Python scripts to create various files
