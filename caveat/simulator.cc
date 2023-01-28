@@ -10,18 +10,7 @@
 #include "caveat.h"
 #include "cache.h"
 
-using namespace std;
-void* operator new(size_t size);
-void operator delete(void*) noexcept;
-
-option<long> conf_Jump("jump",	2,		"Taken branch pipeline flush cycles");
-
-option<int> conf_Imiss("imiss",	100,		"Instruction cache miss penalty");
-option<int> conf_Iways("iways", 4,		"Instruction cache number of ways associativity");
-option<int> conf_Iline("iline",	6,		"Instruction cache log-base-2 line size");
-option<int> conf_Irows("irows",	6,		"Instruction cache log-base-2 number of rows");
-
-option<int> conf_Dmiss("dmiss",	100,		"Data cache miss penalty");
+option<int> conf_Dmiss("dmiss",	50,		"Data cache miss penalty");
 option<int> conf_Dways("dways", 4,		"Data cache number of ways associativity");
 option<int> conf_Dline("dline",	6,		"Data cache log-base-2 line size");
 option<int> conf_Drows("drows",	8,		"Data cache log-base-2 number of rows");
@@ -33,7 +22,6 @@ option<int> conf_Vrows("vrows",	4,		"Vector cache log-base-2 number of rows");
 
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
-option<>    conf_perf( "perf",	"caveat",	"Name of shared memory segment");
 
 class core_t : public hart_t {
   static volatile long global_time;
@@ -56,9 +44,6 @@ public:
   long system_clock() { return global_time; }
   long local_clock() { return local_time; }
   void update_time();
-  
-  cache_t* dcache() { return &dc; }
-  cache_t* vcache() { return &vc; }
   void print();
 };
 
@@ -74,8 +59,10 @@ void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a)
 	if (!p->vc.lookup(*a++, (attr&ATTR_st)))
 	  p->local_time += p->vc.penalty();
       }
-      else
-	p->dc.lookup(*a++, (attr&ATTR_st));
+      else {
+	if (!p->dc.lookup(*a++, (attr&ATTR_st)))
+	  p->local_time += p->dc.penalty();
+      }
     }
     pc += i->compressed() ? 2 : 4;
     i +=  i->compressed() ? 1 : 2;
@@ -155,7 +142,7 @@ void my_status(hart_t* h)
   core_t* p = (core_t*)h;
   double N = p->executed();
   double M = p->dc.refs() + p->vc.refs();
-  fprintf(stderr, "%4.2f(%3.1f%%:%5.3f%%,%3.1f%%:%5.3f%%)", N/p->local_clock(),
+  fprintf(stderr, "%4.2f(%1.0f%%:%4.2f%%,%1.0f%%:%4.2f%%)", N/p->local_clock(),
 	  100.0*p->dc.refs()/M, 100.0*p->dc.misses()/N,
 	  100.0*p->vc.refs()/M, 100.0*p->vc.misses()/N);
 }
@@ -164,15 +151,14 @@ void status_report(statfunc_t my_status)
 {
   double realtime = elapse_time();
   long total = hart_t::total_count();
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS, IPC(D$,V$)", total, realtime, total/1e6/realtime);
   if (hart_t::threads() <= 16) {
-    char separator = '(';
+    char separator = '=';
     for (hart_t* p=hart_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
       my_status(p);
       separator = ',';
     }
-    fprintf(stderr, ")");
   }
   else if (hart_t::threads() > 1)
     fprintf(stderr, "(%d cores)", hart_t::threads());

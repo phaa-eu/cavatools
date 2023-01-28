@@ -160,6 +160,7 @@ const int highest_ecall_num = HIGHEST_ECALL_NUM;
 
 void strand_t::interpreter(simfunc_t simulator, statfunc_t my_status)
 {
+  next_report = conf_report;
   while (1) {			// once per basic block
     long begin_pc = pc;
     Insn_t* begin_i = code.descr(pc);
