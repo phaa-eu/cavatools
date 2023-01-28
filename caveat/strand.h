@@ -3,8 +3,8 @@
 */
 
 extern "C" {
-#include "softfloat.h"
-#include "softfloat_types.h"
+#include "softfloat/softfloat.h"
+#include "softfloat/softfloat_types.h"
 };
 //#include "mmu.h"
 
@@ -20,34 +20,6 @@ typedef float128_t	freg_t;
 #define zext_xlen(x) zext(x, xlen)
 
 
-#define defaultNaNF32UI 0x7FC00000
-#define defaultNaNF64UI 0x7FF8000000000000L
-#define isNaNF32UI( a ) (((~(a) & 0x7F800000) == 0) && ((a) & 0x007FFFFF))
-#define isNaNF64UI( a ) (((~(a) & 0x7FF0000000000000L) == 0) && ((a) & 0x000FFFFFFFFFFFFFL))
-
-inline int32_t f32_classify(float32_t v) { return 0; }
-inline int64_t f64_classify(float64_t v) { return 0; }
-
-
-/* Convenience wrappers to simplify softfloat code sequences */
-#define isBoxedF32(r) (isBoxedF64(r) && ((uint32_t)((r.v[0] >> 32) + 1) == 0))
-#define unboxF32(r) (isBoxedF32(r) ? (uint32_t)r.v[0] : defaultNaNF32UI)
-#define isBoxedF64(r) ((r.v[1] + 1) == 0)
-#define unboxF64(r) (isBoxedF64(r) ? r.v[0] : defaultNaNF64UI)
-inline float32_t f32(uint32_t v) { return { v }; }
-inline float64_t f64(uint64_t v) { return { v }; }
-inline float32_t f32(freg_t r) { return f32(unboxF32(r)); }
-inline float64_t f64(freg_t r) { return f64(unboxF64(r)); }
-inline float128_t f128(freg_t r) { return r; }
-inline freg_t freg(float32_t f) { return { ((uint64_t)-1 << 32) | f.v, (uint64_t)-1 }; }
-inline freg_t freg(float64_t f) { return { f.v, (uint64_t)-1 }; }
-inline freg_t freg(float128_t f) { return f; }
-#define F32_SIGN ((uint32_t)1 << 31)
-#define F64_SIGN ((uint64_t)1 << 63)
-#define fsgnj32(a, b, n, x) \
-  f32((f32(a).v & ~F32_SIGN) | ((((x) ? f32(a).v : (n) ? F32_SIGN : 0) ^ f32(b).v) & F32_SIGN))
-#define fsgnj64(a, b, n, x) \
-  f64((f64(a).v & ~F64_SIGN) | ((((x) ? f64(a).v : (n) ? F64_SIGN : 0) ^ f64(b).v) & F64_SIGN))
 
 
 

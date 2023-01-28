@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+#  Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 #
 ifndef RVTOOLS
 RVTOOLS := /opt/riscv-tools
@@ -8,43 +8,61 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-B := $(RVTOOLS)/riscv-isa-sim
-#L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
+MINUS_O := -Ofast -Wswitch
+#MINUS_O := -O3 -DDEBUG -Wswitch
+#MINUS_O := -O0 -DDEBUG -Wswitch
 
+#MINUS_O := -O0
+#MINUS_O := -O3 -Wswitch
 
-CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -Ofast
-#CXXFLAGS := -I$(CAVA)/include/cava -g -O0 -DDEBUG
-LIBS := ~/lib/libsoftfloat.a $(CAVA)/lib/libcava.a
+# Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
+
+HEADERS := options.h opcodes.h instructions.h caveat.h
+
+# Compiling options
+
+libfiles := options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o strand.o
+bins := main.o gdblink.o $(libfiles)
+
+CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include
+CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O0
+LIBS := ~/lib/libsoftfloat.a
 LDFLAGS := -Wl,-Ttext=70000000
 
-install:  caveat
-	cp caveat $(CAVA)/bin/.
-#	cp perf.h $(CAVA)/include/cava/.
+uspike: $(bins)
+	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) $(LIBS)
 
-clean:
+# Dependencies
+
+main.o instructions.o strand.o interpreter.o: caveat.h opcodes.h options.h
+main.o instructions.o interpreter.o: caveat.h opcodes.h instructions.h
+main.o options.o: options.h
+instructions.o: instructions.h decoder.h constants.h
+elf_loader.o proxy_syscall.o gdblink.o: elf_loader.h
+interpreter.o:  strand.h semantics.h arithmetic.h
+strand.o: strand.h
+proxy_syscall.o: ecall_nums.h
+
+# Python scripts to create various files
+ecall_nums.h: Makefile syscall_mapping
+	./syscall_mapping < syscalls-riscv64 > $@
+
+# Create riscv opcodes
+opcodes.h:
+	make -C ../opcodes
+
+# Cleanup & installation
+
+clean: tidy
 	rm -f *.o *~ ./#*# *.tmp
-	rm -f lru_fsm_?way.h
-	rm -f caveat
 
+tidy:
+	rm -f uspike opcodes.h constants.h decoder.h ecall_nums.h semantics.h
+	rm -rf $(CAVA)/include/cava
+	rm -f $(CAVA)/lib/libcava.a
 
-caveat:  simulator.o cache.o $(LIBS)
-	g++ -o caveat $^ $(LDFLAGS) $(LIBS)
-#	g++ -o caveat $^ $(LDFLAGS) $(LIBS) -ldl -lrt
-
-cache.o simulator.o:  cache.h
-#perf.o simulator.o: perf.h
-
-simulator.o: lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
-
-lru_fsm_1way.h: make_cache
-	./make_cache 1
-
-lru_fsm_2way.h: make_cache
-	./make_cache 2
-
-lru_fsm_3way.h: make_cache
-	./make_cache 3
-
-lru_fsm_4way.h: make_cache
-	./make_cache 4
-
+install: uspike
+	cp uspike $(CAVA)/bin/.
+	ar r $(CAVA)/lib/libcava.a $(libfiles)
+	mkdir -p $(CAVA)/include/cava
+	cp $(HEADERS) $(CAVA)/include/cava/.

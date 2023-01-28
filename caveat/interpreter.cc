@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+  Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 #include <unistd.h>
 #include <stdint.h>
@@ -11,45 +11,19 @@
 #include "options.h"
 #include "caveat.h"
 #include "instructions.h"
+
+extern "C" {
+#include "softfloat/softfloat.h"
+#include "softfloat/softfloat_types.h"
+#include "softfloat/specialize.h"
+#include "softfloat/internals.h"
+};
+
 #include "strand.h"
+#include "arithmetic.h"
 
 option<long> conf_report("report", 100000000, "Status report frequency");
 
-
-inline uint64_t mulhu(uint64_t a, uint64_t b)
-{
-  uint64_t t;
-  uint32_t y1, y2, y3;
-  uint64_t a0 = (uint32_t)a, a1 = a >> 32;
-  uint64_t b0 = (uint32_t)b, b1 = b >> 32;
-
-  t = a1*b0 + ((a0*b0) >> 32);
-  y1 = t;
-  y2 = t >> 32;
-
-  t = a0*b1 + y1;
-  y1 = t;
-
-  t = a1*b1 + y2 + (t >> 32);
-  y2 = t;
-  y3 = t >> 32;
-
-  return ((uint64_t)y3 << 32) | y2;
-}
-
-inline int64_t mulh(int64_t a, int64_t b)
-{
-  int negate = (a < 0) != (b < 0);
-  uint64_t res = mulhu(a < 0 ? -a : a, b < 0 ? -b : b);
-  return negate ? ~res + (a * b == 0) : res;
-}
-
-inline int64_t mulhsu(int64_t a, uint64_t b)
-{
-  int negate = a < 0;
-  uint64_t res = mulhu(a < 0 ? -a : a, b);
-  return negate ? ~res + (a * b == 0) : res;
-}
 
 
 
@@ -90,42 +64,6 @@ const int highest_ecall_num = HIGHEST_ECALL_NUM;
 #define srm  softfloat_roundingMode=RM
 #define sfx  fcsr.f.flags |= softfloat_exceptionFlags;
 
-
-#define fmin_s_body() \
-      { \
-	bool less = f32_lt_quiet(f32(f1), f32(f2)) || (f32_eq(f32(f1), f32(f2)) && (f32(f1).v & F32_SIGN)); \
-	if (isNaNF32UI(f32(f1).v) && isNaNF32UI(f32(f2).v)) \
-	  wfd(f32(defaultNaNF32UI)); \
-	else \
-	  wfd(less || isNaNF32UI(f32(f2).v) ? f1 : f2); \
-      }
-
-#define fmax_s_body() \
-      { \
-	bool greater = f32_lt_quiet(f32(f2), f32(f1)) || (f32_eq(f32(f2), f32(f1)) && (f32(f2).v & F32_SIGN)); \
-	if (isNaNF32UI(f32(f1).v) && isNaNF32UI(f32(f2).v)) \
-	  wfd(f32(defaultNaNF32UI)); \
-	else \
-	  wfd(greater || isNaNF32UI(f32(f2).v) ? f1 : f2); \
-      }
-
-#define fmin_d_body() \
-      { \
-	bool less = f64_lt_quiet(f64(f1), f64(f2)) || (f64_eq(f64(f1), f64(f2)) && (f64(f1).v & F64_SIGN)); \
-	if (isNaNF64UI(f64(f1).v) && isNaNF64UI(f64(f2).v)) \
-	  wfd(f64(defaultNaNF64UI)); \
-	else \
-	  wfd(less || isNaNF64UI(f64(f2).v) ? f1 : f2); \
-      }
-
-#define fmax_d_body() \
-      { \
-	bool greater = f64_lt_quiet(f64(f2), f64(f1)) || (f64_eq(f64(f2), f64(f1)) && (f64(f2).v & F64_SIGN)); \
-	if (isNaNF64UI(f64(f1).v) && isNaNF64UI(f64(f2).v)) \
-	  wfd(f64(defaultNaNF64UI)); \
-	else \
-	  wfd(greater || isNaNF64UI(f64(f2).v) ? f1 : f2); \
-      }
 
 #define r1n0  i->rs1()!=0
 

@@ -155,7 +155,7 @@ with open('newcode.tmp', 'w') as f:
     f.write('const int Number_of_Opcodes = {:d};\n\n'.format(len(opcodes)))
     bitvec(isa_letter.keys(), 'ISA')
     bitvec(attribute.keys(), 'ATTR')
-diffcp('../uspike/opcodes.h')
+diffcp('../caveat/opcodes.h')
 
 def make_bitvec(typ, tokens):
     if tokens == '-':
@@ -199,7 +199,7 @@ with open('newcode.tmp', 'w') as f:
             f.write('{:20s}'.format('0,'))
         n += 1
     f.write('\n};\n\n')
-diffcp('../uspike/constants.h')
+diffcp('../caveat/constants.h')
 
 
 with open('newcode.tmp', 'w') as f:
@@ -220,11 +220,11 @@ with open('newcode.tmp', 'w') as f:
             eprint('reglist length not 0-4')
             exit(-1)
         f.write(';\n')
-diffcp('../uspike/decoder.h')
+diffcp('../caveat/decoder.h')
 
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
         (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
         f.write('    case {:20s} {:s}; pc+={:d}; break;\n'.format(opname+':', action, int(bytes)))
-diffcp('../uspike/semantics.h')
+diffcp('../caveat/semantics.h')
     
