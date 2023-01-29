@@ -2,7 +2,7 @@ import sys
 import os
 import re
 
-opcode_line = re.compile('^([ +])\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
+opcode_line = re.compile('^([ +])\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
 reglist_field = re.compile('^(\S)\[(\d+):(\d+)\](\+\d+)?$')
 
 def eprint(*args):
@@ -103,11 +103,11 @@ instructions = {}
 for line in sys.stdin:
     m = opcode_line.match(line)
     if not m: continue
-    (kind, opcode, asm, isa, req, bits, reglist, action) = m.groups()
+    (kind, opcode, asm, attr, bits, reglist, action) = m.groups()
     opname = 'Op_' + opcode.replace('.', '_')
     reglist = ParseReglist(reglist)
     (code, mask, bytes, immed, immtyp) = ParseOpcode(bits)
-    instructions[opcode] = (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action)
+    instructions[opcode] = (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action)
     if bytes == 2:
         last_compressed_opcode = opcode
 
@@ -116,18 +116,19 @@ opcodes = ['ZERO'] + [key for key in instructions] + ['cas10_w', 'cas10_d', 'cas
 isa_letter = {}
 attribute = {}
 for opcode, t in instructions.items():
-    (opname, asm, isa, attributes, code, mask, bytes, immed, immtyp, reglist, action) = t
-    for letter in isa.split(','):
-        if letter != '-':
-            isa_letter[letter] = 1;
-    for attr in attributes.split(','):
-        if attr != '-':
-            attribute[attr] = 1;
+    (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
+    for a in attr.split(','):
+        if a.isupper():
+            isa_letter[a] = 1;
+        elif a != '-':
+            attribute[a] = 1;
 
-def bitvec(names, typ):
+def bitvec(names, typ, uppercase):
     f.write('enum {:s}_t {{'.format(typ))
     sa = 0
     for n in sorted(names):
+        if uppercase and not n.isupper() or not uppercase and n.isupper():
+            continue
         f.write('\n  {:s}_{:s} = 1<<{:d},'.format(typ, n, sa))
         sa += 1
     if sa < 8:
@@ -153,18 +154,21 @@ with open('newcode.tmp', 'w') as f:
     f.write('\n};\n\n')
     f.write('const Opcode_t Last_Compressed_Opcode = Op_{:s};\n'.format(last_compressed_opcode.replace('.','_')))
     f.write('const int Number_of_Opcodes = {:d};\n\n'.format(len(opcodes)))
-    bitvec(isa_letter.keys(), 'ISA')
-    bitvec(attribute.keys(), 'ATTR')
+    bitvec(isa_letter.keys(), 'ISA', 1)
+    bitvec(attribute.keys(), 'ATTR', 0)
 diffcp('../caveat/opcodes.h')
 
-def make_bitvec(typ, tokens):
-    if tokens == '-':
-        bv = [ '0' ]
-    else:
-        bv = []
+def make_bitvec(typ, tokens, uppercase):
+    bv = []
+    if tokens != '-':
         for t in tokens.split(','):
+            if uppercase and not t.isupper():  continue
+            if not uppercase and t.isupper():  continue
             bv.append('{:s}_{:s}'.format(typ, t))
-    return '|'.join(bv)
+    if len(bv) == 0:
+        return '0'
+    else:
+        return '|'.join(bv)
 
 with open('newcode.tmp', 'w') as f:
     f.write('const char* op_name[] = {')
@@ -182,7 +186,7 @@ with open('newcode.tmp', 'w') as f:
             f.write('\n  ')
         if opcode in instructions:
             isa = instructions[opcode][2]
-            f.write('{:20s}'.format(make_bitvec('ISA', isa)+','))
+            f.write('{:20s}'.format(make_bitvec('ISA', isa, 1)+','))
         else:
             f.write('{:20s}'.format('0,'))
         n += 1
@@ -193,8 +197,9 @@ with open('newcode.tmp', 'w') as f:
         if n % 4 == 0:
             f.write('\n  ')
         if opcode in instructions:
-            req = instructions[opcode][3]
-            f.write('/* {:s} */ {:20s}'.format(opcode, make_bitvec('ATTR', req)+','))
+            attr = instructions[opcode][2]
+            f.write('{:20s}'.format(make_bitvec('ATTR', attr, 0)+','))
+#            f.write('/* {:s} */ {:20s}'.format(opcode, make_bitvec('ATTR', attr, 0)+','))
         else:
             f.write('{:20s}'.format('0,'))
         n += 1
@@ -204,7 +209,7 @@ diffcp('../caveat/constants.h')
 
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
-        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
+        (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
         f.write('  if((b&{:s})=={:s}) return '.format(mask, code))
         if len(reglist) == 4:
             f.write('Insn_t({:s}, {:s}, {:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], reglist[2], reglist[3], immed))
@@ -224,7 +229,7 @@ diffcp('../caveat/decoder.h')
 
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
-        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
+        (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
         f.write('    case {:20s} {:s}; pc+={:d}; break;\n'.format(opname+':', action, int(bytes)))
 diffcp('../caveat/semantics.h')
     

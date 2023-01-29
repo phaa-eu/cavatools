@@ -2,7 +2,7 @@ import sys
 import os
 import re
 
-opcode_line = re.compile('^([ +])\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
+opcode_line = re.compile('^([ +])\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
 reglist_field = re.compile('^(\S)\[(\d+):(\d+)\](\+\d+)?$')
 
 cava_comment = re.compile('\s*/\*\s*CAVA((?:\s+\w+)+)\s*\*/')
@@ -86,13 +86,13 @@ instructions = {}
 for line in sys.stdin:
     m = opcode_line.match(line)
     if not m: continue
-    (kind, opcode, asm, isa, req, bits, reglist, action) = m.groups()
+    (kind, opcode, asm, attr, bits, reglist, action) = m.groups()
     if kind != '+':
         continue
     opname = 'Op_' + opcode.replace('.', '_')
     reglist = ParseReglist(reglist)
     (code, mask, bytes, immed, immtyp) = ParseOpcode(bits)
-    instructions[opcode] = (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action)
+    instructions[opcode] = (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action)
 
 opcodes = ['ZERO'] + [key for key in instructions] + ['cas10_w', 'cas10_d', 'cas12_w', 'cas12_d'] + ['ILLEGAL', 'UNKNOWN']
 
@@ -117,18 +117,18 @@ def munge_riscv_opc_files(s, f):
                     exit(-1)
                 if what == 'define':
                     for opcode, t in instructions.items():
-                        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
+                        (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
                         upper_op = opname.upper()
                         f.write('#define MATCH_{:s}  {:s}\n'.format(upper_op, code))
                         f.write('#define MASK_{:s}  {:s}\n'.format(upper_op, mask))
                 elif what == 'declare':
                     for opcode, t in instructions.items():
-                        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
+                        (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
                         upper_op = opname.upper()
                         f.write('DECLARE_INSN({:s}, MATCH_{:s}, MASK_{:s})\n'.format(opname, upper_op, upper_op))
                 elif what == 'opcode':
                     for opcode, t in instructions.items():
-                        (opname, asm, isa, req, code, mask, bytes, immed, immtyp, reglist, action) = t
+                        (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
                         upper_op = opname.upper()
                         clas = 'I'
                         f.write('{{{:17} {:2d}, INSN_CLASS_{:s}, {:11s} MATCH_{:s}, MASK_{:s}, match_opcode, 0 }},\n'
