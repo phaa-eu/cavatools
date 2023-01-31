@@ -177,9 +177,7 @@ hart_t::hart_t(int argc, const char* argv[], const char* envp[])
   next_report = conf_report;
 }
 
-//void hart_t::interpreter(simfunc_t f, statfunc_t s)	{ strand->interpreter(f, s); }
-
-void hart_t::interpreter() { strand->interpreter(); }
+void hart_t::interpreter(simfunc_t simulator) { strand->interpreter(simulator); }
 long hart_t::executed()	{ return _executed; }
 long hart_t::total_count()
 {

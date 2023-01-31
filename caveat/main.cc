@@ -49,12 +49,10 @@ static void segv_handler(int, siginfo_t*, void*) {
   longjmp(return_to_top_level, 1);
 }
 
-void hart_t::simulator(long pc, Insn_t* begin, long count, long* addresses)
+void simulator(hart_t* h, long pc, Insn_t* begin, long count, long* addresses)
 {
-  if ((_executed+=count) >= next_report) {
+  if (h->more(count, conf_report))
     status_report();
-    next_report += conf_report;
-  }
 }
   
   
@@ -100,7 +98,7 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
 
   //  mycpu->interpreter(nop_simulator, my_status);
-  mycpu->interpreter();
+  mycpu->interpreter(simulator);
 }
 
 #if 0

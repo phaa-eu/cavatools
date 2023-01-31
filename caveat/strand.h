@@ -89,7 +89,7 @@ public:
   void proxy_syscall(long sysnum);
   void proxy_ecall();
   
-  void interpreter();
+  void interpreter(simfunc_t simulator);
   void single_step();
   void print_trace(long pc, Insn_t* i);
   void debug_print() { debug.print(); }

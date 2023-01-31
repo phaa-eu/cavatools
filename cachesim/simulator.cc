@@ -34,8 +34,6 @@ public:
   core_t(core_t* from);
   core_t(int argc, const char* argv[], const char* envp[]);
   
-  void simulator(long pc, Insn_t* i, long count, long* addresses);
-  
   //  core_t* newcore() { return new core_t(this); }
   //  void proxy_syscall(long sysnum);
   
@@ -46,6 +44,8 @@ public:
   long local_clock() { return local_time; }
   void update_time();
   void print();
+
+  friend void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a);
 };
 
 
@@ -75,6 +75,7 @@ void status_report()
 
 void exitfunc()
 {
+  status_report();
   fprintf(stderr, "\n--------\n");
   for (core_t* p=core_t::list(); p; p=p->next()) {
     fprintf(stderr, "Core [%ld] ", p->tid());
@@ -85,24 +86,27 @@ void exitfunc()
   fprintf(stderr, "\n");
 }
 
-void core_t::simulator(long pc, Insn_t* i, long count, long* a)
+void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a)
 {
-  for (; count>0; count--) {
-    local_time++;
+  core_t* p = (core_t*)h;
+  for (long k=0; k<count; k++) {
+    p->local_time++;
     uint64_t attr = attributes[i->opcode()];
-    if (attr & ATTR_ld|ATTR_st) {
+    if (attr & (ATTR_ld|ATTR_st)) {
       if (attr & ATTR_vec) {
-	if (!vc.lookup(*a++, (attr&ATTR_st)))
-	  local_time += vc.penalty();
+	if (!p->vc.lookup(*a++, (attr&ATTR_st)))
+	  p->local_time += p->vc.penalty();
       }
       else {
-	if (!dc.lookup(*a++, (attr&ATTR_st)))
-	  local_time += dc.penalty();
+	if (!p->dc.lookup(*a++, (attr&ATTR_st)))
+	  p->local_time += p->dc.penalty();
       }
     }
     pc += i->compressed() ? 2 : 4;
-    i +=  i->compressed() ? 1 : 2;
+    i++;
   }
+  if (h->more(count, conf_report))
+    status_report();
 }
 
 void core_t::print()
@@ -194,5 +198,5 @@ int main(int argc, const char* argv[], const char* envp[])
   start_time();
   core_t* mycpu = new core_t(argc, argv, envp);
   atexit(exitfunc);
-  mycpu->interpreter();
+  mycpu->interpreter(simulator);
 }

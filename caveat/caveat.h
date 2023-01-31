@@ -73,6 +73,7 @@ static_assert(sizeof(bb_header_t) == 8);
 extern Insn_t* tcache;			// Translated instructions and basic block info
 
 
+typedef void (*simfunc_t)(class hart_t* p, long pc, Insn_t* begin, long count, long* addresses);
 
 class hart_t {
   class strand_t* strand;	// opaque pointer
@@ -84,10 +85,10 @@ public:
   hart_t(hart_t* from);
   hart_t(int argc, const char* argv[], const char* envp[]);
   
-  virtual void simulator(long pc, Insn_t* begin, long count, long* addresses);
-  void interpreter();
+  void interpreter(simfunc_t simulator);
 
   long executed();
+  bool more(long n, long r) { bool s=(_executed+=n)>=next_report; if (s) next_report+=r; return s; }
   static long total_count();
   static hart_t* list();
   hart_t* next();

@@ -116,7 +116,7 @@ Insn_t substitute_cas(long pc, Insn_t* i3)
 }
 
 //void strand_t::interpreter(simfunc_t simulator, statfunc_t my_status)
-void strand_t::interpreter()
+void strand_t::interpreter(simfunc_t simulator)
 {
   Insn_t* end = tcache;
   bb_header_t** link = &zero_link;
@@ -182,7 +182,7 @@ void strand_t::interpreter()
     // at this point pc=target basic block but i still points to last instruction.
   end_basic_block:
     debug.addval(xrf[i->rd()]);
-    hart_pointer->simulator(bb->addr, (Insn_t*)(bb+1), bb->count, addresses);
+    simulator(hart(), bb->addr, (Insn_t*)(bb+1), bb->count, addresses);
   }
 }
 
