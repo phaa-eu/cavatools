@@ -51,6 +51,22 @@ public:
 };
 static_assert(sizeof(Insn_t) == 8);
 
+Insn_t decoder(long pc);
+
+
+
+
+
+/*
+  The Translation Cache consists of a header and an array of 64-bit slots.
+  A slot can be a translated instruction, a basic block header, or a branch target pointer.
+  Translated instructions are described above.  Each basic block begins with a header,
+  defind below, followed by one or more translated instructions.  Each basic block is
+  terminated by a pointer to the header of the next basic block.  This pointer is NULL if
+  the target is unknown, for example a jump register instruction.  Basic blocks that end
+  in a conditional branch have two pointers, the branch-taken target followed by the
+  fall-thru target.
+*/
 
 struct bb_header_t {
   uint16_t count;
@@ -58,30 +74,22 @@ struct bb_header_t {
 };
 static_assert(sizeof(bb_header_t) == 8);
 
-struct bb_footer_t {
-  uint32_t taken;
-  uint32_t fallthru;
-};
-static_assert(sizeof(bb_footer_t) == 8);
-  
 
 
-
-Insn_t decoder(long pc);
-
-class alignas(4096) Isegment_t {
+class Tcache_header_t {
   //  enum SegType_t typ;
  public:
   Insn_t* end;			// first free entry
   bb_header_t* bb;		// current basic block;
   bb_header_t* new_basic_block(long pc) { bb=(bb_header_t*)end++; bb->addr=pc; return bb; }
-  void add_insn(Insn_t insn) { *end++ = insn; }
-  void end_basic_block() { bb->count = end++ - (Insn_t*)bb; }
+  void add_insn(Insn_t insn) { *end++ = insn; *(uint64_t*)end=0; }
+  void end_basic_block(bool cb) { bb->count = end-(Insn_t*)bb; *(uint64_t*)end++=0; if (cb) *(uint64_t*)end++=0; }
 };
 
 
 
-
+extern Insn_t* tcache;			// Translated instructions and basic block info
+extern Tcache_header_t* code;
 
 
 

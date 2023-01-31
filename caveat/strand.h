@@ -25,7 +25,6 @@ typedef float128_t	freg_t;
 
 
 
-#ifdef DEBUG
 struct pctrace_t {
   long count;
   long pc;
@@ -39,12 +38,17 @@ struct Debug_t {
   int cursor;
   Debug_t() { cursor=0; }
   pctrace_t get();
+  void print();
+#ifdef DEBUG
   void insert(pctrace_t pt);
   void insert(long c, long pc, Insn_t* i);
   void addval(reg_t val);
-  void print();
-};
+#else
+  void insert(pctrace_t pt) { }
+  void insert(long c, long pc, Insn_t* i) { }
+  void addval(reg_t val) { }
 #endif
+};
 
 
 class strand_t {
@@ -67,9 +71,10 @@ private:
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
 public:
-  strand_t(strand_t* p);
-  friend hart_t::hart_t(hart_t* from);
-  friend hart_t::hart_t(int argc, const char* argv[], const char* envp[]);
+  strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[]);
+  strand_t(class hart_t* h, strand_t* p);
+  //  friend hart_t::hart_t(hart_t* from, class hart_t* h);
+  //  friend hart_t::hart_t(class hart_t* h, int argc, const char* argv[], const char* envp[]);
   
   //  virtual strand_t* newcore() { abort(); }
   //  virtual void proxy_syscall(long sysnum);
@@ -130,9 +135,7 @@ public:
   void flush_icache() { }
   void flush_tlb() { }
 
-#ifdef DEBUG
   Debug_t debug;
-#endif
 };
 
 class strand_t* find_cpu(int tid);

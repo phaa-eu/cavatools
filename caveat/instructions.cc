@@ -16,17 +16,16 @@ extern "C" {
   void redecode(long pc);
 };
 
-insnSpace_t code;
-
 option<long> conf_tcache("tcache", 1024, "Binary translation cache size in 4K pages");
 
-void insnSpace_t::loadelf(const char* elfname)
+long loadelf(const char* elfname)
 {
-  tcache = (Isegment_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  dieif((uint64_t)tcache & (4096-1), "tcache not 4K page aligned");
-  tcache->end = (Insn_t*)tcache + 4096/sizeof(Insn_t);
-  _entry = load_elf_binary(elfname, 1);
-  return;
+  code = (Tcache_header_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  dieif((uint64_t)code & (4096-1), "tcache not 4K page aligned");
+  memset(code, 0, conf_tcache*4096);
+  tcache = (Insn_t*)code + 4096/sizeof(Insn_t);
+  code->end = tcache;
+  return load_elf_binary(elfname, 1);
 }
 
 

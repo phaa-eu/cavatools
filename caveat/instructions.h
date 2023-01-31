@@ -5,17 +5,18 @@
 #include <unordered_map>
 using namespace std;
 
+long loadelf(const char* elfname);
+
 class insnSpace_t {
   long _entry;
 public:
-  Isegment_t* tcache;		// binary translation cache
-  unordered_map<long, bb_header_t*> umap;
+  //  Isegment_t* tcache;		// binary translation cache
+  //  Insn_t* instruction;		// array of translated instructions
   
   long _base;
   long _limit;
   class Insn_t* predecoded;
 public:  
-  void loadelf(const char* elfname);
   long entry() { return _entry; }
 
 
@@ -32,7 +33,8 @@ public:
 #endif
 };
 
-extern insnSpace_t code;
+//extern insnSpace_t code;
+//extern unordered_map<long, bb_header_t*> bbmap;
 
 void substitute_cas(long lo, long hi);
 int slabelpc(char* buf, long pc);

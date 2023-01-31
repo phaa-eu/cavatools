@@ -96,15 +96,20 @@ void Debug_t::print()
 
 #endif
 
-
-strand_t::strand_t(strand_t* from)
+strand_t::strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[])
 {
-  if (from)
-    memcpy(this, from, sizeof(strand_t));
-  else {
-    memset(this, 0, sizeof(strand_t));
-    pc = code.entry();
-  }
+  memset(this, 0, sizeof(strand_t));
+  pc = loadelf(argv[0]);
+  xrf[2] = initialize_stack(argc, argv, envp);
+  hart = h;
+  addresses = (long*)mmap(0, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  next_report = 100;
+}
+
+strand_t::strand_t(class hart_t* h, strand_t* from)
+{
+  memcpy(this, from, sizeof(strand_t));
+  hart = h;
   addresses = (long*)mmap(0, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   _executed = 0;
   next_report = 100;
@@ -165,18 +170,14 @@ void hart_t::attach_hart()
 
 hart_t::hart_t(hart_t* from)
 {
-  strand = new strand_t(from->strand);
-  strand->hart = this;
+  strand = new strand_t(this, from->strand);
   attach_hart();
 }
 
 hart_t::hart_t(int argc, const char* argv[], const char* envp[])
 {
-  code.loadelf(argv[0]);
-  strand = new strand_t(0);
-  strand->hart = this;
+  strand = new strand_t(this, argc, argv, envp);
   attach_hart();
-  strand->xrf[2] = initialize_stack(argc, argv, envp);
   //  long sp = initialize_stack(argc, argv, envp);
   //  strand->write_reg(2, sp);	// x2 is stack pointer
 }
