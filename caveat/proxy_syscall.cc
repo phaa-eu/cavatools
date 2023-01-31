@@ -153,15 +153,18 @@ void strand_t::proxy_syscall(long sysnum)
   long a0=xrf[10], a1=xrf[11], a2=xrf[12], a3=xrf[13], a4=xrf[14], a5=xrf[15];
   long retval=0;
   switch (sysnum) {
+    
   case SYS_exit:
   case SYS_exit_group:
     exit(a0);
+
   case SYS_brk:
     //fprintf(stderr, "SYS_brk(%lx)\n", a0);
     //    retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
     //fprintf(stderr, "current.brk = 0x%lx\n", current.brk);
     retval = emulate_brk(a0, &current);
     break;
+    
   case SYS_clone:
     {
       char* interp_stack = new char[THREAD_STACK_SIZE];
@@ -173,6 +176,7 @@ void strand_t::proxy_syscall(long sysnum)
 	futex(&clone_lock, FUTEX_WAIT, 1);
     }
     break;
+    
   default:
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
   }

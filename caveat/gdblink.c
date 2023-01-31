@@ -416,7 +416,7 @@ ProcessGdbCommand() {
 	if (RcvHexInt(&addr) && *inPtr++ == ',' && RcvHexInt(&length) && *inPtr++ == ':') {
 	  if (RcvHexToMemory((char*)addr, length)) {
 	    void redecode(long pc);
-	    redecode(addr);
+	    //redecode(addr);
 	    Reply("OK");
 	  }
 	  else

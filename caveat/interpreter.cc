@@ -77,90 +77,75 @@ const int highest_ecall_num = HIGHEST_ECALL_NUM;
 #define f2	frf[i->rs2()-FPREG]
 #define f3	frf[i->rs3()-FPREG]
 
-#define stop  goto end_basic_block
-#define wpc(npc)  pc=(npc)
-
-
 #define ebreak()  die("breakpoint not implemented");
-//#define ecall()  proxy_ecall(); wpc(pc+4); stop
 #define fence(n)
-
-//#define LOAD(typ, addr) *(typ*)(*ap++=addr)
-//#define STORE(typ, addr, val) *(typ*)(*ap++=addr)=val
-
-//#define LOAD(typ, addr) *(typ*)(addr)
-//#define STORE(typ, addr, val) *(typ*)(addr)=(val)
 
 #define LOAD(typ, addr) *Load<typ>(*ap++=addr)
 #define STORE(typ, addr, val) Store<typ>(*ap++=addr, val)
 
-
+#define again  goto re_execute_instruction
+#define stop  goto end_basic_block
+#define jump(npc)  { pc=(npc); stop; }
+#define branch(test, taken, fallthru)  { if (test) pc=(taken); else pc=(fallthru); stop; }
+  
 
 void strand_t::interpreter(simfunc_t simulator, statfunc_t my_status)
 {
-  next_report = conf_report;
-  while (1) {			// once per basic block
-    long begin_pc = pc;
-    Insn_t* begin_i = code.descr(pc);
-    Insn_t* i = begin_i;
-    long count = 0;
-    long* ap = addresses;
-    while (2) {			// once per instruction
 #ifdef DEBUG
-      int8_t old_rd = i->rd();
-      debug.insert(executed()+1, pc, i);
+  long oldpc;
 #endif
-      count++;
+  bb_header_t* bb = code.tcache->new_basic_block(pc);
+  
+  next_report = conf_report;
+  for (;;) {			// once per basic block
+    std::unordered_map<long, bb_header_t*>::const_iterator pair = code.umap.find(pc);
+    bool newbb = pair == code.umap.end();
+#if 0
+    if (pair == code.umap.end()) { // never seen target
+    }
+    else {
+    }
+#endif
+    
+    bb_header_t* bb = (pair==code.umap.end()) ? code.tcache->new_basic_block(pc) : pair->second;
+    Insn_t* i = (Insn_t*)bb + 1;
+    long* ap = addresses;
+    for(;; i++) {
       xrf[0] = 0;
-      i = code.descr(pc);
-      //print_trace(pc, i);
+#ifdef DEBUG
+      debug.insert(executed()+1, pc, i);
+      oldpc = pc;
+#endif
+    re_execute_instruction:
       switch (i->opcode()) {
-      case Op_ZERO:  die("Op_ZERO opcode");
-
-#include "semantics.h"		// jumps goto end_basic_block
-	
-      case Op_cas12_w:  wpc(!cas<int32_t>(pc) ? pc+code.at(pc+4).immed()+4 : pc+12); stop;
-      case Op_cas12_d:  wpc(!cas<int64_t>(pc) ? pc+code.at(pc+4).immed()+4 : pc+12); stop;
-      case Op_cas10_w:  wpc(!cas<int32_t>(pc) ? pc+code.at(pc+4).immed()+4 : pc+10); stop;
-      case Op_cas10_d:  wpc(!cas<int64_t>(pc) ? pc+code.at(pc+4).immed()+4 : pc+10); stop;
-
+      case Op_ZERO:		// not yet decoded
+	code.tcache->add_insn(decoder(pc)); again;
       case Op_ILLEGAL:  die("Op_ILLEGAL opcode");
       case Op_UNKNOWN:  die("Op_UNKNOWN opcode");
-      } // switch
+
+#include "semantics.h"
+
+      }
 #ifdef DEBUG
       debug.addval(i->rd()!=NOREG ? xrf[i->rd()] : xrf[i->rs2()]);
 #endif
-      //      i += i->compressed() ? 1 : 2;
-      //      dieif(i!=code.descr(pc), "i=%p != %p=code.descr(pc=%lx)", i, code.descr(pc), pc);
-    } // while (2)
-  end_basic_block:
-
-#if 0
-    {
-      static long callstack[1024];
-      static int top = 1;
-      if (i->opcode()==Op_c_jalr || i->opcode()==Op_jal || i->opcode()==Op_jalr) {
-	callstack[top++] = pc;
-	fprintf(stderr, "%*s", 2*top, "");
-	labelpc(pc, stderr);
-	//	fprintf(stderr, "%08lx", pc);
-	fprintf(stderr, "\n");
-      }
-      else if ((i->opcode()==Op_c_ret || i->opcode()==Op_ret) && i->rs1()==1)
-	--top;
     }
-#endif
-
+  end_basic_block:
 #ifdef DEBUG
+    //    print_trace(oldpc, i);
     debug.addval(xrf[i->rd()]);
 #endif
-    _executed += count;
+    if (newbb) {
+      code.tcache->end_basic_block();
+      code.umap[bb->addr]=bb;
+    }
+    _executed += bb->count;
     if (_executed >= next_report) {
       status_report(my_status);
       next_report += conf_report;
     }
-    simulator(hart, begin_pc, begin_i, count, addresses);
-  } // while (1)
+    simulator(hart, bb->addr, (Insn_t*)(bb+1), bb->count, addresses);
+  }
 }
 
 void strand_t::single_step()

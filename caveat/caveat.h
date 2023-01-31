@@ -51,11 +51,58 @@ public:
 };
 static_assert(sizeof(Insn_t) == 8);
 
+
+struct bb_header_t {
+  uint16_t count;
+  long addr : 48;
+};
+static_assert(sizeof(bb_header_t) == 8);
+
+struct bb_footer_t {
+  uint32_t taken;
+  uint32_t fallthru;
+};
+static_assert(sizeof(bb_footer_t) == 8);
+  
+
+
+
+Insn_t decoder(long pc);
+
+class alignas(4096) Isegment_t {
+  //  enum SegType_t typ;
+ public:
+  Insn_t* end;			// first free entry
+  bb_header_t* bb;		// current basic block;
+  bb_header_t* new_basic_block(long pc) { bb=(bb_header_t*)end++; bb->addr=pc; return bb; }
+  void add_insn(Insn_t insn) { *end++ = insn; }
+  void end_basic_block() { bb->count = end++ - (Insn_t*)bb; }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 typedef void (*simfunc_t)(class hart_t* p, long pc, Insn_t* begin, long count, long* addresses);
 typedef void (*statfunc_t)(class hart_t* p);
 
 class hart_t {
-  class strand_t* strand;	// opaque pointer
   
   static volatile hart_t* cpu_list;	// for find() using thread id
   volatile hart_t* link;		// list of strand_t
@@ -65,6 +112,8 @@ class hart_t {
   static volatile int num_threads;	// allocated
 
 public:
+  class strand_t* strand;	// opaque pointer
+  
   hart_t(hart_t* from);
   hart_t(int argc, const char* argv[], const char* envp[]);
   

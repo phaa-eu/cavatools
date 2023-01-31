@@ -3,6 +3,8 @@
 */
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/mman.h>
+#include <sys/types.h>
 
 #include "options.h"
 #include "caveat.h"
@@ -16,21 +18,42 @@ extern "C" {
 
 insnSpace_t code;
 
+option<long> conf_tcache("tcache", 1024, "Binary translation cache size in 4K pages");
+
 void insnSpace_t::loadelf(const char* elfname)
 {
+  tcache = (Isegment_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  dieif((uint64_t)tcache & (4096-1), "tcache not 4K page aligned");
+  tcache->end = (Insn_t*)tcache + 4096/sizeof(Insn_t);
   _entry = load_elf_binary(elfname, 1);
-  _base=low_bound;
-  _limit=high_bound;
-  int n = (_limit - _base) / 2;
-  predecoded=new Insn_t[n];
-  memset(predecoded, 0, n*sizeof(Insn_t));
-  // Predecode instruction code segment
-  long pc = _base;
-  while (pc < _limit) {
-    Insn_t i = code.set(pc, decoder(code.image(pc), pc));
-    pc += i.compressed() ? 2 : 4;
+  return;
+}
+
+
+Insn_t strand_t::substitute_cas(Insn_t* i3)
+{
+  fprintf(stderr, "substitute_cas(pc=%lx)\n", pc);
+  dieif(i3->opcode()!=Op_sc_w && i3->opcode()!=Op_sc_d, "0x%lx no SC found in substitute_cas()", pc);
+  int blen = 4;
+  Insn_t i2 = decoder(pc-blen);
+  if (i2.opcode() != Op_bne) {
+    blen = 2;
+    i2 = decoder(pc-blen);
   }
-  substitute_cas(_base, _limit);
+  dieif(i2.opcode()!=Op_bne && i2.opcode()!=Op_c_bnez, "0x%lx instruction before SC not bne/bnez", pc);
+  Insn_t i1 = decoder(pc-blen-4);
+  dieif(i1.opcode()!=Op_lr_w && i1.opcode()!=Op_lr_d, "0x%lx substitute_cas called without LR", pc);
+  // pattern found, check registers
+  int load_reg = i1.rd();
+  //  int addr_reg = i1.rs1();
+  int addr_reg = i3->rs1();
+  int test_reg = (i2.opcode() == Op_c_bnez) ? 0 : i2.rs2();
+  int newv_reg = i3->rs2();
+  int flag_reg = i3->rd();
+  dieif(i1.rs1()!=addr_reg || i2.rs1()!=load_reg, "0x%lx CAS pattern incorrect registers", pc);
+  // pattern is good
+  //  *i3 = Insn_t(i3->opcode()==Op_sc_w ? Op_cas_w : Op_cas_d, flag_reg, addr_reg, test_reg, newv_reg, i2.immed()-blen);
+  return Insn_t(i3->opcode()==Op_sc_w?Op_cas_w:Op_cas_d, flag_reg, addr_reg, newv_reg, test_reg, i3->immed());
 }
 
 
@@ -70,20 +93,26 @@ Insn_t::Insn_t(Opcode_t code, int8_t rd, int32_t longimmed)
   op_longimm = longimmed;
 }
 
-Insn_t decoder(int b, long pc)
+
+
+
+
+
+
+
+
+
+
+Insn_t decoder(long pc)
 {
+  int32_t b = *(int32_t*)pc;
+  
 #define x( lo, len) ((b >> lo) & ((1 << len)-1))
 #define xs(lo, len) (b << (32-lo-len) >> (32-len))
   
 #include "decoder.h"
 
   die("Unknown opcode at 0x%lx", pc)
-}
-
-void redecode(long pc)
-{
-  if (code.valid(pc))
-    code.set(pc, decoder(code.image(pc), pc));
 }
 
 #define LABEL_WIDTH  16
@@ -105,69 +134,36 @@ void labelpc(long pc, FILE* f)
   fprintf(f, "%s", buffer);
 }
 
-int sdisasm(char* buf, long pc, Insn_t i)
+int sdisasm(char* buf, long pc, Insn_t* i)
 {
-  if (i.opcode() == Op_ZERO)
-    i = decoder(code.image(pc), pc);
-  uint32_t b = code.image(pc);
   int n = 0;
-  if (i.compressed())
+  if (i->opcode() == Op_ZERO) {
+    n += sprintf(buf, "Nothing here");
+    return n;
+  }
+  uint32_t b = *(uint32_t*)pc;
+  if (i->compressed())
     n += sprintf(buf+n, "    %04x  ", b&0xFFFF);
   else
     n += sprintf(buf+n, "%08x  ",     b);
-  n += sprintf(buf+n, "%-23s", op_name[i.opcode()]);
+  n += sprintf(buf+n, "%-23s", op_name[i->opcode()]);
   char sep = ' ';
-  if (i.rd()  != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i.rd() ]); sep=','; }
-  if (i.rs1() != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i.rs1()]); sep=','; }
-  if (i.longimmed())    { n += sprintf(buf+n, "%c%ld", sep, i.immed()); }
+  if (i->rd()  != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i->rd() ]); sep=','; }
+  if (i->rs1() != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i->rs1()]); sep=','; }
+  if (i->longimmed())    { n += sprintf(buf+n, "%c%ld", sep, i->immed()); }
   else {
-    if (i.rs2() != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i.rs2()]); sep=','; }
-    if (i.rs3() != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i.rs3()]); sep=','; }
-    n += sprintf(buf+n, "%c%ld", sep, i.immed());
+    if (i->rs2() != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i->rs2()]); sep=','; }
+    if (i->rs3() != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i->rs3()]); sep=','; }
+    n += sprintf(buf+n, "%c%ld", sep, i->immed());
   }
   return n;
 }
 
-void disasm(long pc, const char* end, FILE* f)
+void disasm(long pc, Insn_t* i, const char* end, FILE* f)
 {
   char buffer[1024];
-  sdisasm(buffer, pc, code.at(pc));
+  sdisasm(buffer, pc, i);
   fprintf(f, "%s%s", buffer, end);
-}
-
-void substitute_cas(long lo, long hi)
-{
-  // look for compare-and-swap pattern
-  long possible=0, replaced=0;
-  for (long pc=lo; pc<hi; pc+=code.at(pc).compressed()?2:4) {
-    Insn_t i = code.at(pc);
-    if (!(i.opcode() == Op_lr_w || i.opcode() == Op_lr_d))
-      continue;
-    possible++;
-    Insn_t i2 = code.at(pc+4);
-    if (i2.opcode() != Op_bne && i2.opcode() != Op_c_bnez) continue;
-    int len = 4 + (i2.opcode()==Op_c_bnez ? 2 : 4);
-    Insn_t i3 = code.at(pc+len);
-    if (i3.opcode() != Op_sc_w && i3.opcode() != Op_sc_d) continue;
-    // pattern found, check registers
-    int load_reg = i.rd();
-    int addr_reg = i.rs1();
-    int test_reg = (i2.opcode() == Op_c_bnez) ? 0 : i2.rs2();
-    int newv_reg = i3.rs2();
-    int flag_reg = i3.rd();
-    if (i2.rs1() != load_reg) continue;
-    if (i3.rs1() != addr_reg) continue;
-    // pattern is good
-    Opcode_t op;
-    if (len == 8) op = (i.opcode() == Op_lr_w) ? Op_cas12_w : Op_cas12_d;
-    else          op = (i.opcode() == Op_lr_w) ? Op_cas10_w : Op_cas10_d;
-    code.set(pc, Insn_t(op, flag_reg, addr_reg, test_reg, newv_reg, i2.immed()));
-    replaced++;
-  }
-  if (replaced != possible) {
-    fprintf(stderr, "%ld Load-Reserve found, %ld substitution failed\n", possible, possible-replaced);
-    exit(-1);
-  }
 }
 
 #include "constants.h"

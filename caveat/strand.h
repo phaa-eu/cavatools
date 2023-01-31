@@ -91,17 +91,20 @@ public:
     return old;
   }
 
-  template<class T> bool cas(long pc)
+  //  template<class T> bool cas(long pc, Insn_t* i)
+  template<class T> bool cas(Insn_t* i)
   {
-    Insn_t i = code.at(pc);
-    T* ptr = (T*)xrf[i.rs1()];
-    T expect  =  xrf[i.rs2()];
-    T replace =  xrf[i.rs3()];
+    T* ptr = (T*)xrf[i->rs1()];
+    T replace =  xrf[i->rs2()];
+    T expect  =  xrf[i->rs3()];
     T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
-    xrf[code.at(pc+4).rs1()] = oldval;
-    if (oldval == expect)  xrf[i.rd()] = 0;;	/* sc was successful */
-    return oldval == expect;
+    //    xrf[(i-2)->rd()] = oldval;		      // lr value
+    //    if (oldval == expect)  xrf[i->rd()] = 0;  // sc was successful
+    //    xrf[i->rd()] = failed;
+    return (oldval != expect);
   }
+
+  Insn_t substitute_cas(Insn_t* i3);
 
   template<typename op>	uint32_t amo_uint32(long a, op f) {
     uint32_t lhs, *ptr = (uint32_t*)a;

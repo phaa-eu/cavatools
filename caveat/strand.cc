@@ -28,18 +28,25 @@ hart_t* hart_t::find(int tid)
 
 void strand_t::print_trace(long pc, Insn_t* i)
 {
-  if (i->rd() != NOREG)
-    fprintf(stderr, "%15ld %4s[%016lx] ", executed(), reg_name[i->rd()], xrf[i->rd()]);
-  else if (attributes[i->opcode()] & ATTR_st)
-    fprintf(stderr, "%15ld %4s[%016lx] ", executed(), reg_name[i->rs2()], xrf[i->rs2()]); 
-  else if (attributes[i->opcode()] & (ATTR_cj|ATTR_uj))
-    fprintf(stderr, "%15ld %4s[%016lx] ", executed(), reg_name[i->rs1()], xrf[i->rs1()]); 
-  else if (attributes[i->opcode()] & ATTR_ex)
-    fprintf(stderr, "%15ld %4s[%016lx] ", executed(), reg_name[10], xrf[10]); 
+  if (i->opcode() == Op_ZERO) {
+    fprintf(stderr, "x");
+    return;
+  }
+  fprintf(stderr, "\t%7ld ", executed());
+  if (i->rd() == NOREG) {
+    if (attributes[i->opcode()] & ATTR_st)
+      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs2()], xrf[i->rs2()]); 
+    else if ((attributes[i->opcode()] & (ATTR_cj|ATTR_uj)) && (i->rs1() != NOREG))
+      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs1()], xrf[i->rs1()]); 
+    else if (attributes[i->opcode()] & ATTR_ex)
+      fprintf(stderr, "%4s[%016lx] ", reg_name[10], xrf[10]);
+    else
+      fprintf(stderr, "%4s[%16s] ", "", "");
+  }
   else
-    fprintf(stderr, "%15ld %4s[%16s] ", executed(), "", "");
+    fprintf(stderr, "%4s[%016lx] ", reg_name[i->rd()], xrf[i->rd()]);
   labelpc(pc);
-  disasm(pc, "\n");
+  disasm(pc, i, "\n");
 }
 
 #ifdef DEBUG
@@ -82,21 +89,9 @@ void Debug_t::print()
     else
       fprintf(stderr, "%15ld %4s[%16s] ", t.count, "", "");
     labelpc(t.pc);
-    if (code.valid(t.pc))
-      disasm(t.pc, "");
+    disasm(t.pc, i, "");
     fprintf(stderr, "\n");
   }
-}
-
-void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
-{
-  //  ucontext_t* context = (ucontext_t*)vcontext;
-  //  context->uc_mcontext.gregs[]
-  fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
-  strand_t* thisCPU = strand_t::find(gettid());
-  thisCPU->debug.print();
-  exit(-1);
-  //  longjmp(return_to_top_level, 1);
 }
 
 #endif

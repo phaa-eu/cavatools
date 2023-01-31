@@ -58,6 +58,21 @@ void nop_simulator(class hart_t* p, long pc, Insn_t* begin, long count, long* ad
 }
   
   
+hart_t* mycpu;
+
+#ifdef DEBUG
+void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
+{
+  //  ucontext_t* context = (ucontext_t*)vcontext;
+  //  context->uc_mcontext.gregs[]
+  fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
+  //  strand_t* thisCPU = hart_t::find(gettid())->
+  //  thisCPU->debug.print();
+  mycpu->strand->debug.print();
+  exit(-1);
+  //  longjmp(return_to_top_level, 1);
+}
+#endif
 
 int main(int argc, const char* argv[], const char* envp[])
 {
@@ -65,7 +80,7 @@ int main(int argc, const char* argv[], const char* envp[])
   if (argc == 0)
     help_exit();
   start_time();
-  hart_t* mycpu = new hart_t(argc, argv, envp);
+  mycpu = new hart_t(argc, argv, envp);
 
 #ifdef DEBUG
   static struct sigaction action;

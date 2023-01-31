@@ -111,7 +111,8 @@ for line in sys.stdin:
     if bytes == 2:
         last_compressed_opcode = opcode
 
-opcodes = ['ZERO'] + [key for key in instructions] + ['cas10_w', 'cas10_d', 'cas12_w', 'cas12_d'] + ['ILLEGAL', 'UNKNOWN']
+#opcodes = ['ZERO'] + [key for key in instructions] + ['cas_w', 'cas_d'] + ['ILLEGAL', 'UNKNOWN']
+opcodes = ['ZERO'] + [key for key in instructions] + ['ILLEGAL', 'UNKNOWN']
 
 isa_letter = {}
 attribute = {}

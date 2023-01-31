@@ -8,8 +8,8 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-MINUS_O := -Ofast -Wswitch
-#MINUS_O := -O3 -DDEBUG -Wswitch
+#MINUS_O := -Ofast -Wswitch
+MINUS_O := -O3 -DDEBUG -Wswitch
 #MINUS_O := -O0 -DDEBUG -Wswitch
 
 #MINUS_O := -O0
