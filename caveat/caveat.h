@@ -53,10 +53,6 @@ static_assert(sizeof(Insn_t) == 8);
 
 Insn_t decoder(long pc);
 
-
-
-
-
 /*
   The Translation Cache consists of a header and an array of 64-bit slots.
   A slot can be a translated instruction, a basic block header, or a branch target pointer.
@@ -74,76 +70,36 @@ struct bb_header_t {
 };
 static_assert(sizeof(bb_header_t) == 8);
 
-
-#if 0
-class Tcache_header_t {
-  //  enum SegType_t typ;
- public:
-  Insn_t* end;			// first free entry
-  bb_header_t* bb;		// current basic block;
-  bb_header_t* new_basic_block(long pc) { bb=(bb_header_t*)end++; bb->addr=pc; return bb; }
-  void add_insn(Insn_t insn) { *end++ = insn; *(uint64_t*)end=0; }
-  void end_basic_block(bool cb) { bb->count = end-(Insn_t*)bb; *(uint64_t*)end++=0; if (cb) *(uint64_t*)end++=0; }
-};
-#endif
-
-
-
 extern Insn_t* tcache;			// Translated instructions and basic block info
-//extern Tcache_header_t* code;
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-typedef void (*simfunc_t)(class hart_t* p, long pc, Insn_t* begin, long count, long* addresses);
-typedef void (*statfunc_t)(class hart_t* p);
 
 class hart_t {
-  
-  static volatile hart_t* cpu_list;	// for find() using thread id
-  volatile hart_t* link;		// list of strand_t
-  void attach_hart();
-  int my_tid;				// my Linux thread number
-  int _number;				// index of this hart
-  static volatile int num_threads;	// allocated
+  class strand_t* strand;	// opaque pointer
+  long _executed;			// executed this thread
+  long next_report;
 
 public:
-  class strand_t* strand;	// opaque pointer
   
   hart_t(hart_t* from);
   hart_t(int argc, const char* argv[], const char* envp[]);
   
-  //  virtual void simulator(long pc, Insn_t* begin, long count, long* addresses);
-  //  virtual void my_report(long total);
-  
-  void interpreter(simfunc_t simulator, statfunc_t my_status);
+  virtual void simulator(long pc, Insn_t* begin, long count, long* addresses);
+  void interpreter();
+
   long executed();
   static long total_count();
-  
-  static hart_t* list() { return (hart_t*)cpu_list; }
-  hart_t* next() { return (hart_t*)link; }
-  int number() { return _number; }
-  long tid() { return my_tid; }
+  static hart_t* list();
+  hart_t* next();
+  int number();
+  long tid();
   void set_tid();
   static hart_t* find(int tid);
-  static int threads() { return num_threads; }
-      
+  static int threads();
+  void debug_print();
+  
   void print_debug_trace();  
 };
 
 void start_time();
 double elapse_time();
-void status_report(statfunc_t s);

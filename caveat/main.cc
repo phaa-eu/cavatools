@@ -11,14 +11,10 @@
 #include "instructions.h"
 #include "strand.h"
 
+option<long> conf_report("report", 100000000, "Status report frequency");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
 
-void my_status(class hart_t* p)
-{
-  fprintf(stderr, "%1ld%%", 100*p->executed()/hart_t::total_count());
-}
-
-void status_report(statfunc_t my_status)
+void status_report()
 {
   if (conf_quiet)
     return;
@@ -30,7 +26,7 @@ void status_report(statfunc_t my_status)
     for (hart_t* p=hart_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
       //      fprintf(stderr, "%1ld%%", 100*p->executed()/total);
-      my_status(p);
+      fprintf(stderr, "%1ld%%", 100*p->executed()/hart_t::total_count());
       separator = ',';
     }
     fprintf(stderr, ")");
@@ -43,7 +39,7 @@ void exit_func()
 {
   fprintf(stderr, "\n");
   fprintf(stderr, "EXIT_FUNC() called\n\n");
-  status_report(my_status);
+  status_report();
   fprintf(stderr, "\n");
 }  
 
@@ -53,8 +49,12 @@ static void segv_handler(int, siginfo_t*, void*) {
   longjmp(return_to_top_level, 1);
 }
 
-void nop_simulator(class hart_t* p, long pc, Insn_t* begin, long count, long* addresses)
+void hart_t::simulator(long pc, Insn_t* begin, long count, long* addresses)
 {
+  if ((_executed+=count) >= next_report) {
+    status_report();
+    next_report += conf_report;
+  }
 }
   
   
@@ -68,7 +68,7 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
   fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
   //  strand_t* thisCPU = hart_t::find(gettid())->
   //  thisCPU->debug.print();
-  mycpu->strand->debug.print();
+  mycpu->debug_print();
   exit(-1);
   //  longjmp(return_to_top_level, 1);
 }
@@ -99,7 +99,8 @@ int main(int argc, const char* argv[], const char* envp[])
   }
 #endif
 
-  mycpu->interpreter(nop_simulator, my_status);
+  //  mycpu->interpreter(nop_simulator, my_status);
+  mycpu->interpreter();
 }
 
 #if 0
@@ -139,54 +140,4 @@ int main(int argc, const char* argv[], const char* envp[])
   }
   return 0;
 }
-#endif
-
-
-#if 0
-
-extern "C" {
-
-#define poolsize  (1<<30)	/* size of simulation memory pool */
-
-static char simpool[poolsize];	/* base of memory pool */
-static volatile char* pooltop = simpool; /* current allocation address */
-
-void *malloc(size_t size)
-{
-  char volatile *rv, *newtop;
-  do {
-    volatile char* after = pooltop + size + 16; /* allow for alignment */
-    if (after > simpool+poolsize) {
-      fprintf(stderr, " failed\n");
-      return 0;
-    }
-    rv = pooltop;
-    newtop = (char*)((unsigned long)after & ~0xfL); /* always align to 16 bytes */
-  } while (!__sync_bool_compare_and_swap(&pooltop, rv, newtop));
-      
-  return (void*)rv;
-}
-
-void free(void *ptr)
-{
-  /* we don't free stuff */
-}
-
-void *calloc(size_t nmemb, size_t size)
-{
-  return malloc(nmemb * size);
-}
-
-void *realloc(void *ptr, size_t size)
-{
-  return 0;
-}
-
-void *reallocarray(void *ptr, size_t nmemb, size_t size)
-{
-  return 0;
-}
-
-};
-
 #endif

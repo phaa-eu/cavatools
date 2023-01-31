@@ -13,29 +13,25 @@
 #include "elf_loader.h"
 
 option<long> conf_tcache("tcache", 1024, "Binary translation cache size in 4K pages");
+extern option<long> conf_report;
 
 extern "C" {
   long initialize_stack(int argc, const char** argv, const char** envp);
 };
 
-volatile hart_t* hart_t::cpu_list =0;
-volatile int hart_t::num_threads =0;
+volatile strand_t* strand_t::cpu_list =0;
+volatile int strand_t::num_threads =0;
 
-hart_t* hart_t::find(int tid)
+strand_t* strand_t::find(int tid)
 {
-  for (volatile hart_t* p=list(); p; p=p->link)
+  for (volatile strand_t* p=list(); p; p=p->link)
     if (p->my_tid == tid)
-      return (hart_t*)p;
+      return (strand_t*)p;
   return 0;
 }
 
 void strand_t::print_trace(long pc, Insn_t* i)
 {
-  if (i->opcode() == Op_ZERO) {
-    fprintf(stderr, "x");
-    return;
-  }
-  fprintf(stderr, "\t%7ld ", executed());
   if (i->rd() == NOREG) {
     if (attributes[i->opcode()] & ATTR_st)
       fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs2()], xrf[i->rs2()]); 
@@ -66,10 +62,9 @@ void Debug_t::insert(pctrace_t pt)
   trace[cursor] = pt;
 }
 
-void Debug_t::insert(long c, long pc, Insn_t* i)
+void Debug_t::insert(long pc, Insn_t* i)
 {
   cursor = (cursor+1) % PCTRACEBUFSZ;
-  trace[cursor].count = c;
   trace[cursor].pc    = pc;
   trace[cursor].i     = i;
   trace[cursor].val   = ~0l;
@@ -86,11 +81,11 @@ void Debug_t::print()
     pctrace_t t = get();
     Insn_t* i = t.i;
     if (i->rd() != NOREG)
-      fprintf(stderr, "%15ld %4s[%016lx] ", t.count, reg_name[i->rd()], t.val);
+      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rd()], t.val);
     else if (attributes[i->opcode()] & ATTR_st)
-      fprintf(stderr, "%15ld %4s[%016lx] ", t.count, reg_name[i->rs2()], t.val);
+      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs2()], t.val);
     else
-      fprintf(stderr, "%15ld %4s[%16s] ", t.count, "", "");
+      fprintf(stderr, "%4s[%16s] ", "", "");
     labelpc(t.pc);
     disasm(t.pc, i, "");
     fprintf(stderr, "\n");
@@ -99,6 +94,19 @@ void Debug_t::print()
 
 #endif
 
+void strand_t::attach_to_list()
+{
+  do {
+    link = list();
+  } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
+  int old_n;			// atomically increment thread count
+  do {
+    old_n = num_threads;
+  } while (!__sync_bool_compare_and_swap(&num_threads, old_n, old_n+1));
+  _number = old_n;		// after loop in case of race
+  my_tid = gettid();
+}
+
 strand_t::strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[])
 {
   memset(this, 0, sizeof(strand_t));
@@ -106,18 +114,17 @@ strand_t::strand_t(class hart_t* h, int argc, const char* argv[], const char* en
   memset(tcache, 0, conf_tcache*4096);
   pc = load_elf_binary(argv[0], 1);
   xrf[2] = initialize_stack(argc, argv, envp);
-  hart = h;
+  hart_pointer = h;
   addresses = (long*)mmap(0, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  next_report = 100;
+  attach_to_list();
 }
 
 strand_t::strand_t(class hart_t* h, strand_t* from)
 {
   memcpy(this, from, sizeof(strand_t));
-  hart = h;
+  hart_pointer = h;
   addresses = (long*)mmap(0, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  _executed = 0;
-  next_report = 100;
+  attach_to_list();
 }
 
 
@@ -156,41 +163,24 @@ void strand_t::set_csr(int what, long val)
   }
 }
 
-
-
-
-
-void hart_t::attach_hart()
-{
-  do {
-    link = list();
-  } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
-  int old_n;			// atomically increment thread count
-  do {
-    old_n = num_threads;
-  } while (!__sync_bool_compare_and_swap(&num_threads, old_n, old_n+1));
-  _number = old_n;		// after loop in case of race
-  my_tid = gettid();
-}
+void strand_t::set_tid() { my_tid = gettid(); }
 
 hart_t::hart_t(hart_t* from)
 {
   strand = new strand_t(this, from->strand);
-  attach_hart();
+  next_report = conf_report;
 }
 
 hart_t::hart_t(int argc, const char* argv[], const char* envp[])
 {
   strand = new strand_t(this, argc, argv, envp);
-  attach_hart();
-  //  long sp = initialize_stack(argc, argv, envp);
-  //  strand->write_reg(2, sp);	// x2 is stack pointer
+  next_report = conf_report;
 }
 
-void hart_t::interpreter(simfunc_t f, statfunc_t s)	{ strand->interpreter(f, s); }
-void hart_t::set_tid()		{ my_tid = gettid(); }
-long hart_t::executed()		{ return strand->executed(); }
+//void hart_t::interpreter(simfunc_t f, statfunc_t s)	{ strand->interpreter(f, s); }
 
+void hart_t::interpreter() { strand->interpreter(); }
+long hart_t::executed()	{ return _executed; }
 long hart_t::total_count()
 {
   long total = 0;
@@ -198,6 +188,15 @@ long hart_t::total_count()
     total += p->executed();
   return total;
 }
+hart_t* hart_t::list() { return strand_t::list() ? strand_t::list()->hart() : 0; }
+hart_t* hart_t::next() { return strand->next() ? strand->next()->hart() : 0; }
+int hart_t::number() { return strand->number(); }
+long hart_t::tid() { return strand->tid(); }
+void hart_t::set_tid() { strand->set_tid(); }
+hart_t* hart_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart() : 0; }
+int hart_t::threads() { return strand_t::threads(); }
+void hart_t::debug_print() { strand->debug_print(); }
+
 
 /*
 void hart_t::my_report(long total)

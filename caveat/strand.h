@@ -26,7 +26,6 @@ typedef float128_t	freg_t;
 
 
 struct pctrace_t {
-  long count;
   long pc;
   Insn_t* i;
   reg_t val;
@@ -38,21 +37,22 @@ struct Debug_t {
   int cursor;
   Debug_t() { cursor=0; }
   pctrace_t get();
-  void print();
 #ifdef DEBUG
   void insert(pctrace_t pt);
-  void insert(long c, long pc, Insn_t* i);
+  void insert(long pc, Insn_t* i);
   void addval(reg_t val);
+  void print();
 #else
   void insert(pctrace_t pt) { }
-  void insert(long c, long pc, Insn_t* i) { }
+  void insert(long pc, Insn_t* i) { }
   void addval(reg_t val) { }
+  void print() { }
 #endif
 };
 
 
 class strand_t {
-  class hart_t* hart;			// simulation object
+  class hart_t* hart_pointer;		// simulation object
   long* addresses;			// list of load/store addr
   reg_t  xrf[32];
   freg_t frf[32];
@@ -65,27 +65,42 @@ class strand_t {
     uint32_t ui;
   } fcsr;
   
+  static volatile strand_t* cpu_list;	// for find() using thread id
+  volatile strand_t* link;		// list of strand_t
+  void attach_to_list();
+  int my_tid;				// my Linux thread number
+  int _number;				// index of this hart
+  static volatile int num_threads;	// allocated
+  
 private:  
-  long _executed;			// executed this thread
-  long next_report;
   volatile int clone_lock;	// 0=free, 1=locked
+  
   friend int thread_interpreter(void* arg);
+  
 public:
   strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[]);
   strand_t(class hart_t* h, strand_t* p);
   //  friend hart_t::hart_t(hart_t* from, class hart_t* h);
   //  friend hart_t::hart_t(class hart_t* h, int argc, const char* argv[], const char* envp[]);
+  class hart_t* hart() { return hart_pointer; }
   
   //  virtual strand_t* newcore() { abort(); }
   //  virtual void proxy_syscall(long sysnum);
   void proxy_syscall(long sysnum);
   void proxy_ecall();
   
-  long executed() { return _executed; }
-  static long total_count();
-  void interpreter(simfunc_t f, statfunc_t s);
+  void interpreter();
   void single_step();
   void print_trace(long pc, Insn_t* i);
+  void debug_print() { debug.print(); }
+  
+  static strand_t* list() { return (strand_t*)cpu_list; }
+  strand_t* next() { return (strand_t*)link; }
+  int number() { return _number; }
+  long tid() { return my_tid; }
+  void set_tid();
+  static strand_t* find(int tid);
+  static int threads() { return num_threads; }
 
   long get_csr(int what);
   void set_csr(int what, long value);

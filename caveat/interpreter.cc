@@ -22,8 +22,6 @@ extern "C" {
 #include "strand.h"
 #include "arithmetic.h"
 
-option<long> conf_report("report", 100000000, "Status report frequency");
-
 
 
 
@@ -117,9 +115,9 @@ Insn_t substitute_cas(long pc, Insn_t* i3)
   return Insn_t(i3->opcode()==Op_sc_w?Op_cas_w:Op_cas_d, flag_reg, addr_reg, newv_reg, test_reg, i3->immed());
 }
 
-void strand_t::interpreter(simfunc_t simulator, statfunc_t my_status)
+//void strand_t::interpreter(simfunc_t simulator, statfunc_t my_status)
+void strand_t::interpreter()
 {
-  next_report = conf_report;
   Insn_t* end = tcache;
   bb_header_t** link = &zero_link;
   bb_header_t* bb;		// current basic block
@@ -164,7 +162,7 @@ void strand_t::interpreter(simfunc_t simulator, statfunc_t my_status)
     Insn_t* i = (Insn_t*)(bb+1);
     for(;; i++) {
       xrf[0] = 0;
-      debug.insert(executed()+1, pc, i);
+      debug.insert(pc, i);
     re_execute_instruction:
       switch (i->opcode()) {
       case Op_ZERO:		// not yet decoded
@@ -184,22 +182,7 @@ void strand_t::interpreter(simfunc_t simulator, statfunc_t my_status)
     // at this point pc=target basic block but i still points to last instruction.
   end_basic_block:
     debug.addval(xrf[i->rd()]);
-#if 0
-    if (newbb) {
-      //      code->end_basic_block((attributes[i->opcode()] & ATTR_cj) != 0);
-      bb->count = end-(Insn_t*)bb;
-      *(uint64_t*)end++=0;
-      if (attributes[i->opcode()] & ATTR_cj)
-	*(uint64_t*)end++=0;
-      newbb = false;
-    }
-#endif
-    _executed += bb->count;
-    if (_executed >= next_report) {
-      status_report(my_status);
-      next_report += conf_report;
-    }
-    simulator(hart, bb->addr, (Insn_t*)(bb+1), bb->count, addresses);
+    hart_pointer->simulator(bb->addr, (Insn_t*)(bb+1), bb->count, addresses);
   }
 }
 

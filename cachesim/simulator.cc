@@ -22,6 +22,8 @@ option<int> conf_Vrows("vrows",	4,		"Vector cache log-base-2 number of rows");
 
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
+option<long> conf_report("report", 100000000, "Status report frequency");
+option<bool> conf_quiet("quiet",	false, true,			"No status report");
 
 class core_t : public hart_t {
   static volatile long global_time;
@@ -32,8 +34,7 @@ public:
   core_t(core_t* from);
   core_t(int argc, const char* argv[], const char* envp[]);
   
-  friend void simulator(hart_t* h, long pc, Insn_t* i, long count, long* addresses);
-  friend void my_status(hart_t* h);
+  void simulator(long pc, Insn_t* i, long count, long* addresses);
   
   //  core_t* newcore() { return new core_t(this); }
   //  void proxy_syscall(long sysnum);
@@ -48,20 +49,55 @@ public:
 };
 
 
-void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a)
+void start_time();
+double elapse_time();
+
+void status_report()
 {
-  core_t* p = (core_t*)h;
+  double realtime = elapse_time();
+  long total = hart_t::total_count();
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS, IPC(D$,V$)", total, realtime, total/1e6/realtime);
+  if (hart_t::threads() <= 16) {
+    char separator = '=';
+    for (core_t* p=core_t::list(); p; p=p->next()) {
+      fprintf(stderr, "%c", separator);
+      double N = p->executed();
+      double M = p->dc.refs() + p->vc.refs();
+      fprintf(stderr, "%4.2f(%1.0f%%:%4.2f%%,%1.0f%%:%4.2f%%)", N/p->local_clock(),
+	      100.0*p->dc.refs()/M, 100.0*p->dc.misses()/N,
+	      100.0*p->vc.refs()/M, 100.0*p->vc.misses()/N);
+      separator = ',';
+    }
+  }
+  else if (hart_t::threads() > 1)
+    fprintf(stderr, "(%d cores)", hart_t::threads());
+}
+
+void exitfunc()
+{
+  fprintf(stderr, "\n--------\n");
+  for (core_t* p=core_t::list(); p; p=p->next()) {
+    fprintf(stderr, "Core [%ld] ", p->tid());
+    p->print();
+  }
+  fprintf(stderr, "\n");
+  status_report();
+  fprintf(stderr, "\n");
+}
+
+void core_t::simulator(long pc, Insn_t* i, long count, long* a)
+{
   for (; count>0; count--) {
-    p->local_time++;
+    local_time++;
     uint64_t attr = attributes[i->opcode()];
     if (attr & ATTR_ld|ATTR_st) {
       if (attr & ATTR_vec) {
-	if (!p->vc.lookup(*a++, (attr&ATTR_st)))
-	  p->local_time += p->vc.penalty();
+	if (!vc.lookup(*a++, (attr&ATTR_st)))
+	  local_time += vc.penalty();
       }
       else {
-	if (!p->dc.lookup(*a++, (attr&ATTR_st)))
-	  p->local_time += p->dc.penalty();
+	if (!dc.lookup(*a++, (attr&ATTR_st)))
+	  local_time += dc.penalty();
       }
     }
     pc += i->compressed() ? 2 : 4;
@@ -134,48 +170,6 @@ void core_t::update_time()
 }
 
 
-void start_time();
-double elapse_time();
-
-void my_status(hart_t* h)
-{
-  core_t* p = (core_t*)h;
-  double N = p->executed();
-  double M = p->dc.refs() + p->vc.refs();
-  fprintf(stderr, "%4.2f(%1.0f%%:%4.2f%%,%1.0f%%:%4.2f%%)", N/p->local_clock(),
-	  100.0*p->dc.refs()/M, 100.0*p->dc.misses()/N,
-	  100.0*p->vc.refs()/M, 100.0*p->vc.misses()/N);
-}
-
-void status_report(statfunc_t my_status)
-{
-  double realtime = elapse_time();
-  long total = hart_t::total_count();
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS, IPC(D$,V$)", total, realtime, total/1e6/realtime);
-  if (hart_t::threads() <= 16) {
-    char separator = '=';
-    for (hart_t* p=hart_t::list(); p; p=p->next()) {
-      fprintf(stderr, "%c", separator);
-      my_status(p);
-      separator = ',';
-    }
-  }
-  else if (hart_t::threads() > 1)
-    fprintf(stderr, "(%d cores)", hart_t::threads());
-}
-
-void exitfunc()
-{
-  fprintf(stderr, "\n--------\n");
-  for (core_t* p=core_t::list(); p; p=p->next()) {
-    fprintf(stderr, "Core [%ld] ", p->tid());
-    p->print();
-  }
-  fprintf(stderr, "\n");
-  status_report(my_status);
-  fprintf(stderr, "\n");
-}
-
 #ifdef DEBUG
 void signal_handler(int nSIGnum)
 {
@@ -200,5 +194,5 @@ int main(int argc, const char* argv[], const char* envp[])
   start_time();
   core_t* mycpu = new core_t(argc, argv, envp);
   atexit(exitfunc);
-  mycpu->interpreter(&simulator, &my_status);
+  mycpu->interpreter();
 }
