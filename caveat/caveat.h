@@ -75,7 +75,7 @@ struct bb_header_t {
 static_assert(sizeof(bb_header_t) == 8);
 
 
-
+#if 0
 class Tcache_header_t {
   //  enum SegType_t typ;
  public:
@@ -85,11 +85,12 @@ class Tcache_header_t {
   void add_insn(Insn_t insn) { *end++ = insn; *(uint64_t*)end=0; }
   void end_basic_block(bool cb) { bb->count = end-(Insn_t*)bb; *(uint64_t*)end++=0; if (cb) *(uint64_t*)end++=0; }
 };
+#endif
 
 
 
 extern Insn_t* tcache;			// Translated instructions and basic block info
-extern Tcache_header_t* code;
+//extern Tcache_header_t* code;
 
 
 

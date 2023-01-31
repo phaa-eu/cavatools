@@ -109,7 +109,7 @@ public:
     return (oldval != expect);
   }
 
-  Insn_t substitute_cas(Insn_t* i3);
+  //  Insn_t substitute_cas(Insn_t* i3);
 
   template<typename op>	uint32_t amo_uint32(long a, op f) {
     uint32_t lhs, *ptr = (uint32_t*)a;

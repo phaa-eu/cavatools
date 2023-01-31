@@ -10,6 +10,9 @@
 #include "caveat.h"
 #include "instructions.h"
 #include "strand.h"
+#include "elf_loader.h"
+
+option<long> conf_tcache("tcache", 1024, "Binary translation cache size in 4K pages");
 
 extern "C" {
   long initialize_stack(int argc, const char** argv, const char** envp);
@@ -99,7 +102,9 @@ void Debug_t::print()
 strand_t::strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[])
 {
   memset(this, 0, sizeof(strand_t));
-  pc = loadelf(argv[0]);
+  tcache = (Insn_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  memset(tcache, 0, conf_tcache*4096);
+  pc = load_elf_binary(argv[0], 1);
   xrf[2] = initialize_stack(argc, argv, envp);
   hart = h;
   addresses = (long*)mmap(0, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -209,4 +214,57 @@ void hart_t::print_debug_trace()
 #else
   die("DEBUG not enabled!");
 #endif
+}
+
+
+
+#define LABEL_WIDTH  16
+#define OFFSET_WIDTH  8
+int slabelpc(char* buf, long pc)
+{
+  long offset;
+  const char* label = elf_find_pc(pc, &offset);
+  if (label)
+    return sprintf(buf, "%*.*s+%*ld %8lx: ", LABEL_WIDTH, LABEL_WIDTH, label, -(OFFSET_WIDTH-1), offset, pc);
+  else
+    return sprintf(buf, "%*s %8lx: ", LABEL_WIDTH+OFFSET_WIDTH, "<invalid pc>", pc);
+}
+
+void labelpc(long pc, FILE* f)
+{
+  char buffer[1024];
+  slabelpc(buffer, pc);
+  fprintf(f, "%s", buffer);
+}
+
+int sdisasm(char* buf, long pc, Insn_t* i)
+{
+  int n = 0;
+  if (i->opcode() == Op_ZERO) {
+    n += sprintf(buf, "Nothing here");
+    return n;
+  }
+  uint32_t b = *(uint32_t*)pc;
+  if (i->compressed())
+    n += sprintf(buf+n, "    %04x  ", b&0xFFFF);
+  else
+    n += sprintf(buf+n, "%08x  ",     b);
+  n += sprintf(buf+n, "%-23s", op_name[i->opcode()]);
+  char sep = ' ';
+  if (i->rd()  != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i->rd() ]); sep=','; }
+  if (i->rs1() != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i->rs1()]); sep=','; }
+  if (i->longimmed())    { n += sprintf(buf+n, "%c%ld", sep, i->immed()); }
+  else {
+    if (i->rs2() != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i->rs2()]); sep=','; }
+    if (i->rs3() != NOREG) { n += sprintf(buf+n, "%c%s", sep, reg_name[i->rs3()]); sep=','; }
+    n += sprintf(buf+n, "%c%ld", sep, i->immed());
+  }
+  return n;
+}
+
+void disasm(long pc, Insn_t* i, const char* end, FILE* f)
+{
+  char buffer[1024];
+  sdisasm(buffer, pc, i);
+  fprintf(f, "%s%s", buffer, end);
 }
