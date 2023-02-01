@@ -1,7 +1,8 @@
 /*
-  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+  Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 #include <stdlib.h>
+
 #define abort() { fprintf(stderr, "Aborting in %s line %d\n", __FILE__, __LINE__); exit(-1); }
 
 #include <unistd.h>

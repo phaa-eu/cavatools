@@ -28,6 +28,8 @@ option<bool> conf_quiet("quiet",	false, true,			"No status report");
 class core_t : public hart_t {
   static volatile long global_time;
   long local_time;
+  long _executed;
+  long next_report;
 public:
   cache_t dc;
   cache_t vc;
@@ -36,6 +38,9 @@ public:
   
   //  core_t* newcore() { return new core_t(this); }
   //  void proxy_syscall(long sysnum);
+  long executed() { return _executed; }
+  long more_insn(long n) { _executed+=n; return _executed; }
+  static long total_count();
   
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
@@ -48,14 +53,18 @@ public:
   friend void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a);
 };
 
-
-void start_time();
-double elapse_time();
+long core_t::total_count()
+{
+  long total = 0;
+  for (core_t* p=core_t::list(); p; p=p->next())
+    total += p->executed();
+  return total;
+}
 
 void status_report()
 {
   double realtime = elapse_time();
-  long total = hart_t::total_count();
+  long total = core_t::total_count();
   fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS, IPC(D$,V$)", total, realtime, total/1e6/realtime);
   if (hart_t::threads() <= 16) {
     char separator = '=';
@@ -105,8 +114,10 @@ void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a)
     pc += i->compressed() ? 2 : 4;
     i++;
   }
-  if (h->more(count, conf_report))
+  if (p->more_insn(count) > p->next_report) {
     status_report();
+    p->next_report += conf_report;
+  }
 }
 
 void core_t::print()

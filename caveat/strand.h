@@ -52,11 +52,13 @@ struct Debug_t {
 
 
 class strand_t {
-  class hart_t* hart_pointer;		// simulation object
-  long* addresses;			// list of load/store addr
+  class hart_t* hart_pointer;	// simulation object
   reg_t  xrf[32];
   freg_t frf[32];
   long pc;
+  long* addresses;		// list of load/store addr
+  long* ap;			// ptr to end of address list
+  
   union {
     struct {
       unsigned flags : 5;
@@ -69,23 +71,16 @@ class strand_t {
   volatile strand_t* link;		// list of strand_t
   void attach_to_list();
   int my_tid;				// my Linux thread number
-  int _number;				// index of this hart
+  int _number;				// index of this strand
   static volatile int num_threads;	// allocated
   
-private:  
   volatile int clone_lock;	// 0=free, 1=locked
-  
   friend int thread_interpreter(void* arg);
   
 public:
   strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[]);
   strand_t(class hart_t* h, strand_t* p);
-  //  friend hart_t::hart_t(hart_t* from, class hart_t* h);
-  //  friend hart_t::hart_t(class hart_t* h, int argc, const char* argv[], const char* envp[]);
-  class hart_t* hart() { return hart_pointer; }
   
-  //  virtual strand_t* newcore() { abort(); }
-  //  virtual void proxy_syscall(long sysnum);
   void proxy_syscall(long sysnum);
   void proxy_ecall();
   
@@ -94,13 +89,16 @@ public:
   void print_trace(long pc, Insn_t* i);
   void debug_print() { debug.print(); }
   
+  class hart_t* hart() { return hart_pointer; }
   static strand_t* list() { return (strand_t*)cpu_list; }
   strand_t* next() { return (strand_t*)link; }
   int number() { return _number; }
   long tid() { return my_tid; }
-  void set_tid();
   static strand_t* find(int tid);
   static int threads() { return num_threads; }
+
+  template<typename T> inline T    LOAD( long a)      { *ap++ = a; return *(T*)a; }
+  template<typename T> inline void STORE(long a, T v) { *ap++ = a; *(T*)a = v; }
 
   long get_csr(int what);
   void set_csr(int what, long value);
@@ -111,38 +109,30 @@ public:
     return old;
   }
 
-  //  template<class T> bool cas(long pc, Insn_t* i)
   template<class T> bool cas(Insn_t* i)
   {
     T* ptr = (T*)xrf[i->rs1()];
     T replace =  xrf[i->rs2()];
     T expect  =  xrf[i->rs3()];
     T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
-    //    xrf[(i-2)->rd()] = oldval;		      // lr value
-    //    if (oldval == expect)  xrf[i->rd()] = 0;  // sc was successful
-    //    xrf[i->rd()] = failed;
+    *ap++ = (long)ptr;
     return (oldval != expect);
   }
-
-  //  Insn_t substitute_cas(Insn_t* i3);
 
   template<typename op>	uint32_t amo_uint32(long a, op f) {
     uint32_t lhs, *ptr = (uint32_t*)a;
     do lhs = *ptr;
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
-    //    amo_model(a, pc);
+    *ap++ = (long)ptr;
     return lhs;
   }
   template<typename op>	uint64_t amo_uint64(long a, op f) {
     uint64_t lhs, *ptr = (uint64_t*)a;
     do lhs = *ptr;
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
-    //    amo_model(a, pc);
+    *ap++ = (long)ptr;
     return lhs;
   }
-
-  template<typename T> inline T* Load(long a) { return (T*)a; }
-  template<typename T> inline void Store(long a, T v) { *(T*)a = v; }
 
   void acquire_reservation(long a) { }
   void yield_reservation() { }

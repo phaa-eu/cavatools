@@ -3,12 +3,12 @@
 # RVC Compressed Instruction Set, Quadrant 0
 
    c.addi4spn	Ct,Cc,CK	C			     "000 {5:4|9:6|2|3}        ... 00"	x[4:2]+8,2,-,-				"wrd(r1+imm)"
-   c.fld	CD,Cl(Cs)	C,D,ld			     "001 {5:3}    ... {7:6}   ... 00"	f[4:2]+8,x[9:7]+8,-,-			"wfd(f64(LOAD(uint64_t, r1+imm)))"
-   c.lw		Ct,Cl(Cs)	C,ld			     "010 {5:3}    ... {2|6}   ... 00"	x[4:2]+8,x[9:7]+8,-,-			"wrd(    LOAD( int32_t, r1+imm))"
-   c.ld		Ct,Cl(Cs)	C,ld			     "011 {5:3}    ... {7:6}   ... 00"	x[4:2]+8,x[9:7]+8,-,-			"wrd(    LOAD( int64_t, r1+imm))"
-   c.fsd	CD,Cl(Cs)	C,D,st			     "101 {5:3}    ... {7:6}   ... 00"	-,x[9:7]+8,f[4:2]+8,-			"STORE(uint64_t, r1+imm, f2.v[0])"
-   c.sw		Ct,Cl(Cs)	C,st			     "110 {5:3}    ... {2|6}   ... 00"	-,x[9:7]+8,x[4:2]+8,-			"STORE(int32_t,  r1+imm, r2)"
-   c.sd		Ct,Cl(Cs)	C,st			     "111 {5:3}    ... {7:6}   ... 00"	-,x[9:7]+8,x[4:2]+8,-			"STORE(int64_t,  r1+imm, r2)"
+   c.fld	CD,Cl(Cs)	C,D,ld			     "001 {5:3}    ... {7:6}   ... 00"	f[4:2]+8,x[9:7]+8,-,-			"wfd(f64(LOAD<uint64_t>(r1+imm)))"
+   c.lw		Ct,Cl(Cs)	C,ld			     "010 {5:3}    ... {2|6}   ... 00"	x[4:2]+8,x[9:7]+8,-,-			"wrd(    LOAD< int32_t>(r1+imm))"
+   c.ld		Ct,Cl(Cs)	C,ld			     "011 {5:3}    ... {7:6}   ... 00"	x[4:2]+8,x[9:7]+8,-,-			"wrd(    LOAD< int64_t>(r1+imm))"
+   c.fsd	CD,Cl(Cs)	C,D,st			     "101 {5:3}    ... {7:6}   ... 00"	-,x[9:7]+8,f[4:2]+8,-			"STORE<uint64_t>(r1+imm, f2.v[0])"
+   c.sw		Ct,Cl(Cs)	C,st			     "110 {5:3}    ... {2|6}   ... 00"	-,x[9:7]+8,x[4:2]+8,-			"STORE<int32_t>( r1+imm, r2)"
+   c.sd		Ct,Cl(Cs)	C,st			     "111 {5:3}    ... {7:6}   ... 00"	-,x[9:7]+8,x[4:2]+8,-			"STORE<int64_t>( r1+imm, r2)"
 
 # RVC Compressed Instruction Set, Quadrant 1
 "
@@ -33,9 +33,9 @@
 # RVC Compressed Instruction Set, Quadrant 1
 
    c.slli	rd		C			     "000 {5}    ..... {4:0}       10"	x[11:7],x[11:7],-,-			"wrd(uint64_t(r1) << imm)"
-   c.fldsp	fd		C,D,ld			     "001 {5}    ..... {4:3|8:6}   10"	f[11:7],2,-,-				"wfd(f64(LOAD(uint64_t, r1+imm)))"
-   c.lwsp	rd		C,ld			     "010 {5}    ..... {4:2|7:6}   10"	x[11:7],2,-,-				"wrd(LOAD(int32_t, r1+imm))"
-   c.ldsp	rd		C,ld			     "011 {5}    ..... {4:3|8:6}   10"	x[11:7],2,-,-				"wrd(LOAD(int64_t, r1+imm))"
+   c.fldsp	fd		C,D,ld			     "001 {5}    ..... {4:3|8:6}   10"	f[11:7],2,-,-				"wfd(f64(LOAD<uint64_t>(r1+imm)))"
+   c.lwsp	rd		C,ld			     "010 {5}    ..... {4:2|7:6}   10"	x[11:7],2,-,-				"wrd(LOAD<int32_t>(r1+imm))"
+   c.ldsp	rd		C,ld			     "011 {5}    ..... {4:3|8:6}   10"	x[11:7],2,-,-				"wrd(LOAD<int64_t>(r1+imm))"
    c.ret	rs1		C,uj,stop		     "100 0      00001       00000 10"	-,1,-,-					"jump(r1)"
    c.jr		rs1		C,uj,stop		     "100 0      .....       00000 10"	-,x[11:7],-,-				"jump(r1)"
    c.mv		rd,rs2		C			     "100 0      .....       ..... 10"	x[11:7],-,x[6:2],-			"wrd(r2)"
@@ -43,9 +43,9 @@
    c.jalr	rs1		C,uj,stop		     "100 1      .....       00000 10"	1,x[11:7],-,-				"{ long npc=r1; wrd(pc+2); jump(npc); }"
 
    c.add	rd,rs2		C			     "100 1      .....       ..... 10"	x[11:7],x[11:7],x[6:2],-		"wrd(r1 + r2)"
-   c.fsdsp	fs2		C,D,st			     "101 {5:3|8:6}          ..... 10"	-,2,f[6:2],-				"STORE(uint64_t, r1+imm, f2.v[0])"
-   c.swsp	rs2		C,st			     "110 {5:2|7:6}          ..... 10"	-,2,x[6:2],-				"STORE( int32_t, r1+imm, r2)"
-   c.sdsp	rs2		C,st			     "111 {5:3|8:6}          ..... 10"	-,2,x[6:2],-				"STORE( int64_t, r1+imm, r2)"
+   c.fsdsp	fs2		C,D,st			     "101 {5:3|8:6}          ..... 10"	-,2,f[6:2],-				"STORE<uint64_t>(r1+imm, f2.v[0])"
+   c.swsp	rs2		C,st			     "110 {5:2|7:6}          ..... 10"	-,2,x[6:2],-				"STORE< int32_t>(r1+imm, r2)"
+   c.sdsp	rs2		C,st			     "111 {5:3|8:6}          ..... 10"	-,2,x[6:2],-				"STORE< int64_t>(r1+imm, r2)"
 
 # RV32I Base Instruction Set
 
@@ -63,14 +63,14 @@
    bltu		s,t,p		I,cj,stop	"{-12|10:5}  ..... ..... 110 {4:1|11} 1100011"	-,x[19:15],x[24:20],-			"branch(uint64_t(r1)< uint64_t(r2), pc+imm, pc+4)"
    bgeu		s,t,p		I,cj,stop	"{-12|10:5}  ..... ..... 111 {4:1|11} 1100011"	-,x[19:15],x[24:20],-			"branch(uint64_t(r1)>=uint64_t(r2), pc+imm, pc+4)"
 
-   lb		d,o(s)		I,ld		"{-11:0}           ..... 000   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD( int8_t,  r1+imm))"
-   lh		d,o(s)		I,ld		"{-11:0}           ..... 001   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD( int16_t, r1+imm))"
-   lw		d,o(s)		I,ld		"{-11:0}           ..... 010   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD( int32_t, r1+imm))"
-   lbu		d,o(s)		I,ld		"{-11:0}           ..... 100   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD(uint8_t,  r1+imm))"
-   lhu		d,o(s)		I,ld		"{-11:0}           ..... 101   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD(uint16_t, r1+imm))"
-   sb		t,q(s)		I,st		"{-11:5}     ..... ..... 000   {4:0} 01000 11"	-,x[19:15],x[24:20],-			"STORE(int8_t,  r1+imm, r2)"
-   sh		t,q(s)		I,st		"{-11:5}     ..... ..... 001   {4:0} 01000 11"	-,x[19:15],x[24:20],-			"STORE(int16_t, r1+imm, r2)"
-   sw		t,q(s)		I,st		"{-11:5}     ..... ..... 010   {4:0} 01000 11"	-,x[19:15],x[24:20],-			"STORE(int32_t, r1+imm, r2)"
+   lb		d,o(s)		I,ld		"{-11:0}           ..... 000   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD< int8_t>( r1+imm))"
+   lh		d,o(s)		I,ld		"{-11:0}           ..... 001   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD< int16_t>(r1+imm))"
+   lw		d,o(s)		I,ld		"{-11:0}           ..... 010   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD< int32_t>(r1+imm))"
+   lbu		d,o(s)		I,ld		"{-11:0}           ..... 100   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD<uint8_t>( r1+imm))"
+   lhu		d,o(s)		I,ld		"{-11:0}           ..... 101   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD<uint16_t>(r1+imm))"
+   sb		t,q(s)		I,st		"{-11:5}     ..... ..... 000   {4:0} 01000 11"	-,x[19:15],x[24:20],-			"STORE<int8_t>( r1+imm, r2)"
+   sh		t,q(s)		I,st		"{-11:5}     ..... ..... 001   {4:0} 01000 11"	-,x[19:15],x[24:20],-			"STORE<int16_t>(r1+imm, r2)"
+   sw		t,q(s)		I,st		"{-11:5}     ..... ..... 010   {4:0} 01000 11"	-,x[19:15],x[24:20],-			"STORE<int32_t>(r1+imm, r2)"
 
    addi		d,s,j		I		"{-11:0}           ..... 000   ..... 00100 11"	x[11:7],x[19:15],-,-			"wrd(r1 + imm)"
    slti		d,s,j		I		"{-11:0}           ..... 010   ..... 00100 11"	x[11:7],x[19:15],-,-			"wrd( int64_t(r1) <  int64_t(imm))"
@@ -107,9 +107,9 @@
 
 # RV64I Base Instruction Set (in addition to RV32I)
 
-   lwu		d,o(s)		I,ld		"{-11:0}           ..... 110   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD(uint32_t, r1+imm))"
-   ld		d,o(s)		I,ld		"{-11:0}           ..... 011   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD(int64_t,  r1+imm))"
-   sd		t,q(s)		I,st		"{-11:5}     ..... ..... 011   {4:0} 01000 11"	-,x[19:15],x[24:20],-			"STORE(int64_t, r1+imm, r2)"
+   lwu		d,o(s)		I,ld		"{-11:0}           ..... 110   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD<uint32_t>(r1+imm))"
+   ld		d,o(s)		I,ld		"{-11:0}           ..... 011   ..... 00000 11"	x[11:7],x[19:15],-,-			"wrd(LOAD<int64_t>( r1+imm))"
+   sd		t,q(s)		I,st		"{-11:5}     ..... ..... 011   {4:0} 01000 11"	-,x[19:15],x[24:20],-			"STORE<int64_t>(r1+imm, r2)"
 
    addiw	d,s,j		I		"{-11:0}           ..... 000   ..... 00110 11"	x[11:7],x[19:15],-,-			"wrd( int32_t(r1) +  int32_t(imm))"
    slliw	d,s,<		I		"0000000     {4:0} ..... 001   ..... 00110 11"	x[11:7],x[19:15],-,-			"wrd(uint32_t(r1) << imm)"
@@ -143,8 +143,8 @@
 
 # RV32A Standard Extension
 
-   lr.w		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 010   ..... 01011 11"	x[11:7],x[19:15],-,-			"wrd(LOAD( int32_t, r1))"
-   sc.w		d,t,0(s)	A,amo,st,stop	"00011 {1:0} ..... ..... 010   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"STORE(uint32_t, r1, r2); wrd(0); jump(pc+4)"
+   lr.w		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 010   ..... 01011 11"	x[11:7],x[19:15],-,-			"wrd(LOAD< int32_t>(r1))"
+   sc.w		d,t,0(s)	A,amo,st,stop	"00011 {1:0} ..... ..... 010   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"STORE<uint32_t>(r1, r2); wrd(0); jump(pc+4)"
 #  sc.w		d,t,0(s)	A,amo,st,stop	"00011 {1:0} ..... ..... 010   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"*i=substitute_cas(i); again"
    amoswap.w	d,t,0(s)	A,amo,st,stop	"00001 {1:0} ..... ..... 010   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return       r2; } ))); jump(pc+4)"
    amoadd.w	d,t,0(s)	A,amo,st,stop	"00000 {1:0} ..... ..... 010   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"wrd(sext32(amo_uint32(r1, [&]( int32_t lhs) { return lhs + r2; } ))); jump(pc+4)"
@@ -156,8 +156,8 @@
    amominu.w	d,t,0(s)	A,amo,st,stop	"11000 {1:0} ..... ..... 010   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return std::min(lhs, uint32_t(r2)); } ))); jump(pc+4)"
    amomaxu.w	d,t,0(s)	A,amo,st,stop	"11100 {1:0} ..... ..... 010   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); } ))); jump(pc+4)"
 
-   lr.d		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 011   ..... 01011 11"	x[11:7],x[19:15],-,-			"wrd(LOAD(int64_t,  r1))"
-   sc.d		d,t,0(s)	A,amo,st,stop	"00011 {1:0} ..... ..... 011   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"STORE(uint64_t, r1, r2); wrd(0); jump(pc+4)"
+   lr.d		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 011   ..... 01011 11"	x[11:7],x[19:15],-,-			"wrd(LOAD<int64_t>( r1))"
+   sc.d		d,t,0(s)	A,amo,st,stop	"00011 {1:0} ..... ..... 011   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"STORE<uint64_t>(r1, r2); wrd(0); jump(pc+4)"
 #  sc.d		d,t,0(s)	A,amo,st,stop	"00011 {1:0} ..... ..... 011   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"*i=substitute_cas(i); again"
    amoswap.d	d,t,0(s)	A,amo,st,stop	"00001 {1:0} ..... ..... 011   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"wrd(      (amo_uint64(r1, [&](uint64_t lhs) { return       r2; } ))); jump(pc+4)"
    amoadd.d	d,t,0(s)	A,amo,st,stop	"00000 {1:0} ..... ..... 011   ..... 01011 11"	x[11:7],x[19:15],x[24:20],-		"wrd(      (amo_uint64(r1, [&]( int64_t lhs) { return lhs + r2; } ))); jump(pc+4)"
@@ -175,8 +175,8 @@
 
 # RV32F Standard Extension
 
-   flw		D,o(s)		F,ld		"{-11:0}           ..... 010   ..... 00001 11"	f[11:7],x[19:15],-,-			"wfd(f32(LOAD(uint32_t, r1+imm)))"
-   fsw		T,q(s)		F,st		"{-11:5}     ..... ..... 010   {4:0} 01001 11"	-,x[19:15],f[24:20],-			"STORE(uint32_t, r1+imm, f2.v[0])"
+   flw		D,o(s)		F,ld		"{-11:0}           ..... 010   ..... 00001 11"	f[11:7],x[19:15],-,-			"wfd(f32(LOAD<uint32_t>(r1+imm)))"
+   fsw		T,q(s)		F,st		"{-11:5}     ..... ..... 010   {4:0} 01001 11"	-,x[19:15],f[24:20],-			"STORE<uint32_t>(r1+imm, f2.v[0])"
 
    fmadd.s	D,S,T,R,m	F,fp		"..... 00    ..... ..... {2:0} ..... 10000 11"	f[11:7],f[19:15],f[24:20],f[31:27]	"srm; wfd(f32_mulAdd(f32(f1),                 f32(f2),     f32(f3)            )); sfx"
    fmsub.s	D,S,T,R,m	F,fp		"..... 00    ..... ..... {2:0} ..... 10001 11"	f[11:7],f[19:15],f[24:20],f[31:27]	"srm; wfd(f32_mulAdd(f32(f1),                 f32(f2), f32(f32(f3).v^F32_SIGN))); sfx"
@@ -217,8 +217,8 @@
 
 # RV32D Standard Extension
 
-   fld		D,o(s)		D,ld		"{-11:0}           ..... 011   ..... 00001 11"	f[11:7],x[19:15],-,-			"wfd(f64(LOAD(uint64_t, r1+imm)))"
-   fsd		T,q(s)		D,st		"{-11:5}     ..... ..... 011   {4:0} 01001 11"	-,x[19:15],f[24:20],-			"STORE(uint64_t, r1+imm, f2.v[0])"
+   fld		D,o(s)		D,ld		"{-11:0}           ..... 011   ..... 00001 11"	f[11:7],x[19:15],-,-			"wfd(f64(LOAD<uint64_t>(r1+imm)))"
+   fsd		T,q(s)		D,st		"{-11:5}     ..... ..... 011   {4:0} 01001 11"	-,x[19:15],f[24:20],-			"STORE<uint64_t>(r1+imm, f2.v[0])"
 
    fmadd.d	D,S,T,R,m	D,fp		"..... 01    ..... ..... {2:0} ..... 10000 11"	f[11:7],f[19:15],f[24:20],f[31:27]	"srm; wfd(f64_mulAdd(f64(f1),                 f64(f2),     f64(f3)            )); sfx"
    fmsub.d	D,S,T,R,m	D,fp		"..... 01    ..... ..... {2:0} ..... 10001 11"	f[11:7],f[19:15],f[24:20],f[31:27]	"srm; wfd(f64_mulAdd(f64(f1),                 f64(f2), f64(f64(f3).v^F64_SIGN))); sfx"
@@ -261,18 +261,18 @@
 
 # Custom Instructions
 
-+  lvb		d,o(s)		I,ld,vec		"{-11:0}           ..... 000   ..... 10110 11"	x[11:7],x[19:15],-,-			"wrd(LOAD( int8_t,  r1+imm))"
-+  lvh		d,o(s)		I,ld,vec		"{-11:0}           ..... 001   ..... 10110 11"	x[11:7],x[19:15],-,-			"wrd(LOAD( int16_t, r1+imm))"
-+  lvw		d,o(s)		I,ld,vec		"{-11:0}           ..... 010   ..... 10110 11"	x[11:7],x[19:15],-,-			"wrd(LOAD( int32_t, r1+imm))"
-+  lvbu		d,o(s)		I,ld,vec		"{-11:0}           ..... 100   ..... 10110 11"	x[11:7],x[19:15],-,-			"wrd(LOAD(uint8_t,  r1+imm))"
-+  lvhu		d,o(s)		I,ld,vec		"{-11:0}           ..... 101   ..... 10110 11"	x[11:7],x[19:15],-,-			"wrd(LOAD(uint16_t, r1+imm))"
++  lvb		d,o(s)		I,ld,vec		"{-11:0}           ..... 000   ..... 10110 11"	x[11:7],x[19:15],-,-		"wrd(LOAD< int8_t>( r1+imm))"
++  lvh		d,o(s)		I,ld,vec		"{-11:0}           ..... 001   ..... 10110 11"	x[11:7],x[19:15],-,-		"wrd(LOAD< int16_t>(r1+imm))"
++  lvw		d,o(s)		I,ld,vec		"{-11:0}           ..... 010   ..... 10110 11"	x[11:7],x[19:15],-,-		"wrd(LOAD< int32_t>(r1+imm))"
++  lvbu		d,o(s)		I,ld,vec		"{-11:0}           ..... 100   ..... 10110 11"	x[11:7],x[19:15],-,-		"wrd(LOAD<uint8_t>( r1+imm))"
++  lvhu		d,o(s)		I,ld,vec		"{-11:0}           ..... 101   ..... 10110 11"	x[11:7],x[19:15],-,-		"wrd(LOAD<uint16_t>(r1+imm))"
 
-+  lvwu		d,o(s)		I,ld,vec		"{-11:0}           ..... 110   ..... 10110 11"	x[11:7],x[19:15],-,-			"wrd(LOAD(uint32_t, r1+imm))"
-+  lvd		d,o(s)		I,ld,vec		"{-11:0}           ..... 011   ..... 10110 11"	x[11:7],x[19:15],-,-			"wrd(LOAD( int64_t, r1+imm))"
++  lvwu		d,o(s)		I,ld,vec		"{-11:0}           ..... 110   ..... 10110 11"	x[11:7],x[19:15],-,-		"wrd(LOAD<uint32_t>(r1+imm))"
++  lvd		d,o(s)		I,ld,vec		"{-11:0}           ..... 011   ..... 10110 11"	x[11:7],x[19:15],-,-		"wrd(LOAD< int64_t>(r1+imm))"
 
-+  flvw		D,o(s)		F,ld,vec	"{-11:0}           ..... 010   ..... 11110 11"	f[11:7],x[19:15],-,-			"wfd(f32(LOAD(uint32_t, r1+imm)))"
-+  fsvw		T,q(s)		F,st,vec	"{-11:5}     ..... ..... 110   {4:0} 11110 11"	-,x[19:15],f[24:20],-			"STORE(uint32_t, r1+imm, f2.v[0])"
++  flvw		D,o(s)		F,ld,vec	"{-11:0}           ..... 010   ..... 11110 11"	f[11:7],x[19:15],-,-			"wfd(f32(LOAD<uint32_t>(r1+imm)))"
++  fsvw		T,q(s)		F,st,vec	"{-11:5}     ..... ..... 110   {4:0} 11110 11"	-,x[19:15],f[24:20],-			"STORE<uint32_t>(r1+imm, f2.v[0])"
 
-+  flvd		D,o(s)		D,ld,vec	"{-11:0}           ..... 011   ..... 11110 11"	f[11:7],x[19:15],-,-			"wfd(f64(LOAD(uint64_t, r1+imm)))"
-+  fsvd		T,q(s)		D,st,vec	"{-11:5}     ..... ..... 111   {4:0} 11110 11"	-,x[19:15],f[24:20],-			"STORE(uint64_t, r1+imm, f2.v[0])"
++  flvd		D,o(s)		D,ld,vec	"{-11:0}           ..... 011   ..... 11110 11"	f[11:7],x[19:15],-,-			"wfd(f64(LOAD<uint64_t>(r1+imm)))"
++  fsvd		T,q(s)		D,st,vec	"{-11:5}     ..... ..... 111   {4:0} 11110 11"	-,x[19:15],f[24:20],-			"STORE<uint64_t>(r1+imm, f2.v[0])"
 

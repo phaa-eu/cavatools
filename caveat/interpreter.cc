@@ -7,6 +7,7 @@
 #include <math.h>
 #include <sys/syscall.h>
 #include <linux/futex.h>
+#include <sys/mman.h>
 #include <unordered_map>
 
 #include "options.h"
@@ -22,39 +23,10 @@ extern "C" {
 #include "strand.h"
 #include "arithmetic.h"
 
-
-
+option<long> conf_tcache("tcache", 1024, "Binary translation cache size in 4K pages");
+extern option<long> conf_report;
 
 Insn_t* tcache;			// Translated instructions and basic block info
-//Tcache_header_t* code;
-
-
-
-
-
-
-#define THREAD_STACK_SIZE  (1<<14)
-
-
-struct syscall_map_t {
-  int sysnum;
-  const char* name;
-};
-
-struct syscall_map_t rv_to_host[] = {
-#include "ecall_nums.h"  
-};
-const int highest_ecall_num = HIGHEST_ECALL_NUM;
-
-/* RISCV-V clone() system call arguments not same as X86_64:
-   a0 = flags
-   a1 = child_stack
-   a2 = parent_tidptr
-   a3 = tls
-   a4 = child_tidptr
-*/
-
-//extern long (*golden[])(long pc, mmu_t& MMU, class processor_t* p);
 
 #undef RM
 #define RM ({ int rm = i->immed(); \
@@ -76,10 +48,6 @@ const int highest_ecall_num = HIGHEST_ECALL_NUM;
 #define f1	frf[i->rs1()-FPREG]
 #define f2	frf[i->rs2()-FPREG]
 #define f3	frf[i->rs3()-FPREG]
-
-
-#define LOAD(typ, addr) *Load<typ>(*ap++=addr)
-#define STORE(typ, addr, val) Store<typ>(*ap++=addr, val)
 
 #define again  goto re_execute_instruction
 
@@ -119,7 +87,11 @@ void substitute_cas(long pc, Insn_t* i3)
 
 void strand_t::interpreter(simfunc_t simulator)
 {
-  Insn_t* end = tcache;
+  tcache = (Insn_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  memset(tcache, 0, conf_tcache*4096);
+  addresses = (long*)mmap(0, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  
+  Insn_t* end = tcache + 1;	// slot zero contains tcache size
   bb_header_t** link = &zero_link;
   bb_header_t* bb;		// current basic block
   Insn_t* i;			// current instruction
@@ -158,7 +130,7 @@ void strand_t::interpreter(simfunc_t simulator)
       }
       *link = bb;
     }
-    long* ap = addresses;
+    ap = addresses;
     Insn_t* i = (Insn_t*)(bb+1);
     for(;; i++) {
       xrf[0] = 0;

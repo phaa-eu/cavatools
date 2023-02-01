@@ -51,14 +51,18 @@ static_assert(sizeof(Insn_t) == 8);
 Insn_t decoder(long pc);
 
 /*
-  The Translation Cache consists of a header and an array of 64-bit slots.
-  A slot can be a translated instruction, a basic block header, or a branch target pointer.
-  Translated instructions are described above.  Each basic block begins with a header,
-  defind below, followed by one or more translated instructions.  Each basic block is
-  terminated by a pointer to the header of the next basic block.  This pointer is NULL if
-  the target is unknown, for example a jump register instruction.  Basic blocks that end
-  in a conditional branch have two pointers, the branch-taken target followed by the
-  fall-thru target.
+  The Translation Cache is an array of 64-bit slots.  A slot can be a translated
+  instruction, a basic block header, or a branch target pointer.  Translated
+  instructions are described above.  Each basic block begins with a header
+  (defind below) followed by one or more translated instructions.  Each basic block
+  is terminated by a link (index) to the next basic block's header.  If the link
+  is  zero the target is unknown.  Links are always confirmed by computed branch
+  target pc.  Thus they act as branch predictors for jump-register instructions.
+  Basic blocks that end in a conditional branch have two pointers, the branch-taken
+  target followed by the fall-thru target.
+
+  The first slot (index zero) of the Translation Cache contains the number of active
+  slots.
 */
 
 struct bb_header_t {
@@ -74,19 +78,11 @@ typedef void (*simfunc_t)(class hart_t* p, long pc, Insn_t* begin, long count, l
 
 class hart_t {
   class strand_t* strand;	// opaque pointer
-  long _executed;			// executed this thread
-  long next_report;
-
 public:
-  
   hart_t(hart_t* from);
   hart_t(int argc, const char* argv[], const char* envp[]);
-  
   void interpreter(simfunc_t simulator);
 
-  long executed();
-  bool more(long n, long r) { bool s=(_executed+=n)>=next_report; if (s) next_report+=r; return s; }
-  static long total_count();
   static hart_t* list();
   hart_t* next();
   int number();

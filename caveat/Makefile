@@ -30,8 +30,6 @@ uspike: $(bins)
 # Dependencies
 
 main.o instructions.o strand.o interpreter.o: caveat.h opcodes.h options.h
-main.o instructions.o interpreter.o: caveat.h opcodes.h
-main.o options.o: options.h
 instructions.o: decoder.h constants.h
 interpreter.o:  strand.h semantics.h arithmetic.h
 strand.o: strand.h

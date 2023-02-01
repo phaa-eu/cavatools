@@ -1,12 +1,9 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <signal.h>
-#include <sys/syscall.h>
-#include <linux/futex.h>
+#include <string.h>
 #include <sys/mman.h>
 
-#include "options.h"
 #include "caveat.h"
 #include "strand.h"
 
@@ -14,9 +11,6 @@ long load_elf_binary(const char* file_name, int include_data);
 long initialize_stack(int argc, const char** argv, const char** envp);
 int elf_find_symbol(const char* name, long* begin, long* end);
 const char* elf_find_pc(long pc, long* offset);
-
-option<long> conf_tcache("tcache", 1024, "Binary translation cache size in 4K pages");
-extern option<long> conf_report;
 
 volatile strand_t* strand_t::cpu_list =0;
 volatile int strand_t::num_threads =0;
@@ -109,12 +103,9 @@ void strand_t::attach_to_list()
 strand_t::strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[])
 {
   memset(this, 0, sizeof(strand_t));
-  tcache = (Insn_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  memset(tcache, 0, conf_tcache*4096);
   pc = load_elf_binary(argv[0], 1);
   xrf[2] = initialize_stack(argc, argv, envp);
   hart_pointer = h;
-  addresses = (long*)mmap(0, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   attach_to_list();
 }
 
@@ -126,6 +117,8 @@ strand_t::strand_t(class hart_t* h, strand_t* from)
   attach_to_list();
 }
 
+hart_t::hart_t(hart_t* from) { strand=new strand_t(this, from->strand); }
+hart_t::hart_t(int argc, const char* argv[], const char* envp[]) { strand=new strand_t(this, argc, argv, envp); }
 
 #define CSR_FFLAGS	0x1
 #define CSR_FRM		0x2
@@ -162,34 +155,11 @@ void strand_t::set_csr(int what, long val)
   }
 }
 
-void strand_t::set_tid() { my_tid = gettid(); }
-
-hart_t::hart_t(hart_t* from)
-{
-  strand = new strand_t(this, from->strand);
-  next_report = conf_report;
-}
-
-hart_t::hart_t(int argc, const char* argv[], const char* envp[])
-{
-  strand = new strand_t(this, argc, argv, envp);
-  next_report = conf_report;
-}
-
 void hart_t::interpreter(simfunc_t simulator) { strand->interpreter(simulator); }
-long hart_t::executed()	{ return _executed; }
-long hart_t::total_count()
-{
-  long total = 0;
-  for (hart_t* p=hart_t::list(); p; p=p->next())
-    total += p->executed();
-  return total;
-}
 hart_t* hart_t::list() { return strand_t::list() ? strand_t::list()->hart() : 0; }
 hart_t* hart_t::next() { return strand->next() ? strand->next()->hart() : 0; }
 int hart_t::number() { return strand->number(); }
 long hart_t::tid() { return strand->tid(); }
-void hart_t::set_tid() { strand->set_tid(); }
 hart_t* hart_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart() : 0; }
 int hart_t::threads() { return strand_t::threads(); }
 void hart_t::debug_print() { strand->debug_print(); }

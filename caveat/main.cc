@@ -8,30 +8,52 @@
 
 #include "options.h"
 #include "caveat.h"
-#include "strand.h"
 
 option<long> conf_report("report", 100000000, "Status report frequency");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
+
+class core_t : public hart_t {
+  long _executed;
+  long next_report;
+public:
+  core_t(int argc, const char* argv[], const char* envp[]) :hart_t(argc, argv, envp) {
+    _executed=0; next_report=conf_report;
+  }
+  long executed() { return _executed; }
+  long more_insn(long n) { _executed+=n; return _executed; }
+  static long total_count();
+  static core_t* list() { return (core_t*)hart_t::list(); }
+  core_t* next() { return (core_t*)hart_t::next(); }
+  friend void simulator(hart_t* h, long pc, Insn_t* begin, long count, long* addresses);
+};
+
+long core_t::total_count()
+{
+  long total = 0;
+  for (core_t* p=core_t::list(); p; p=p->next())
+    total += p->executed();
+  return total;
+}
 
 void status_report()
 {
   if (conf_quiet)
     return;
   double realtime = elapse_time();
-  long total = hart_t::total_count();
+  long total = core_t::total_count();
   fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
-  if (hart_t::threads() <= 16) {
+  if (core_t::threads() <= 16) {
     char separator = '(';
-    for (hart_t* p=hart_t::list(); p; p=p->next()) {
+    for (core_t* p=core_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
       //      fprintf(stderr, "%1ld%%", 100*p->executed()/total);
-      fprintf(stderr, "%1ld%%", 100*p->executed()/hart_t::total_count());
+      fprintf(stderr, "%1ld%%", 100*p->executed()/core_t::total_count());
       separator = ',';
     }
     fprintf(stderr, ")");
   }
-  else if (hart_t::threads() > 1)
-    fprintf(stderr, "(%d cores)", hart_t::threads());
+  else if (core_t::threads() > 1)
+    fprintf(stderr, "(%d cores)", core_t::threads());
 }
 
 void exit_func()
@@ -50,12 +72,15 @@ static void segv_handler(int, siginfo_t*, void*) {
 
 void simulator(hart_t* h, long pc, Insn_t* begin, long count, long* addresses)
 {
-  if (h->more(count, conf_report))
+  core_t* c = (core_t*)h;
+  if (c->more_insn(count) > c->next_report) {
     status_report();
+    c->next_report += conf_report;
+  }
 }
   
   
-hart_t* mycpu;
+core_t* mycpu;
 
 #ifdef DEBUG
 void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
@@ -63,7 +88,7 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
   //  ucontext_t* context = (ucontext_t*)vcontext;
   //  context->uc_mcontext.gregs[]
   fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
-  //  strand_t* thisCPU = hart_t::find(gettid())->
+  //  strand_t* thisCPU = core_t::find(gettid())->
   //  thisCPU->debug.print();
   mycpu->debug_print();
   exit(-1);
@@ -77,7 +102,7 @@ int main(int argc, const char* argv[], const char* envp[])
   if (argc == 0)
     help_exit();
   start_time();
-  mycpu = new hart_t(argc, argv, envp);
+  mycpu = new core_t(argc, argv, envp);
 
 #ifdef DEBUG
   static struct sigaction action;
