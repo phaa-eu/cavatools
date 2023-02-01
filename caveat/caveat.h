@@ -61,8 +61,8 @@ Insn_t decoder(long pc);
   Basic blocks that end in a conditional branch have two pointers, the branch-taken
   target followed by the fall-thru target.
 
-  The first slot (index zero) of the Translation Cache contains the number of active
-  slots.
+  The first slot (index zero) of the Translation Cache is always zero.  The second
+  slot contains the number of active slots.
 */
 
 struct bb_header_t {

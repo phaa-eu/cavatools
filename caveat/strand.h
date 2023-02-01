@@ -56,7 +56,7 @@ class strand_t {
   reg_t  xrf[32];
   freg_t frf[32];
   long pc;
-  long* addresses;		// list of load/store addr
+  //  long* addresses;		// list of load/store addr
   long* ap;			// ptr to end of address list
   
   union {

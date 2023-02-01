@@ -113,7 +113,6 @@ strand_t::strand_t(class hart_t* h, strand_t* from)
 {
   memcpy(this, from, sizeof(strand_t));
   hart_pointer = h;
-  addresses = (long*)mmap(0, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   attach_to_list();
 }
 

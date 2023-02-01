@@ -17,19 +17,19 @@ CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -Ofast
 LIBS := ~/lib/libsoftfloat.a $(CAVA)/lib/libcava.a
 LDFLAGS := -Wl,-Ttext=70000000
 
-install:  caveat
-	cp caveat $(CAVA)/bin/.
+install:  cachesim
+	cp cachesim $(CAVA)/bin/.
 #	cp perf.h $(CAVA)/include/cava/.
 
 clean:
 	rm -f *.o *~ ./#*# *.tmp
 	rm -f lru_fsm_?way.h
-	rm -f caveat
+	rm -f cachesim
 
 
-caveat:  simulator.o cache.o $(LIBS)
-	g++ -o caveat $^ $(LDFLAGS) $(LIBS)
-#	g++ -o caveat $^ $(LDFLAGS) $(LIBS) -ldl -lrt
+cachesim:  simulator.o cache.o $(LIBS)
+	g++ -o cachesim $^ $(LDFLAGS) $(LIBS)
+#	g++ -o cachesim $^ $(LDFLAGS) $(LIBS) -ldl -lrt
 
 cache.o simulator.o:  cache.h
 #perf.o simulator.o: perf.h
