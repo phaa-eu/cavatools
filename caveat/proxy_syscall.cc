@@ -23,12 +23,11 @@
 
 #include "options.h"
 #include "caveat.h"
-#include "instructions.h"
 #include "strand.h"
 
-#include "elf_loader.h"
-
 #define THREAD_STACK_SIZE (1<<16)
+
+extern long emulate_brk(long addr);
 
 option<bool> conf_ecall("ecall",	false, true,			"Show system calls");
 
@@ -127,27 +126,6 @@ int thread_interpreter(void* arg)
   return 0;
 }
 
-long emulate_brk(long addr, struct pinfo_t* info)
-{
-  long newbrk = addr;
-  if (addr < info->brk_min)
-    newbrk = info->brk_min;
-  else if (addr > info->brk_max)
-    newbrk = info->brk_max;
-
-  if (info->brk == 0)
-    info->brk = ROUNDUP(info->brk_min, RISCV_PGSIZE);
-
-  long newbrk_page = ROUNDUP(newbrk, RISCV_PGSIZE);
-  if (info->brk > newbrk_page)
-    munmap((void*)newbrk_page, info->brk - newbrk_page);
-  else if (info->brk < newbrk_page)
-    assert(mmap((void*)info->brk, newbrk_page - info->brk, -1, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0) == (void*)info->brk);
-  info->brk = newbrk_page;
-
-  return newbrk;
-}
-
 void strand_t::proxy_syscall(long sysnum)
 {
   long a0=xrf[10], a1=xrf[11], a2=xrf[12], a3=xrf[13], a4=xrf[14], a5=xrf[15];
@@ -162,7 +140,7 @@ void strand_t::proxy_syscall(long sysnum)
     //fprintf(stderr, "SYS_brk(%lx)\n", a0);
     //    retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
     //fprintf(stderr, "current.brk = 0x%lx\n", current.brk);
-    retval = emulate_brk(a0, &current);
+    retval = emulate_brk(a0);
     break;
     
   case SYS_clone:

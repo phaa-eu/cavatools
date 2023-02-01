@@ -8,16 +8,15 @@
 
 #include "options.h"
 #include "caveat.h"
-#include "instructions.h"
 #include "strand.h"
-#include "elf_loader.h"
+
+long load_elf_binary(const char* file_name, int include_data);
+long initialize_stack(int argc, const char** argv, const char** envp);
+int elf_find_symbol(const char* name, long* begin, long* end);
+const char* elf_find_pc(long pc, long* offset);
 
 option<long> conf_tcache("tcache", 1024, "Binary translation cache size in 4K pages");
 extern option<long> conf_report;
-
-extern "C" {
-  long initialize_stack(int argc, const char** argv, const char** envp);
-};
 
 volatile strand_t* strand_t::cpu_list =0;
 volatile int strand_t::num_threads =0;

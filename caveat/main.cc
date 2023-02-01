@@ -8,7 +8,6 @@
 
 #include "options.h"
 #include "caveat.h"
-#include "instructions.h"
 #include "strand.h"
 
 option<long> conf_report("report", 100000000, "Status report frequency");

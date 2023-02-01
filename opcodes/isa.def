@@ -101,9 +101,9 @@
    csrrw	d,E,s		I,sr,stop	"{11:0}            ..... 001   ..... 11100 11"	x[11:7],x[19:15],-,-			"wrd(csr_func(imm,       [&](uint64_t old) { return        r1;                  } )); jump(pc+4)"
    csrrs	d,E,s		I,sr,stop	"{11:0}            ..... 010   ..... 11100 11"	x[11:7],x[19:15],-,-			"wrd(csr_func(imm,       [&](uint64_t old) { return old |  r1;                  } )); jump(pc+4)"
    csrrc	d,E,s		I,sr,stop	"{11:0}            ..... 011   ..... 11100 11"	x[11:7],x[19:15],-,-			"wrd(csr_func(imm,       [&](uint64_t old) { return old & ~r1;                  } )); jump(pc+4)"
-   csrrwi	d,E,Z		I,sr,stop	"{11:0}          {16:12} 101   ..... 11100 11"	x[11:7],-				"wrd(csr_func(imm&0xFFF, [&](uint64_t old) { return                  (imm>>12); } )); jump(pc+4)"
-   csrrsi	d,E,Z		I,sr,stop	"{11:0}          {16:12} 110   ..... 11100 11"	x[11:7],-				"wrd(csr_func(imm&0xFFF, [&](uint64_t old) { return old |            (imm>>12); } )); jump(pc+4)"
-   csrrci	d,E,Z		I,sr,stop	"{11:0}          {16:12} 111   ..... 11100 11"	x[11:7],-				"wrd(csr_func(imm&0xFFF, [&](uint64_t old) { return old & ~(uint64_t)(imm>>12); } )); jump(pc+4)"
+   csrrwi	d,E,Z		I,sr,stop	"{11:0}          {16:12} 101   ..... 11100 11"	x[11:7],-,-,-				"wrd(csr_func(imm&0xFFF, [&](uint64_t old) { return                  (imm>>12); } )); jump(pc+4)"
+   csrrsi	d,E,Z		I,sr,stop	"{11:0}          {16:12} 110   ..... 11100 11"	x[11:7],-,-,-				"wrd(csr_func(imm&0xFFF, [&](uint64_t old) { return old |            (imm>>12); } )); jump(pc+4)"
+   csrrci	d,E,Z		I,sr,stop	"{11:0}          {16:12} 111   ..... 11100 11"	x[11:7],-,-,-				"wrd(csr_func(imm&0xFFF, [&](uint64_t old) { return old & ~(uint64_t)(imm>>12); } )); jump(pc+4)"
 
 # RV64I Base Instruction Set (in addition to RV32I)
 

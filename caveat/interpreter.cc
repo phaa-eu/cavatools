@@ -7,10 +7,10 @@
 #include <math.h>
 #include <sys/syscall.h>
 #include <linux/futex.h>
+#include <unordered_map>
 
 #include "options.h"
 #include "caveat.h"
-#include "instructions.h"
 
 extern "C" {
 #include "softfloat/softfloat.h"
@@ -91,10 +91,10 @@ const int highest_ecall_num = HIGHEST_ECALL_NUM;
 #define ebreak()  die("breakpoint not implemented");
 
   
-unordered_map<long, bb_header_t*> bbmap;
+std::unordered_map<long, bb_header_t*> bbmap;
 static bb_header_t* zero_link = 0;
 
-Insn_t substitute_cas(long pc, Insn_t* i3)
+void substitute_cas(long pc, Insn_t* i3)
 {
   //  fprintf(stderr, "substitute_cas(pc=%lx)\n", pc);
   dieif(i3->opcode()!=Op_sc_w && i3->opcode()!=Op_sc_d, "0x%lx no SC found in substitute_cas()", pc);
@@ -112,10 +112,11 @@ Insn_t substitute_cas(long pc, Insn_t* i3)
   int flag_reg = i3->rd();
   dieif(i1.rs1()!=addr_reg || i2.rs1()!=load_reg, "0x%lx CAS pattern incorrect registers", pc);
   // pattern is good
-  return Insn_t(i3->opcode()==Op_sc_w?Op_cas_w:Op_cas_d, flag_reg, addr_reg, newv_reg, test_reg, i3->immed());
+  // note rd, rs1, rs2 stay the same
+  i3->op_code = (i3->opcode()==Op_sc_w) ? Op_cas_w : Op_cas_d;
+  i3->op.rs3 = test_reg;
 }
 
-//void strand_t::interpreter(simfunc_t simulator, statfunc_t my_status)
 void strand_t::interpreter(simfunc_t simulator)
 {
   Insn_t* end = tcache;
@@ -131,7 +132,6 @@ void strand_t::interpreter(simfunc_t simulator)
 	bb = pair->second;
       else {			// never seen target
 	//	fprintf(stderr, "new BB at %lx\n", pc);
-	//	bb = code->new_basic_block(pc);
 	bb = (bb_header_t*)end++;
 	bb->addr = pc;
 	bb->count = 0;
@@ -147,7 +147,7 @@ void strand_t::interpreter(simfunc_t simulator)
 	  bb->count++;
 	} while (!(attributes[i->opcode()] & ATTR_stop));
 	if (i->opcode()==Op_sc_w || i->opcode()==Op_sc_d)
-	  *i = substitute_cas(dpc-4, i);
+	  substitute_cas(dpc-4, i);
 	//
 	// Always end with one pointer to next basic block
 	// Conditional branches have second fall-thru pointer

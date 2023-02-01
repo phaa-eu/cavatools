@@ -6,53 +6,9 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 
-#include "options.h"
+//#include "options.h"
 #include "caveat.h"
-#include "instructions.h"
-#include "strand.h"
-
-Insn_t::Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3, int16_t imm)
-{
-  op_code = code;
-  op_rd = rd;
-  op_rs1 = rs1;
-  op.rs2 = rs2;
-  op.rs3 = rs3;
-  setimm(imm);
-}
-
-Insn_t::Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm)
-{
-  op_code = code;
-  op_rd = rd;
-  op_rs1 = rs1;
-  op.rs2 = rs2;
-  op.rs3 = NOREG;
-  setimm(imm);
-}
-
-Insn_t::Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int32_t longimmed)
-{
-  op_code = code;
-  op_rd = rd;
-  op_rs1 = rs1;
-  op_longimm = longimmed;
-}
-
-Insn_t::Insn_t(Opcode_t code, int8_t rd, int32_t longimmed)
-{
-  op_code = code;
-  op_rd = rd;
-  op_rs1 = NOREG;
-  op_longimm = longimmed;
-}
-
-
-
-
-
-
-
+//#include "strand.h"
 
 
 
@@ -60,13 +16,32 @@ Insn_t::Insn_t(Opcode_t code, int8_t rd, int32_t longimmed)
 Insn_t decoder(long pc)
 {
   int32_t b = *(int32_t*)pc;
+  Insn_t i;
   
 #define x( lo, len) ((b >> lo) & ((1 << len)-1))
 #define xs(lo, len) (b << (32-lo-len) >> (32-len))
   
 #include "decoder.h"
 
-  return Insn_t(Op_ILLEGAL, 0, 0);
+  i.op_code = Op_ILLEGAL;
+  return i;
 }
 
 #include "constants.h"
+
+
+const char* reg_name[256] = {
+  "zero","ra",  "sp",  "gp",  "tp",  "t0",  "t1",  "t2",
+  "s0",  "s1",  "a0",  "a1",  "a2",  "a3",  "a4",  "a5",
+  "a6",  "a7",  "s2",  "s3",  "s4",  "s5",  "s6",  "s7",
+  "s8",  "s9",  "s10", "s11", "t3",  "t4",  "t5",  "t6",
+  "f0",  "f1",  "f2",  "f3",  "f4",  "f5",  "f6",  "f7",
+  "f8",  "f9",  "f10", "f11", "f12", "f13", "f14", "f15",
+  "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23",
+  "f24", "f25", "f26", "f27", "f28", "f29", "f30", "f31",
+  "v0",  "v1",  "v2",  "v3",  "v4",  "v5",  "v6",  "v7",
+  "v8",  "v9",  "v10", "v11", "v12", "v13", "v14", "v15",
+  "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23",
+  "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31",
+  "vm",
+};

@@ -14,30 +14,43 @@
 #include <fcntl.h>
 #include <elf.h>
 
-#include "elf_loader.h"
-
 /*
   Utility stuff.
 */
 #define quitif(bad, fmt, ...) if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); exit(0); }
 #define dieif(bad, fmt, ...)  if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n");  abort(); }
 
+#define RISCV_PGSHIFT 12
+#define RISCV_PGSIZE (1 << RISCV_PGSHIFT)
+
 #define MEM_END		0x60000000L
 #define STACK_SIZE	0x01000000L
 #define BRK_SIZE	0x01000000L
 
-struct pinfo_t current;
-unsigned long low_bound, high_bound;
-
-static long phdrs[128];
-
-static char* strtbl;
-static Elf64_Sym* symtbl;
-static long num_syms;
-
+#define ROUNDUP(a, b) ((((a)-1)/(b)+1)*(b))
+#define ROUNDDOWN(a, b) ((a)/(b)*(b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define CLAMP(a, lo, hi) MIN(MAX(a, lo), hi)
+
+/*  Process information  */
+struct pinfo_t {
+  long phnum;
+  long phent;
+  long phdr;
+  long phdr_size;
+  long entry;
+  long stack_top;
+  long brk;
+  long brk_min;
+  long brk_max;
+};
+
+static struct pinfo_t current;
+static long phdrs[128];
+static char* strtbl;
+static Elf64_Sym* symtbl;
+static long num_syms;
 
 /**
  * Get an annoymous memory segment using mmap() and load
@@ -148,10 +161,8 @@ long load_elf_binary( const char* file_name, int include_data )
    *  2.  zero out BSS and SBSS segments
    *  3.  find lower and upper bounds of executable instructions
    */
-  //  uintptr_t low_bound  = 0-1;
-  //  uintptr_t high_bound = 0;
-  low_bound  = 0-1;
-  high_bound = 0;
+  uintptr_t low_bound  = 0-1;
+  uintptr_t high_bound = 0;
   for (int i=0; i<eh.e_shnum; i++) {
     assert(lseek(file, eh.e_shoff + i * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
     assert(read(file, &header, sizeof header) >= 0);
@@ -189,6 +200,30 @@ long load_elf_binary( const char* file_name, int include_data )
 
   return current.entry;
 }
+
+
+long emulate_brk(long addr)
+{
+  struct pinfo_t* info = &current;
+  long newbrk = addr;
+  if (addr < info->brk_min)
+    newbrk = info->brk_min;
+  else if (addr > info->brk_max)
+    newbrk = info->brk_max;
+
+  if (info->brk == 0)
+    info->brk = ROUNDUP(info->brk_min, RISCV_PGSIZE);
+
+  long newbrk_page = ROUNDUP(newbrk, RISCV_PGSIZE);
+  if (info->brk > newbrk_page)
+    munmap((void*)newbrk_page, info->brk - newbrk_page);
+  else if (info->brk < newbrk_page)
+    assert(mmap((void*)info->brk, newbrk_page - info->brk, -1, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0) == (void*)info->brk);
+  info->brk = newbrk_page;
+
+  return newbrk;
+}
+
 
 
 long initialize_stack(int argc, const char** argv, const char** envp)
@@ -314,21 +349,3 @@ const char* elf_find_pc(long pc, long* offset)
   }
   return 0;
 }
-
-
-const char* reg_name[256] = {
-  "zero","ra",  "sp",  "gp",  "tp",  "t0",  "t1",  "t2",
-  "s0",  "s1",  "a0",  "a1",  "a2",  "a3",  "a4",  "a5",
-  "a6",  "a7",  "s2",  "s3",  "s4",  "s5",  "s6",  "s7",
-  "s8",  "s9",  "s10", "s11", "t3",  "t4",  "t5",  "t6",
-  "f0",  "f1",  "f2",  "f3",  "f4",  "f5",  "f6",  "f7",
-  "f8",  "f9",  "f10", "f11", "f12", "f13", "f14", "f15",
-  "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23",
-  "f24", "f25", "f26", "f27", "f28", "f29", "f30", "f31",
-  "v0",  "v1",  "v2",  "v3",  "v4",  "v5",  "v6",  "v7",
-  "v8",  "v9",  "v10", "v11", "v12", "v13", "v14", "v15",
-  "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23",
-  "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31",
-  "vm",
-  [0xFF]="NONE"
-};

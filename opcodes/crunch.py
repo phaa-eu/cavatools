@@ -45,7 +45,7 @@ def ParseOpcode(bits):
                 pos += hi-lo+1
             (hi, lo) = tuple[0]
             if hi >= 13:
-                imm = 1
+                immtyp = 1
             shift = lo and '<<{:d}'.format(lo) or ''
             immed.append('{:s}({:d},{:d}){:s}'.format(signed and 'xs' or 'x', pos, hi-lo+1, shift))
             pos += hi-lo+1
@@ -91,6 +91,8 @@ def ParseReglist(reglist):
             eprint('unknown type of register', typ, 'in', reglist)
             exit(-1)
         rv.append('x({:d},{:d}){:s}{:s}'.format(int(lo), int(hi)-int(lo)+1, plus, typ))
+    while len(reglist) < 4:
+        rv.append('NOREG')
     return rv
 
 def diffcp(fname):
@@ -111,7 +113,6 @@ for line in sys.stdin:
     if bytes == 2:
         last_compressed_opcode = opcode
 
-#opcodes = ['ZERO'] + [key for key in instructions] + ['cas_w', 'cas_d'] + ['ILLEGAL', 'UNKNOWN']
 opcodes = ['ZERO'] + [key for key in instructions] + ['ILLEGAL', 'UNKNOWN']
 
 isa_letter = {}
@@ -211,21 +212,12 @@ diffcp('../caveat/constants.h')
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
         (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
-        f.write('  if((b&{:s})=={:s}) return '.format(mask, code))
-        if len(reglist) == 4:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], reglist[2], reglist[3], immed))
-        elif len(reglist) == 3:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], reglist[2], immed))
-        elif len(reglist) == 2:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], reglist[1], immed))
-        elif len(reglist) == 1:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s})'.format(opname, reglist[0], immed))
-        elif len(reglist) == 0:
-            f.write('Insn_t({:s}, {:s}, {:s}, {:s})'.format(opname, 'NOREG', immed))
+        f.write('  if((b&{:s})=={:s}) {{ i.op_code={:s}; i.op_rd={:s}; i.op_rs1={:s};'.format(mask, code, opname, reglist[0], reglist[1]))
+        if immtyp == 1:
+            f.write(' i.op_longimm={:s};'.format(immed))
         else:
-            eprint('reglist length not 0-4')
-            exit(-1)
-        f.write(';\n')
+            f.write(' i.op.rs2={:s}; i.op.rs3={:s}; i.setimm({:s});'.format(reglist[2], reglist[3], immed))
+        f.write(' return i; };\n')
 diffcp('../caveat/decoder.h')
 
 with open('newcode.tmp', 'w') as f:

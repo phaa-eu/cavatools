@@ -42,12 +42,9 @@ public:
   int rs2() { return op.rs2; }
   int rs3() { return op.rs3; }
   bool compressed() { return op_code <= Last_Compressed_Opcode; }
-  
-  Insn_t() { *((int64_t*)this) = -1; } // all registers become NOREG
-  Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int8_t rs3, int16_t imm);
-  Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int8_t rs2, int16_t imm);
-  Insn_t(Opcode_t code, int8_t rd, int8_t rs1, int32_t longimmed);
-  Insn_t(Opcode_t code, int8_t rd, int32_t longimmed);
+
+  friend Insn_t decoder(long pc);
+  friend void substitute_cas(long pc, Insn_t* i3);
 };
 static_assert(sizeof(Insn_t) == 8);
 
@@ -104,3 +101,7 @@ public:
 
 void start_time();
 double elapse_time();
+int slabelpc(char* buf, long pc);
+void labelpc(long pc, FILE* f =stderr);
+int sdisasm(char* buf, long pc, Insn_t* i);
+void disasm(long pc, Insn_t* i, const char* end ="\n", FILE* f =stderr);
