@@ -13,7 +13,8 @@ B := $(RVTOOLS)/riscv-isa-sim
 
 
 CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -Ofast
-#CXXFLAGS := -I$(CAVA)/include/cava -g -O0 -DDEBUG
+#CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -O0 -DDEBUG
+
 LIBS := ~/lib/libsoftfloat.a $(CAVA)/lib/libcava.a
 LDFLAGS := -Wl,-Ttext=70000000
 
@@ -34,7 +35,7 @@ cachesim:  simulator.o cache.o $(LIBS)
 cache.o simulator.o:  cache.h
 #perf.o simulator.o: perf.h
 
-simulator.o: lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h
+simulator.o: lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h lru_fsm_5way.h lru_fsm_6way.h
 
 lru_fsm_1way.h: make_cache
 	./make_cache 1
@@ -47,4 +48,10 @@ lru_fsm_3way.h: make_cache
 
 lru_fsm_4way.h: make_cache
 	./make_cache 4
+
+lru_fsm_5way.h: make_cache
+	./make_cache 5
+
+lru_fsm_6way.h: make_cache
+	./make_cache 6
 

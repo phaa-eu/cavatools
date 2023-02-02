@@ -24,7 +24,7 @@ public:
   static long total_count();
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
-  friend void simulator(hart_t* h, long pc, Insn_t* begin, long count, long* addresses);
+  friend void simulator(hart_t* h, Header_t* bb);
 };
 
 long core_t::total_count()
@@ -70,10 +70,10 @@ static void segv_handler(int, siginfo_t*, void*) {
   longjmp(return_to_top_level, 1);
 }
 
-void simulator(hart_t* h, long pc, Insn_t* begin, long count, long* addresses)
+void simulator(hart_t* h, Header_t* bb)
 {
   core_t* c = (core_t*)h;
-  if (c->more_insn(count) > c->next_report) {
+  if (c->more_insn(bb->count) > c->next_report) {
     status_report();
     c->next_report += conf_report;
   }

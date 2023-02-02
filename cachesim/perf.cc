@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+  Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
 #include <unistd.h>

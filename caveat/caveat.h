@@ -65,23 +65,30 @@ Insn_t decoder(long pc);
   slot contains the number of active slots.
 */
 
-struct bb_header_t {
+struct Header_t {
   uint16_t count;
   long addr : 48;
 };
-static_assert(sizeof(bb_header_t) == 8);
+static_assert(sizeof(Header_t) == 8);
 
-extern Insn_t* tcache;			// Translated instructions and basic block info
+/*
+  We can freely convert between pointers to instructions, headers and links (long integer)
+*/
+inline Header_t* bbp(void* p) { return (Header_t*)p; }
+inline Insn_t* insnp(void* p) { return (Insn_t*)p; }
+inline long* linkp(void* p)   { return (long*)p; }
 
-
-typedef void (*simfunc_t)(class hart_t* p, long pc, Insn_t* begin, long count, long* addresses);
+typedef void (*simfunc_t)(class hart_t* h, Header_t* bb);
 
 class hart_t {
   class strand_t* strand;	// opaque pointer
 public:
   hart_t(hart_t* from);
   hart_t(int argc, const char* argv[], const char* envp[]);
+  
   void interpreter(simfunc_t simulator);
+  Insn_t* tcache();
+  long* addresses();
 
   static hart_t* list();
   hart_t* next();

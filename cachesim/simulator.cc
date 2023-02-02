@@ -30,12 +30,13 @@ class core_t : public hart_t {
   long local_time;
   long _executed;
   long next_report;
+  void initialize();
 public:
-  cache_t dc;
-  cache_t vc;
-  core_t(core_t* from);
-  core_t(int argc, const char* argv[], const char* envp[]);
-  
+  cache_t* dc;
+  cache_t* vc;
+  core_t(core_t* from) :hart_t(from) { initialize(); }
+  core_t(int argc, const char* argv[], const char* envp[]) :hart_t(argc, argv, envp) { initialize(); }
+
   //  core_t* newcore() { return new core_t(this); }
   //  void proxy_syscall(long sysnum);
   long executed() { return _executed; }
@@ -50,7 +51,7 @@ public:
   void update_time();
   void print();
 
-  friend void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a);
+  friend void simulator(hart_t* h, Header_t* bb);
 };
 
 long core_t::total_count()
@@ -71,10 +72,10 @@ void status_report()
     for (core_t* p=core_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
       double N = p->executed();
-      double M = p->dc.refs() + p->vc.refs();
+      double M = p->dc->refs() + p->vc->refs();
       fprintf(stderr, "%4.2f(%1.0f%%:%4.2f%%,%1.0f%%:%4.2f%%)", N/p->local_clock(),
-	      100.0*p->dc.refs()/M, 100.0*p->dc.misses()/N,
-	      100.0*p->vc.refs()/M, 100.0*p->vc.misses()/N);
+	      100.0*p->dc->refs()/M, 100.0*p->dc->misses()/N,
+	      100.0*p->vc->refs()/M, 100.0*p->vc->misses()/N);
       separator = ',';
     }
   }
@@ -95,26 +96,31 @@ void exitfunc()
   fprintf(stderr, "\n");
 }
 
-void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a)
+void simulator(hart_t* h, Header_t* bb)
 {
   core_t* p = (core_t*)h;
-  for (long k=0; k<count; k++) {
-    p->local_time++;
-    uint64_t attr = attributes[i->opcode()];
+  long* ap = p->addresses();
+  Insn_t* i = insnp(bb+1);
+  // long pc = bb->addr;
+  p->local_time += bb->count;
+  for (long k=0; k<bb->count; k++) {
+    //    p->local_time++;
+    //    uint64_t attr = attributes[i->opcode()];
+    ATTR_bv_t attr = attributes[i->opcode()];
     if (attr & (ATTR_ld|ATTR_st)) {
       if (attr & ATTR_vec) {
-	if (!p->vc.lookup(*a++, (attr&ATTR_st)))
-	  p->local_time += p->vc.penalty();
+	if (!p->vc->lookup(*ap++, (attr&ATTR_st)))
+	  p->local_time += conf_Vmiss;
       }
       else {
-	if (!p->dc.lookup(*a++, (attr&ATTR_st)))
-	  p->local_time += p->dc.penalty();
+	if (!p->dc->lookup(*ap++, (attr&ATTR_st)))
+	  p->local_time += conf_Dmiss;
       }
     }
-    pc += i->compressed() ? 2 : 4;
+    // pc += i->compressed() ? 2 : 4;
     i++;
   }
-  if (p->more_insn(count) > p->next_report) {
+  if (p->more_insn(bb->count) > p->next_report) {
     status_report();
     p->next_report += conf_report;
   }
@@ -122,29 +128,20 @@ void simulator(hart_t* h, long pc, Insn_t* i, long count, long* a)
 
 void core_t::print()
 {
-  dc.print();
-  vc.print();
+  dc->print();
+  vc->print();
 }
 
 volatile long core_t::global_time;
 
-core_t::core_t(core_t* from)
-  : hart_t(from),
-    dc("Data",   conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true),
-    vc("Vector", conf_Vmiss, conf_Vways, conf_Vline, conf_Vrows, true)
+void core_t::initialize()
 {
+  dc = new_cache("Data",   conf_Dways, conf_Dline, conf_Drows, true);
+  vc = new_cache("Vector", conf_Vways, conf_Vline, conf_Vrows, true); 
   local_time = 0;
-}
-
-core_t::core_t(int argc, const char* argv[], const char* envp[])
-  : hart_t(argc, argv, envp),
-    dc("Data",   conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true),
-    vc("Vector", conf_Vmiss, conf_Vways, conf_Vline, conf_Vrows, true)
-		 
-{
-  local_time = 0;
-}
-
+  _executed = 0;
+  next_report = conf_report;
+}  
 
 #define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
 
@@ -192,7 +189,7 @@ void signal_handler(int nSIGnum)
   long my_tid = gettid();
   for (core_t* p=core_t::list(); p; p=p->next()) {
     if (p->tid() == my_tid) {
-      p->debug.print();
+      //      p->debug.print();
       exit(-1);
     }
   }

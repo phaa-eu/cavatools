@@ -56,7 +56,6 @@ class strand_t {
   reg_t  xrf[32];
   freg_t frf[32];
   long pc;
-  //  long* addresses;		// list of load/store addr
   long* ap;			// ptr to end of address list
   
   union {
@@ -69,14 +68,18 @@ class strand_t {
   
   static volatile strand_t* cpu_list;	// for find() using thread id
   volatile strand_t* link;		// list of strand_t
-  void attach_to_list();
   int my_tid;				// my Linux thread number
   int _number;				// index of this strand
   static volatile int num_threads;	// allocated
   
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
-  
+
+  static Insn_t* tcache;	// tcache is global to all strands
+  long* addresses;		// but address list is one per strand
+  void initialize(class hart_t* h);
+
+  friend class hart_t;
 public:
   strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[]);
   strand_t(class hart_t* h, strand_t* p);
@@ -88,7 +91,7 @@ public:
   void single_step();
   void print_trace(long pc, Insn_t* i);
   void debug_print() { debug.print(); }
-  
+
   class hart_t* hart() { return hart_pointer; }
   static strand_t* list() { return (strand_t*)cpu_list; }
   strand_t* next() { return (strand_t*)link; }

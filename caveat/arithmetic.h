@@ -19,10 +19,21 @@ inline freg_t freg(float32_t f) { return { ((uint64_t)-1 << 32) | f.v, (uint64_t
 inline freg_t freg(float64_t f) { return { f.v, (uint64_t)-1 }; }
 inline freg_t freg(float128_t f) { return f; }
 
-// RISC-V sign-injection instructions
+// RISC-V things
+
+#undef RM
+#define RM ({ int rm = i->immed(); \
+              if(rm == 7) rm = fcsr.f.rm; \
+              if(rm > 4) die("Illegal instruction"); \
+              rm; })
+#define srm  softfloat_roundingMode = RM
+#define sfx  fcsr.f.flags |= softfloat_exceptionFlags
 
 #define F32_SIGN ((uint32_t)1 << 31)
 #define F64_SIGN ((uint64_t)1 << 63)
+
+
+// RISC-V sign-injection instructions
 
 inline float32_t fsgnj_s(float32_t a, float32_t b, bool n, bool x)
 {
