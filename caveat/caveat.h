@@ -83,20 +83,26 @@ typedef void (*simfunc_t)(class hart_t* h, Header_t* bb);
 class hart_t {
   class strand_t* strand;	// opaque pointer
 public:
+  uint64_t* _counters;		// performance counter array (matching tcache)
+  Insn_t* tcache();		// not allowed to change instructions
+  long tcache_size() { return *(long*)(tcache()+1); }
+  uint64_t* counters() { return _counters; }
+  
   hart_t(hart_t* from);
-  hart_t(int argc, const char* argv[], const char* envp[]);
+  hart_t(int argc, const char* argv[], const char* envp[], bool counting =false);
   
   void interpreter(simfunc_t simulator);
-  Insn_t* tcache();
   long* addresses();
 
+
+  long index(Header_t* p) { return insnp(p)-tcache(); }
   static hart_t* list();
   hart_t* next();
   int number();
   long tid();
   void set_tid();
   static hart_t* find(int tid);
-  static int threads();
+  static int num_harts();
   void debug_print();
   
   void print_debug_trace();  
@@ -104,6 +110,10 @@ public:
 
 void start_time();
 double elapse_time();
+
+const char* func_name(long pc);
+
+
 int slabelpc(char* buf, long pc);
 void labelpc(long pc, FILE* f =stderr);
 int sdisasm(char* buf, long pc, Insn_t* i);

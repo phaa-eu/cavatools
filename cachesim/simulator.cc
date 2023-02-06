@@ -8,7 +8,7 @@
 
 #include "options.h"
 #include "caveat.h"
-#include "cache.h"
+#include "cachesim.h"
 
 option<int> conf_Dmiss("dmiss",	50,		"Data cache miss penalty");
 option<int> conf_Dways("dways", 4,		"Data cache number of ways associativity");
@@ -25,35 +25,6 @@ option<int> conf_cores("cores",	8,		"Maximum number of cores");
 option<long> conf_report("report", 100000000, "Status report frequency");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
 
-class core_t : public hart_t {
-  static volatile long global_time;
-  long local_time;
-  long _executed;
-  long next_report;
-  void initialize();
-public:
-  cache_t* dc;
-  cache_t* vc;
-  core_t(core_t* from) :hart_t(from) { initialize(); }
-  core_t(int argc, const char* argv[], const char* envp[]) :hart_t(argc, argv, envp) { initialize(); }
-
-  //  core_t* newcore() { return new core_t(this); }
-  //  void proxy_syscall(long sysnum);
-  long executed() { return _executed; }
-  long more_insn(long n) { _executed+=n; return _executed; }
-  static long total_count();
-  
-  static core_t* list() { return (core_t*)hart_t::list(); }
-  core_t* next() { return (core_t*)hart_t::next(); }
-
-  long system_clock() { return global_time; }
-  long local_clock() { return local_time; }
-  void update_time();
-  void print();
-
-  friend void simulator(hart_t* h, Header_t* bb);
-};
-
 long core_t::total_count()
 {
   long total = 0;
@@ -67,7 +38,7 @@ void status_report()
   double realtime = elapse_time();
   long total = core_t::total_count();
   fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS, IPC(D$,V$)", total, realtime, total/1e6/realtime);
-  if (hart_t::threads() <= 16) {
+  if (hart_t::num_harts() <= 16) {
     char separator = '=';
     for (core_t* p=core_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
@@ -79,49 +50,41 @@ void status_report()
       separator = ',';
     }
   }
-  else if (hart_t::threads() > 1)
-    fprintf(stderr, "(%d cores)", hart_t::threads());
-}
-
-void exitfunc()
-{
-  status_report();
-  fprintf(stderr, "\n--------\n");
-  for (core_t* p=core_t::list(); p; p=p->next()) {
-    fprintf(stderr, "Core [%ld] ", p->tid());
-    p->print();
-  }
-  fprintf(stderr, "\n");
-  status_report();
-  fprintf(stderr, "\n");
+  else if (hart_t::num_harts() > 1)
+    fprintf(stderr, "(%d cores)", hart_t::num_harts());
 }
 
 void simulator(hart_t* h, Header_t* bb)
 {
   core_t* p = (core_t*)h;
   long* ap = p->addresses();
-  Insn_t* i = insnp(bb+1);
   // long pc = bb->addr;
+  Insn_t* i = insnp(bb);
+  uint64_t* c = &p->counters()[p->index(bb)];
+  //  *c += bb->count;			// header counts number of executions
+  *c += 1;
   p->local_time += bb->count;
   for (long k=0; k<bb->count; k++) {
-    //    p->local_time++;
-    //    uint64_t attr = attributes[i->opcode()];
+    ++i, ++c;
     ATTR_bv_t attr = attributes[i->opcode()];
     if (attr & (ATTR_ld|ATTR_st)) {
       if (attr & ATTR_vec) {
-	if (!p->vc->lookup(*ap++, (attr&ATTR_st)))
+	if (!p->vc->lookup(*ap++, (attr&ATTR_st))) {
+	  *c += 1;
 	  p->local_time += conf_Vmiss;
+	}
       }
       else {
-	if (!p->dc->lookup(*ap++, (attr&ATTR_st)))
+	if (!p->dc->lookup(*ap++, (attr&ATTR_st))) {
+	  *c += 1;
 	  p->local_time += conf_Dmiss;
+	}
       }
     }
     // pc += i->compressed() ? 2 : 4;
-    i++;
   }
   if (p->more_insn(bb->count) > p->next_report) {
-    status_report();
+    //    status_report();
     p->next_report += conf_report;
   }
 }
@@ -197,14 +160,3 @@ void signal_handler(int nSIGnum)
   exit(-2);
 }
 #endif
-
-int main(int argc, const char* argv[], const char* envp[])
-{
-  parse_options(argc, argv, "cachesim: RISC-V cache simulator");
-  if (argc == 0)
-    help_exit();
-  start_time();
-  core_t* mycpu = new core_t(argc, argv, envp);
-  atexit(exitfunc);
-  mycpu->interpreter(simulator);
-}

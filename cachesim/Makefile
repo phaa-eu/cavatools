@@ -12,10 +12,11 @@ B := $(RVTOOLS)/riscv-isa-sim
 #L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 
 
-CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -Ofast
+CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -O3
 #CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -O0 -DDEBUG
 
-LIBS := ~/lib/libsoftfloat.a $(CAVA)/lib/libcava.a
+BINS := cachesim.o simulator.o cache.o
+LIBS := $(CAVA)/lib/libcava.a ~/lib/libsoftfloat.a -lncurses
 LDFLAGS := -Wl,-Ttext=70000000
 
 install:  cachesim
@@ -28,9 +29,9 @@ clean:
 	rm -f cachesim
 
 
-cachesim:  simulator.o cache.o $(LIBS)
-	g++ -o cachesim $^ $(LDFLAGS) $(LIBS)
-#	g++ -o cachesim $^ $(LDFLAGS) $(LIBS) -ldl -lrt
+cachesim:  $(BINS) $(LIBS)
+	g++ -o cachesim $(BINS) $(LDFLAGS) $(LIBS)
+#	g++ -o cachesim $(BINS) $(LDFLAGS) $(LIBS) -ldl -lrt
 
 cache.o simulator.o:  cache.h
 #perf.o simulator.o: perf.h

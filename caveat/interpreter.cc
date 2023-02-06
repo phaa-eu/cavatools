@@ -108,7 +108,7 @@ void strand_t::interpreter(simfunc_t simulator)
     }
   end_bb: // at this point pc=target basic block but i still points to last instruction.
     debug.addval(xrf[i->rd()]);
-    simulator(hart(), bb);
+    simulator(hart_pointer, bb);
   }
 }
 

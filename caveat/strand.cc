@@ -4,9 +4,13 @@
 #include <string.h>
 #include <sys/mman.h>
 
+#include <map>
+
 #include "options.h"
 #include "caveat.h"
 #include "strand.h"
+
+std::map<long, const char*> fname; // dictionary of pc->name
 
 option<long> conf_tcache("tcache", 1024, "Binary translation cache size in 4K pages");
 
@@ -15,14 +19,15 @@ long initialize_stack(int argc, const char** argv, const char** envp);
 int elf_find_symbol(const char* name, long* begin, long* end);
 const char* elf_find_pc(long pc, long* offset);
 
-volatile strand_t* strand_t::cpu_list =0;
+volatile strand_t* strand_t::_list =0;
+volatile int strand_t::num_strands =0;
+
 Insn_t* strand_t::tcache =0;
-volatile int strand_t::num_threads =0;
 
 strand_t* strand_t::find(int tid)
 {
-  for (volatile strand_t* p=list(); p; p=p->link)
-    if (p->my_tid == tid)
+  for (volatile strand_t* p=_list; p; p=p->_next)
+    if (p->tid == tid)
       return (strand_t*)p;
   return 0;
 }
@@ -30,14 +35,14 @@ strand_t* strand_t::find(int tid)
 void strand_t::initialize(class hart_t* h)
 {
   do {  // atomically attach to list of strands
-    link = list();
-  } while (!__sync_bool_compare_and_swap(&cpu_list, link, this));
+    _next = _list;
+  } while (!__sync_bool_compare_and_swap(&_list, _next, this));
   int old_n;	
   do { // atomically increment thread count
-    old_n = num_threads;
-  } while (!__sync_bool_compare_and_swap(&num_threads, old_n, old_n+1));
-  _number = old_n;		// after loop in case of race
-  my_tid = gettid();
+    old_n = num_strands;
+  } while (!__sync_bool_compare_and_swap(&num_strands, old_n, old_n+1));
+  sid = old_n;			// after loop in case of race
+  tid = gettid();
   hart_pointer = h;
   addresses = (long*)mmap(0, 8*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   dieif(!addresses, "Unable to mmap() addresses");
@@ -61,9 +66,6 @@ strand_t::strand_t(class hart_t* h, strand_t* from)
   memcpy(this, from, sizeof(strand_t));
   initialize(h);
 }
-
-hart_t::hart_t(hart_t* from) { strand=new strand_t(this, from->strand); }
-hart_t::hart_t(int argc, const char* argv[], const char* envp[]) { strand=new strand_t(this, argc, argv, envp); }
 
 #define CSR_FFLAGS	0x1
 #define CSR_FRM		0x2
@@ -100,15 +102,30 @@ void strand_t::set_csr(int what, long val)
   }
 }
 
-void hart_t::interpreter(simfunc_t simulator) { strand->interpreter(simulator); }
+
+
+hart_t::hart_t(hart_t* from) { strand=new strand_t(this, from->strand); }
+hart_t::hart_t(int argc, const char* argv[], const char* envp[], bool counting)
+{
+  strand = new strand_t(this, argc, argv, envp);
+  if (counting) {
+    _counters = (uint64_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    dieif(!_counters, "Unable to mmap counters array");
+  }
+  else
+    _counters = 0;
+}
+
 Insn_t* hart_t::tcache() { return strand->tcache; }
+void hart_t::interpreter(simfunc_t simulator) { strand->interpreter(simulator); }
 long* hart_t::addresses() { return strand->addresses; }
-hart_t* hart_t::list() { return strand_t::list() ? strand_t::list()->hart() : 0; }
-hart_t* hart_t::next() { return strand->next() ? strand->next()->hart() : 0; }
-int hart_t::number() { return strand->number(); }
-long hart_t::tid() { return strand->tid(); }
-hart_t* hart_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart() : 0; }
-int hart_t::threads() { return strand_t::threads(); }
+hart_t* hart_t::list() { return (hart_t*)strand_t::_list->hart_pointer; }
+hart_t* hart_t::next() { return (hart_t*)(strand->_next ? strand->_next->hart_pointer : 0); }
+int hart_t::number() { return strand->sid; }
+long hart_t::tid() { return strand->tid; }
+
+hart_t* hart_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart_pointer : 0; }
+int hart_t::num_harts() { return strand_t::num_strands; }
 void hart_t::debug_print() { strand->debug_print(); }
 
 void hart_t::print_debug_trace()
@@ -120,6 +137,7 @@ void hart_t::print_debug_trace()
 #endif
 }
 
+const char* func_name(long pc) { return fname.count(pc)==1 ? fname.at(pc) : 0; }
 
 
 #define LABEL_WIDTH  16

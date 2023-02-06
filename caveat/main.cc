@@ -13,25 +13,25 @@ option<long> conf_report("report", 100000000, "Status report frequency");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
 
 class core_t : public hart_t {
-  long _executed;
+  long executed;
   long next_report;
 public:
   core_t(int argc, const char* argv[], const char* envp[]) :hart_t(argc, argv, envp) {
-    _executed=0; next_report=conf_report;
+    executed=0; next_report=conf_report;
   }
-  long executed() { return _executed; }
-  long more_insn(long n) { _executed+=n; return _executed; }
+  long more_insn(long n) { executed+=n; return executed; }
   static long total_count();
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
   friend void simulator(hart_t* h, Header_t* bb);
+  friend void status_report();
 };
 
 long core_t::total_count()
 {
   long total = 0;
   for (core_t* p=core_t::list(); p; p=p->next())
-    total += p->executed();
+    total += p->executed;
   return total;
 }
 
@@ -42,18 +42,18 @@ void status_report()
   double realtime = elapse_time();
   long total = core_t::total_count();
   fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
-  if (core_t::threads() <= 16) {
+  if (core_t::num_harts() <= 16) {
     char separator = '(';
+    long total = core_t::total_count();
     for (core_t* p=core_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
-      //      fprintf(stderr, "%1ld%%", 100*p->executed()/total);
-      fprintf(stderr, "%1ld%%", 100*p->executed()/core_t::total_count());
+      fprintf(stderr, "%1ld%%", 100*p->executed/total);
       separator = ',';
     }
     fprintf(stderr, ")");
   }
-  else if (core_t::threads() > 1)
-    fprintf(stderr, "(%d cores)", core_t::threads());
+  else if (core_t::num_harts() > 1)
+    fprintf(stderr, "(%d cores)", core_t::num_harts());
 }
 
 void exit_func()

@@ -14,6 +14,10 @@
 #include <fcntl.h>
 #include <elf.h>
 
+#include <map>
+
+extern std::map<long, const char*> fname; // dictionary of pc->name
+
 /*
   Utility stuff.
 */
@@ -178,6 +182,12 @@ long load_elf_binary( const char* file_name, int include_data )
       symtbl = (Elf64_Sym*)load_elf_section(file, header.sh_offset, header.sh_size);
       dieif(symtbl==0, "could not read symbol table");
       num_syms = header.sh_size / sizeof(Elf64_Sym);
+
+      for (int k=0; k<num_syms; k++) {
+	Elf64_Sym* s = &symtbl[k];
+	if (ELF64_ST_TYPE(s->st_info) == STT_FUNC)
+	  fname[s->st_value] = strtbl + s->st_name;
+      }
     }
     /* find bounds of instruction segment */
     if (header.sh_flags & SHF_EXECINSTR) {

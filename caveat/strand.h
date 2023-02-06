@@ -66,24 +66,26 @@ class strand_t {
     uint32_t ui;
   } fcsr;
   
-  static volatile strand_t* cpu_list;	// for find() using thread id
-  volatile strand_t* link;		// list of strand_t
-  int my_tid;				// my Linux thread number
-  int _number;				// index of this strand
-  static volatile int num_threads;	// allocated
+  static volatile strand_t* _list;	// for find() using thread id
+  volatile strand_t* _next;		// list of strand_t
+  int tid;				// Linux thread number
+  int sid;				// strand index number
+  static volatile int num_strands;	// cloned in process
   
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
 
   static Insn_t* tcache;	// tcache is global to all strands
   long* addresses;		// but address list is one per strand
+
   void initialize(class hart_t* h);
 
   friend class hart_t;
+  Debug_t debug;
 public:
   strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[]);
   strand_t(class hart_t* h, strand_t* p);
-  
+
   void proxy_syscall(long sysnum);
   void proxy_ecall();
   
@@ -92,13 +94,13 @@ public:
   void print_trace(long pc, Insn_t* i);
   void debug_print() { debug.print(); }
 
-  class hart_t* hart() { return hart_pointer; }
-  static strand_t* list() { return (strand_t*)cpu_list; }
-  strand_t* next() { return (strand_t*)link; }
-  int number() { return _number; }
-  long tid() { return my_tid; }
+  //  class hart_t* hart() { return hart_pointer; }
+  //  static strand_t* list() { return (strand_t*)cpu_list; }
+  //  strand_t* next() { return (strand_t*)link; }
+  //  int number() { return _number; }
+  //  long tid() { return my_tid; }
   static strand_t* find(int tid);
-  static int threads() { return num_threads; }
+  //  static int threads() { return num_threads; }
 
   template<typename T> inline T    LOAD( long a)      { *ap++ = a; return *(T*)a; }
   template<typename T> inline void STORE(long a, T v) { *ap++ = a; *(T*)a = v; }
@@ -136,14 +138,6 @@ public:
     *ap++ = (long)ptr;
     return lhs;
   }
-
-  void acquire_reservation(long a) { }
-  void yield_reservation() { }
-  bool check_reservation(long a, long size) { return true; }
-  void flush_icache() { }
-  void flush_tlb() { }
-
-  Debug_t debug;
 };
 
 class strand_t* find_cpu(int tid);

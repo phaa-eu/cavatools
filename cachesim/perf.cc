@@ -8,7 +8,7 @@
 #include <sys/mman.h>
 
 #include "options.h"
-#include "uspike.h"
+#include "caveat.h"
 #include "perf.h"
 
 perf_header_t* perf_t::h;
