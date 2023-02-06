@@ -12,7 +12,7 @@ B := $(RVTOOLS)/riscv-isa-sim
 #L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 
 
-CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -O3
+CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -Ofast
 #CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -O0 -DDEBUG
 
 BINS := cachesim.o simulator.o cache.o

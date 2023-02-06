@@ -22,7 +22,7 @@ const char* elf_find_pc(long pc, long* offset);
 volatile strand_t* strand_t::_list =0;
 volatile int strand_t::num_strands =0;
 
-Insn_t* strand_t::tcache =0;
+const Insn_t* tcache =0;
 
 strand_t* strand_t::find(int tid)
 {
@@ -56,9 +56,8 @@ strand_t::strand_t(class hart_t* h, int argc, const char* argv[], const char* en
   // tcache is global to all strands
   tcache = (Insn_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   dieif(!tcache, "unable to mmap() tcache");
-  linkp(tcache)[0] = 0;		// this Header_t never match any pc
-  linkp(tcache)[1] = 2;		// empty tcache
-  initialize(h);		// do at end because there are atomic stuff in initialize()
+  *(long*)tcache = 1; // always has one slot containing number of slots
+  initialize(h); // do at end because there are atomic stuff in initialize()
 }
 
 strand_t::strand_t(class hart_t* h, strand_t* from)
@@ -116,7 +115,6 @@ hart_t::hart_t(int argc, const char* argv[], const char* envp[], bool counting)
     _counters = 0;
 }
 
-Insn_t* hart_t::tcache() { return strand->tcache; }
 void hart_t::interpreter(simfunc_t simulator) { strand->interpreter(simulator); }
 long* hart_t::addresses() { return strand->addresses; }
 hart_t* hart_t::list() { return (hart_t*)strand_t::_list->hart_pointer; }

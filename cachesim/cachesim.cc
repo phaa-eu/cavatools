@@ -15,10 +15,9 @@ const int HORDIV = 24;
 
 
 option<bool>conf_view("view", false, true, "View running program");
-
+option<long> conf_report("report", 100000000, "Status report frequency");
 
 core_t* mycpu;
-Insn_t* tcache;
 uint64_t* counters;
 
 //std::vector<long> topk;		// index into tcache, counters
@@ -30,7 +29,7 @@ std::vector<Header_t*> topK;	  // bb's with highest counters
 //bool cmpfunc(long& a, long& b) {
 //  return counters[a] > counters[b];
 bool cmpfunc(Header_t*& a, Header_t*& b) {
-  return counters[a-bbp(tcache)] > counters[b-bbp(tcache)];
+  return counters[index(a)] > counters[index(b)];
 }
 
 WINDOW *cores, *highest, *message, *code;
@@ -57,7 +56,7 @@ void paint_highest()
   wmove(highest, 0, 0);
   for (int j=0; j<lines; j++)
     //    wprintw(highest, "%12ld %8lx\n", counters[topk[j]], (long)bbp(&tcache[topk[j]])->addr);
-    wprintw(highest, "%12ld %8lx\n", counters[topK[j]-bbp(tcache)], (long)topK[j]->addr);
+    wprintw(highest, "%12ld %8lx\n", counters[index(topK[j])], (long)topK[j]->addr);
   wrefresh(highest);
   if (!first)
     first = topK[0];
@@ -91,7 +90,7 @@ void paint_code()
       char buf[1024];
       int n = slabelpc(buf, pc);
       sdisasm(buf+n, pc, i);
-      wprintw(code, "%10ld %10ld %8lx %s\n", counters[insnp(bb)-tcache], counters[i-tcache], pc, buf);
+      wprintw(code, "%10ld %10ld %8lx %s\n", counters[index(bb)], counters[i-tcache], pc, buf);
       pc += (i++)->compressed() ? 2 : 4;
       count--;
     }
@@ -114,7 +113,7 @@ void* viewer(void* arg)
   resize_windows();
   
   static long lines = 0;	// visible in display
-  static Header_t* last = bbp(tcache)+2;		// XXX FIX!
+  static Header_t* last = bbp((void*)tcache)+1;
 
   for (;;) {
     move(0, 0);
@@ -122,7 +121,7 @@ void* viewer(void* arg)
     /*
      * Add newly translated basic blocks
      */
-    while (last-bbp(tcache) < mycpu->tcache_size()) {
+    while (index(last) < tcache_size()) {
       Header_t* bb = last;
       blocks[(long)bb->addr] = bb;
       topK.push_back(last);
@@ -182,17 +181,6 @@ void* viewer(void* arg)
 void exitfunc()
 {
   endwin();
-
-  printf("QUIT\n");
-  std::map<long, Header_t*>::iterator iter;
-  for (iter=blocks.begin(); iter!=blocks.end(); iter++) {
-    char buf[1024];
-    slabelpc(buf, iter->second->addr);
-    printf("%s\n", buf);
-  }
-  return;
-
-  
   status_report();
   fprintf(stderr, "\n--------\n");
   for (core_t* p=core_t::list(); p; p=p->next()) {
@@ -215,15 +203,15 @@ int main(int argc, const char* argv[], const char* envp[])
     help_exit();
   
   mycpu = new core_t(argc, argv, envp, true);
-  tcache = mycpu->tcache();
   counters = mycpu->counters();
+  atexit(exitfunc);
+  start_time();
   
   if (conf_view) {
     pthread_t viewer_thread;
     pthread_create(&viewer_thread, NULL, viewer, 0);
+    mycpu->interpreter(view_simulator);
   }
-  
-  atexit(exitfunc);
-  start_time();
-  mycpu->interpreter(simulator);
+  else
+    mycpu->interpreter(dumb_simulator);
 }

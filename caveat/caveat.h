@@ -61,22 +61,29 @@ Insn_t decoder(long pc);
   Basic blocks that end in a conditional branch have two pointers, the branch-taken
   target followed by the fall-thru target.
 
-  The first slot (index zero) of the Translation Cache is always zero.  The second
-  slot contains the number of active slots.
+  The first slot (index zero) of the Translation Cache contains number of active slots.
 */
 
 struct Header_t {
-  uint16_t count;
-  long addr : 48;
+  //  uint16_t count;
+  bool branch		:  1;
+  bool conditional	:  1;
+  uint16_t count	: 14;
+  long addr		: 48;
 };
 static_assert(sizeof(Header_t) == 8);
 
 /*
-  We can freely convert between pointers to instructions, headers and links (long integer)
+  We can freely convert between pointers to instructions, headers and links.
 */
 inline Header_t* bbp(void* p) { return (Header_t*)p; }
 inline Insn_t* insnp(void* p) { return (Insn_t*)p; }
-inline long* linkp(void* p)   { return (long*)p; }
+inline Header_t** linkp(void* p)   { return (Header_t**)p; }
+
+extern const Insn_t* tcache; // only interpreter allowed to change instructions
+inline long tcache_size() { return *(long*)tcache; }
+inline long index(Insn_t* p) { return p-tcache; }
+inline long index(Header_t* p) { return insnp(p)-tcache; }
 
 typedef void (*simfunc_t)(class hart_t* h, Header_t* bb);
 
@@ -84,8 +91,6 @@ class hart_t {
   class strand_t* strand;	// opaque pointer
 public:
   uint64_t* _counters;		// performance counter array (matching tcache)
-  Insn_t* tcache();		// not allowed to change instructions
-  long tcache_size() { return *(long*)(tcache()+1); }
   uint64_t* counters() { return _counters; }
   
   hart_t(hart_t* from);
@@ -95,7 +100,6 @@ public:
   long* addresses();
 
 
-  long index(Header_t* p) { return insnp(p)-tcache(); }
   static hart_t* list();
   hart_t* next();
   int number();

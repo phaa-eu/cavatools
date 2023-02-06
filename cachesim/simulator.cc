@@ -22,7 +22,6 @@ option<int> conf_Vrows("vrows",	4,		"Vector cache log-base-2 number of rows");
 
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
-option<long> conf_report("report", 100000000, "Status report frequency");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
 
 long core_t::total_count()
@@ -54,16 +53,40 @@ void status_report()
     fprintf(stderr, "(%d cores)", hart_t::num_harts());
 }
 
-void simulator(hart_t* h, Header_t* bb)
+void dumb_simulator(hart_t* h, Header_t* bb)
+{
+  core_t* p = (core_t*)h;
+  long* ap = p->addresses();
+  Insn_t* i = insnp(bb);
+  p->advance(bb->count);
+  for (long k=0; k<bb->count; k++) {
+    ++i;
+    ATTR_bv_t attr = attributes[i->opcode()];
+    if (attr & (ATTR_ld|ATTR_st)) {
+      if (attr & ATTR_vec) {
+	if (!p->vc->lookup(*ap++, (attr&ATTR_st)))
+	  p->advance(conf_Vmiss);
+      }
+      else {
+	if (!p->dc->lookup(*ap++, (attr&ATTR_st)))
+	  p->advance(conf_Dmiss);
+      }
+    }
+  }
+  if (p->more_insn(bb->count))
+    status_report();
+}
+
+void view_simulator(hart_t* h, Header_t* bb)
 {
   core_t* p = (core_t*)h;
   long* ap = p->addresses();
   // long pc = bb->addr;
   Insn_t* i = insnp(bb);
-  uint64_t* c = &p->counters()[p->index(bb)];
+  uint64_t* c = &p->counters()[index(bb)];
   //  *c += bb->count;			// header counts number of executions
   *c += 1;
-  p->local_time += bb->count;
+  p->advance(bb->count);
   for (long k=0; k<bb->count; k++) {
     ++i, ++c;
     ATTR_bv_t attr = attributes[i->opcode()];
@@ -71,22 +94,20 @@ void simulator(hart_t* h, Header_t* bb)
       if (attr & ATTR_vec) {
 	if (!p->vc->lookup(*ap++, (attr&ATTR_st))) {
 	  *c += 1;
-	  p->local_time += conf_Vmiss;
+	  p->advance(conf_Vmiss);
 	}
       }
       else {
 	if (!p->dc->lookup(*ap++, (attr&ATTR_st))) {
 	  *c += 1;
-	  p->local_time += conf_Dmiss;
+	  p->advance(conf_Dmiss);
 	}
       }
     }
     // pc += i->compressed() ? 2 : 4;
   }
-  if (p->more_insn(bb->count) > p->next_report) {
-    //    status_report();
-    p->next_report += conf_report;
-  }
+  if (p->more_insn(bb->count))
+    status_report();
 }
 
 void core_t::print()

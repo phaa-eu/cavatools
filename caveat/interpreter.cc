@@ -29,7 +29,8 @@ void substitute_cas(long pc, Insn_t* i3);
 
 void strand_t::interpreter(simfunc_t simulator)
 {
-  Header_t* target = bbp(tcache); // tcache[0] never matches any pc
+  static Header_t dummy = { 0, 0 };
+  Header_t* target = &dummy;	// tcache[0] never matches any pc
   for (;;) {			  // once per basic block
     Header_t* bb;		  // current basic block
     if (target->addr == pc) {
@@ -55,24 +56,26 @@ void strand_t::interpreter(simfunc_t simulator)
 	  substitute_cas(dpc-4, j);
 	bb->addr = pc;
 	bb->count = j - insnp(addresses);
+	bb->branch = (attributes[j->opcode()] & (ATTR_uj|ATTR_cj)) != 0;
+	bb->conditional = (attributes[j->opcode()] & ATTR_cj) != 0;
 	//
 	// Always end with one pointer to next basic block
 	// Conditional branches have second fall-thru pointer
 	//
-	if (attributes[j->opcode()] & ATTR_cj)
-	  *linkp(++j) = 0;	// space for 2nd pointer
-	*linkp(++j) = 0;	// space for 1st pointer
+	*linkp(++j) = &dummy;	// space for branch taken pointer
+	if (bb->conditional)
+	  *linkp(++j) = &dummy;	// space for fall-thru pointer
 	//
 	// Atomically add basic block to tcache.
 	//
 	long n = j+1 - insnp(addresses);
-	long oldlen = __sync_fetch_and_add(linkp(tcache+1), n);
-	memcpy(tcache+oldlen, addresses, n*8);
+	long oldlen = __sync_fetch_and_add((long*)tcache, n);
+	memcpy((Insn_t*)tcache+oldlen, addresses, n*8);
 	// reset bb to point into tcache
-	bb = bbp(tcache) + oldlen;
+	bb = (Header_t*)tcache + oldlen;
 	bbmap[bb->addr] = bb;	// this need to be atomic too!
       }
-      *linkp(target) = insnp(bb) - tcache;
+      *linkp(target) = bb;
     }
     ap = addresses;
     Insn_t* i = insnp(bb+1);

@@ -74,9 +74,8 @@ class strand_t {
   
   volatile int clone_lock;	// 0=free, 1=locked
   friend int thread_interpreter(void* arg);
-
-  static Insn_t* tcache;	// tcache is global to all strands
-  long* addresses;		// but address list is one per strand
+  
+  long* addresses;		// address list is one per strand
 
   void initialize(class hart_t* h);
 

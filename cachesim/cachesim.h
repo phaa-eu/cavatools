@@ -10,6 +10,8 @@
   number of times branch prediction failed, etc.
 */
 
+extern option<long> conf_report;
+
 class core_t : public hart_t {
   static volatile long global_time;
   long local_time;
@@ -26,19 +28,23 @@ public:
   //  core_t* newcore() { return new core_t(this); }
   //  void proxy_syscall(long sysnum);
   long executed() { return _executed; }
-  long more_insn(long n) { _executed+=n; return _executed; }
   static long total_count();
+  bool more_insn(long n) { bool s=(_executed+=n)>next_report; if (s) next_report+=conf_report; return s; }
+  
+  void advance(long delta) { local_time+=delta; }
+  long local_clock() { return local_time; }
+  
+  long system_clock() { return global_time; }
+  void update_time();
   
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
 
-  long system_clock() { return global_time; }
-  long local_clock() { return local_time; }
-  void update_time();
   void print();
 
   friend void simulator(hart_t* h, Header_t* bb);
 };
 
-void simulator(hart_t* h, Header_t* bb);
+void view_simulator(hart_t* h, Header_t* bb);
+void dumb_simulator(hart_t* h, Header_t* bb);
 void status_report();
