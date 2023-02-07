@@ -10,6 +10,7 @@ nothing:
 clean:
 	rm -f $(CAVA)/lib/libcava.a *~ ./#*#
 	rm -f $(CAVA)/include/cava/*
+	make -C opcodes   clean
 	make -C caveat    clean
 	make -C cachesim  clean
 	make -C erised    clean
@@ -18,6 +19,7 @@ tarball:  clean
 	( cd ..; tar -czvf cavatools.tgz cavatools )
 
 install:
+	make -C opcodes  install
 	make -C caveat   install
 	make -C cachesim install
 	make -C erised   install

@@ -1,79 +1,16 @@
 import sys
 import os
 import re
+import json
 
-opcode_line = re.compile('^([ +])\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
-reglist_field = re.compile('^(\S)\[(\d+):(\d+)\](\+\d+)?$')
+repo = sys.argv[1]
+if repo[-1] != '/':
+    repo += '/'
 
 cava_comment = re.compile('\s*/\*\s*CAVA((?:\s+\w+)+)\s*\*/')
 
 def eprint(*args):
     sys.stderr.write(' '.join(map(str,args)) + '\n')
-
-def ParseOpcode(bits):
-    (code, mask, pos) = (0, 0, 0)
-    immed = []
-    immtyp = -1
-    for b in reversed(bits.split()):
-        if re.match('[01]+', b):
-            code |= int(b, 2) << pos
-            mask |= ((1<<len(b))-1) << pos
-            pos += len(b)
-        elif re.match('[.]+', b):
-            pos += len(b)
-        elif re.match('\{[^}]+\}', b):
-            immtyp = 0
-            tuple = []
-            signed = False
-            i = 0
-            if b[1] == '-':
-                signed = True
-                i = 1
-            while b[i] != '}':
-                i += 1
-                m = re.match('(\d+)(:\d+)?', b[i:])
-                if not m:
-                    eprint('Bad immediate', name, b[i:])
-                    exit(-1)
-                hi = int(m.group(1))
-                lo = hi
-                if m.group(2):
-                    lo = int(m.group(2)[1:])
-                tuple.append((hi, lo))
-                i += len(m.group(0))
-            for (hi, lo) in reversed(tuple[1:]):
-                shift = lo and '<<{:d}'.format(lo) or ''
-                immed.append('x({:d},{:d}){:s}'.format(pos, hi-lo+1, shift))
-                pos += hi-lo+1
-            (hi, lo) = tuple[0]
-            if hi >= 13:
-                imm = 1
-            shift = lo and '<<{:d}'.format(lo) or ''
-            immed.append('{:s}({:d},{:d}){:s}'.format(signed and 'xs' or 'x', pos, hi-lo+1, shift))
-            pos += hi-lo+1
-        else:
-            eprint('Unknown field', b, 'in bits "', bits, '"')
-            exit(-1)
-    if immed:
-        immed = '|'.join(reversed(immed))
-    else:
-        immed = '0'
-    if pos == 16:
-        digits = 4
-    elif pos == 32:
-        digits = 8
-    else:
-        eprint('Illegal length', pos, 'in bits "', bits, '"')
-        eprint(immed)
-        exit(-1)
-    code = '0x' + hex(code)[2:].zfill(digits)
-    mask = '0x' + hex(mask)[2:].zfill(digits)
-    return (code, mask, pos/8, immed, immtyp)
-
-
-def ParseReglist(r):
-    return None
-
 
 def diffcp(fname):
     if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
@@ -81,20 +18,50 @@ def diffcp(fname):
     else:
         os.system('mv newcode.tmp '+fname)
 
-        
-instructions = {}
-for line in sys.stdin:
-    m = opcode_line.match(line)
-    if not m: continue
-    (kind, opcode, asm, attr, bits, reglist, action) = m.groups()
-    if kind != '+':
-        continue
-    opname = 'Op_' + opcode.replace('.', '_')
-    reglist = ParseReglist(reglist)
-    (code, mask, bytes, immed, immtyp) = ParseOpcode(bits)
-    instructions[opcode] = (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action)
+with open('isa.json', 'r') as f:
+    instructions = json.load(f)
 
-opcodes = ['ZERO'] + [key for key in instructions] + ['cas10_w', 'cas10_d', 'cas12_w', 'cas12_d'] + ['ILLEGAL', 'UNKNOWN']
+opcodes = ['ZERO'] + [key for key in instructions] + ['ILLEGAL', 'UNKNOWN']
+
+
+def gen_asm_header(f):
+    for opcode, t in instructions.items():
+        (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
+        if 'custom' not in attr:
+            continue
+        outreg = '/* no output registers */'
+        inlist = []
+        macro_operands = []
+        asm_operands = []
+        aop = 0
+        print(opcode, reglist)
+        for k in range(len(reglist)):
+            if reglist[k] != 'NOREG' and not reglist[k].isnumeric():
+                if 'FPREG' in reglist[k]:
+                    letter = 'f'
+                else:
+                    letter = 'r'
+                if k == 0:
+                    outreg = '"={:s}"(xd)'.format(letter)
+                    macro_operands.append('xd')
+                else:
+                    inlist.append('"{:s}"(x{:d})'.format(letter, k))
+                    macro_operands.append('x{:d}'.format(k))
+                asm_operands.append('%{:d}'.format(aop))
+                aop += 1
+        if len(inlist) > 0:
+            inlist = ','.join(inlist)
+        else:
+            inlist = '/* no input registers */'
+        f.write('#define {:s}({:s}) __asm__( \\\n'.format(opcode, ','.join(macro_operands)))
+        f.write('\t\"{:s}\t{:s}" \\\n'.format(opcode, ','.join(asm_operands)))
+        f.write('\t: {:s} \\\n'.format(outreg))
+        f.write('\t: {:s} \\\n'.format(inlist))
+        if 'st' in attr or 'amo' in attr:
+            f.write('\t: "memory" \\\n')
+        else:
+            f.write('\t: /* no clobber */ \\\n')
+        f.write(');\n')
 
 
 def munge_riscv_opc_files(s, f):
@@ -118,17 +85,23 @@ def munge_riscv_opc_files(s, f):
                 if what == 'define':
                     for opcode, t in instructions.items():
                         (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
+                        if 'custom' not in attr:
+                            continue
                         upper_op = opname.upper()
                         f.write('#define MATCH_{:s}  {:s}\n'.format(upper_op, code))
                         f.write('#define MASK_{:s}  {:s}\n'.format(upper_op, mask))
                 elif what == 'declare':
                     for opcode, t in instructions.items():
                         (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
+                        if 'custom' not in attr:
+                            continue
                         upper_op = opname.upper()
                         f.write('DECLARE_INSN({:s}, MATCH_{:s}, MASK_{:s})\n'.format(opname, upper_op, upper_op))
                 elif what == 'opcode':
                     for opcode, t in instructions.items():
                         (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
+                        if 'custom' not in attr:
+                            continue
                         upper_op = opname.upper()
                         clas = 'I'
                         f.write('{{{:17} {:2d}, INSN_CLASS_{:s}, {:11s} MATCH_{:s}, MASK_{:s}, match_opcode, 0 }},\n'
@@ -140,11 +113,11 @@ def munge_riscv_opc_files(s, f):
         line = s.readline()
     
     
-repo = '/opt/riscv-gnu-toolchain/'
+#repo = '/opt/riscv-gnu-toolchain/'
 files = [ repo+'gdb/include/opcode/riscv-opc.h',
-          repo+'/binutils/include/opcode/riscv-opc.h',
+          repo+'binutils/include/opcode/riscv-opc.h',
           repo+'gdb/opcodes/riscv-opc.c',
-          repo+'/binutils/opcodes/riscv-opc.c'
+          repo+'binutils/opcodes/riscv-opc.c'
          ]
 
 for n in files:
@@ -152,4 +125,6 @@ for n in files:
         munge_riscv_opc_files(s, f)
     diffcp(n)
 
-
+with open('newcode.tmp', 'w') as f:
+    gen_asm_header(f)
+    diffcp('custom_asm_macros.h')

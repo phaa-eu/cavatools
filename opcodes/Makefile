@@ -8,9 +8,16 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-install:  isa.def crunch.py munge_gcc.py
-	python munge_gcc.py < isa.def
+install: custom_asm_macros.h
+	cp custom_asm_macros.h $(CAVA)/include/
+
+custom_asm_macros.h: isa.json munge_gcc.py
+	python munge_gcc.py /opt/riscv-gnu-toolchain
+
+isa.json:  isa.def crunch.py
 	python crunch.py < isa.def
 
 clean:
 	rm -f *.o *~ ./#*#
+	rm -f isa.json custom_asm_macros.h
+

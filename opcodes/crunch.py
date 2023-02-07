@@ -1,12 +1,19 @@
 import sys
 import os
 import re
+import json
 
-opcode_line = re.compile('^([ +])\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
+opcode_line = re.compile('^([ ]|\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
 reglist_field = re.compile('^(\S)\[(\d+):(\d+)\](\+\d+)?$')
 
 def eprint(*args):
     sys.stderr.write(' '.join(map(str,args)) + '\n')
+
+def diffcp(fname):
+    if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
+        os.system('rm newcode.tmp')
+    else:
+        os.system('mv newcode.tmp '+fname)
 
 def ParseOpcode(bits):
     (code, mask, pos) = (0, 0, 0)
@@ -95,17 +102,19 @@ def ParseReglist(reglist):
         rv.append('NOREG')
     return rv
 
-def diffcp(fname):
-    if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
-        os.system('rm newcode.tmp')
-    else:
-        os.system('mv newcode.tmp '+fname)
-
 instructions = {}
 for line in sys.stdin:
     m = opcode_line.match(line)
-    if not m: continue
+    if not m:
+        continue
     (kind, opcode, asm, attr, bits, reglist, action) = m.groups()
+    if kind[0] == '#':
+        continue
+    attr = attr.split(',')
+    if '!' in kind:
+        attr.append('stop')
+    if '+' in kind:
+        attr.append('custom')
     opname = 'Op_' + opcode.replace('.', '_')
     reglist = ParseReglist(reglist)
     (code, mask, bytes, immed, immtyp) = ParseOpcode(bits)
@@ -115,11 +124,15 @@ for line in sys.stdin:
 
 opcodes = ['ZERO'] + [key for key in instructions] + ['ILLEGAL', 'UNKNOWN']
 
+with open('newcode.tmp', 'w') as f:
+    json.dump(instructions, f)
+diffcp('isa.json')
+
 isa_letter = {}
 attribute = {}
 for opcode, t in instructions.items():
     (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
-    for a in attr.split(','):
+    for a in attr:
         if a.isupper():
             isa_letter[a] = 1;
         elif a != '-':
@@ -162,11 +175,10 @@ diffcp('../caveat/opcodes.h')
 
 def make_bitvec(typ, tokens, uppercase):
     bv = []
-    if tokens != '-':
-        for t in tokens.split(','):
-            if uppercase and not t.isupper():  continue
-            if not uppercase and t.isupper():  continue
-            bv.append('{:s}_{:s}'.format(typ, t))
+    for t in tokens:
+        if uppercase and not t.isupper():  continue
+        if not uppercase and t.isupper():  continue
+        bv.append('{:s}_{:s}'.format(typ, t))
     if len(bv) == 0:
         return '0'
     else:
@@ -186,26 +198,20 @@ with open('newcode.tmp', 'w') as f:
     for opcode in opcodes:
         if n % 4 == 0:
             f.write('\n  ')
+        flags = '0'
         if opcode in instructions:
-            isa = instructions[opcode][2]
-            f.write('{:20s}'.format(make_bitvec('ISA', isa, 1)+','))
-        else:
-            f.write('{:20s}'.format('0,'))
+            flags = make_bitvec('ISA', instructions[opcode][2], 1)
+        f.write('{:20s}'.format(flags+','))
         n += 1
     f.write('\n};\n\n')
-    f.write('const ATTR_bv_t attributes[] = {')
-    n = 0
+    f.write('const ATTR_bv_t attributes[] = {\n')
     for opcode in opcodes:
-        if n % 4 == 0:
-            f.write('\n  ')
+        flags = '0'
         if opcode in instructions:
-            attr = instructions[opcode][2]
-            f.write('{:20s}'.format(make_bitvec('ATTR', attr, 0)+','))
-#            f.write('/* {:s} */ {:20s}'.format(opcode, make_bitvec('ATTR', attr, 0)+','))
-        else:
-            f.write('{:20s}'.format('0,'))
+            flags = make_bitvec('ATTR', instructions[opcode][2], 0)
+        f.write('  /* {:19s} */ {:20s}\n'.format(opcode, flags+','))
         n += 1
-    f.write('\n};\n\n')
+    f.write('};\n\n')
 diffcp('../caveat/constants.h')
 
 

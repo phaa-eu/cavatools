@@ -35,13 +35,16 @@ long core_t::total_count()
   return total;
 }
 
+static long customi = 0;
+
 void status_report()
 {
   if (conf_quiet)
     return;
   double realtime = elapse_time();
   long total = core_t::total_count();
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
+  //  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
+  fprintf(stderr, "\r\33[2K%12ld(%ld) insns %3.1fs %3.1f MIPS ", total, customi, realtime, total/1e6/realtime);
   if (core_t::num_harts() <= 16) {
     char separator = '(';
     long total = core_t::total_count();
@@ -56,6 +59,18 @@ void status_report()
     fprintf(stderr, "(%d cores)", core_t::num_harts());
 }
 
+void simulator(hart_t* h, Header_t* bb)
+{
+  core_t* c = (core_t*)h;
+  for (Insn_t* i=insnp(bb+1); i<=insnp(bb)+bb->count; i++)
+    if (attributes[i->opcode()] & ATTR_custom)
+      customi++;
+  if (c->more_insn(bb->count) > c->next_report) {
+    status_report();
+    c->next_report += conf_report;
+  }
+}
+
 void exit_func()
 {
   fprintf(stderr, "\n");
@@ -68,15 +83,6 @@ static jmp_buf return_to_top_level;
 
 static void segv_handler(int, siginfo_t*, void*) {
   longjmp(return_to_top_level, 1);
-}
-
-void simulator(hart_t* h, Header_t* bb)
-{
-  core_t* c = (core_t*)h;
-  if (c->more_insn(bb->count) > c->next_report) {
-    status_report();
-    c->next_report += conf_report;
-  }
 }
   
   
