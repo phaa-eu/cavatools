@@ -4,7 +4,7 @@ import re
 import json
 
 opcode_line = re.compile('^([ ]|\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
-reglist_field = re.compile('^(\S)\[(\d+):(\d+)\](\+\d+)?$')
+reglist_field = re.compile('^(\S+)\[(\d+):(\d+)\](\+\d+)?$')
 
 def eprint(*args):
     sys.stderr.write(' '.join(map(str,args)) + '\n')
@@ -89,14 +89,12 @@ def ParseReglist(reglist):
         if not m:
             eprint('Illegal register specifier', r, 'in', reglist)
             exit(-1)
-        (typ, hi, lo, plus) = m.groups()
+        (ty, hi, lo, plus) = m.groups()
         if not plus:
             plus = ''
-        if   typ == 'x':  typ = '+GPREG'
-        elif typ == 'f':  typ = '+FPREG'
-        else:
-            eprint('unknown type of register', typ, 'in', reglist)
-            exit(-1)
+        typ = '+GPREG'
+        if 'f' in ty or 'd' in ty:
+            typ = '+FPREG'
         rv.append('x({:d},{:d}){:s}{:s}'.format(int(lo), int(hi)-int(lo)+1, plus, typ))
     while len(reglist) < 4:
         rv.append('NOREG')
@@ -116,7 +114,6 @@ for line in sys.stdin:
     if '+' in kind:
         attr.append('custom')
     opname = 'Op_' + opcode.replace('.', '_')
-    reglist = ParseReglist(reglist)
     (code, mask, bytes, immed, immtyp) = ParseOpcode(bits)
     instructions[opcode] = (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action)
     if bytes == 2:
@@ -218,6 +215,7 @@ diffcp('../caveat/constants.h')
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
         (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
+        reglist = ParseReglist(reglist)
         f.write('  if((b&{:s})=={:s}) {{ i.op_code={:s}; i.op_rd={:s}; i.op_rs1={:s};'.format(mask, code, opname, reglist[0], reglist[1]))
         if immtyp == 1:
             f.write(' i.op_longimm={:s};'.format(immed))

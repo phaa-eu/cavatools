@@ -63,7 +63,7 @@ void dumb_simulator(hart_t* h, Header_t* bb)
     ++i;
     ATTR_bv_t attr = attributes[i->opcode()];
     if (attr & (ATTR_ld|ATTR_st)) {
-      if (attr & ATTR_custom) {
+      if (attr & ATTR_vec) {
 	if (!p->vc->lookup(*ap++, (attr&ATTR_st)))
 	  p->advance(conf_Vmiss);
       }
@@ -91,7 +91,7 @@ void view_simulator(hart_t* h, Header_t* bb)
     ++i, ++c;
     ATTR_bv_t attr = attributes[i->opcode()];
     if (attr & (ATTR_ld|ATTR_st)) {
-      if (attr & ATTR_custom) {
+      if (attr & ATTR_vec) {
 	if (!p->vc->lookup(*ap++, (attr&ATTR_st))) {
 	  *c += 1;
 	  p->advance(conf_Vmiss);

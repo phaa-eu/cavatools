@@ -23,45 +23,75 @@ with open('isa.json', 'r') as f:
 
 opcodes = ['ZERO'] + [key for key in instructions] + ['ILLEGAL', 'UNKNOWN']
 
+reg_specifier = re.compile('(\w+)\[(\d+):(\d+)\]')
+def gettype(a):
+    if a == '-':
+        return None
+    m = reg_specifier.match(a)
+    if not m:
+        eprint('Bad register specifier', a)
+        exit(-1)
+    typ, hi, lo = m.groups()
+    if typ == 'bu':  return 'unsigned char'
+    if typ == 'hu':  return 'unsigned short'
+    if typ == 'wu':  return 'unsigned int'
+    if typ == 'b' :  return 'char'
+    if typ == 'h' :  return 'short'
+    if typ == 'w' :  return 'int'
+    if typ == 'l' :  return 'long'
+    if typ == 'f' :  return 'float'
+    if typ == 'd' :  return 'double'
+    if typ == 'a' :  return 'void*'
+    eprint('Unknown register type "{:s}"'.format(typ))
+    exit(-1)
 
 def gen_asm_header(f):
     for opcode, t in instructions.items():
         (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
         if 'custom' not in attr:
             continue
-        outreg = '/* no output registers */'
-        inlist = []
-        macro_operands = []
-        asm_operands = []
-        aop = 0
-        print(opcode, reglist)
-        for k in range(len(reglist)):
-            if reglist[k] != 'NOREG' and not reglist[k].isnumeric():
-                if 'FPREG' in reglist[k]:
-                    letter = 'f'
-                else:
-                    letter = 'r'
-                if k == 0:
-                    outreg = '"={:s}"(xd)'.format(letter)
-                    macro_operands.append('xd')
-                else:
-                    inlist.append('"{:s}"(x{:d})'.format(letter, k))
-                    macro_operands.append('x{:d}'.format(k))
-                asm_operands.append('%{:d}'.format(aop))
-                aop += 1
-        if len(inlist) > 0:
-            inlist = ','.join(inlist)
+
+        reglist = reglist.split(',')
+        inargs = []
+        inputs = []
+        asmargs = []
+        n = 0
+        t = gettype(reglist[0])
+        if t == None:
+            outtyp = 'void'
+            output = '/* no output register */'
         else:
-            inlist = '/* no input registers */'
-        f.write('#define {:s}({:s}) __asm__( \\\n'.format(opcode, ','.join(macro_operands)))
-        f.write('\t\"{:s}\t{:s}" \\\n'.format(opcode, ','.join(asm_operands)))
-        f.write('\t: {:s} \\\n'.format(outreg))
-        f.write('\t: {:s} \\\n'.format(inlist))
+            outtyp = t
+            regspec = 'r'
+            if t=='float' or t=='double':
+                regspec = 'f'
+            output = '"={:s}"(y)'.format(regspec)
+            asmargs.append('%{:d}'.format(n))
+            n += 1
+        for k in range(1, 4):
+            t = gettype(reglist[k])
+            if t:
+                inargs.append('{:s} x{:d}'.format('const '+t, n))
+                regspec = 'r'
+                if t=='float' or t=='double':
+                    regspec = 'f'
+                inputs.append('"{:s}"(x{:d})'.format(regspec, n))
+                asmargs.append('%{:d}'.format(n))
+                n += 1
+                
+        f.write('inline {:s} {:s}({:s}) {{ \n'.format(outtyp, opcode, ', '.join(inargs)))
+        if (outtyp != 'void'):
+            f.write('  {:s} y; \n'.format(outtyp))
+        f.write('  __asm__("{:s}\t{:s}" \n'.format(opcode, ','.join(asmargs)))
+        f.write('\t: {:s} \n'.format(output))
+        f.write('\t: {:s} \n'.format(','.join(inputs)))
         if 'st' in attr or 'amo' in attr:
-            f.write('\t: "memory" \\\n')
+            f.write('\t: "memory");\n')
         else:
-            f.write('\t: /* no clobber */ \\\n')
-        f.write(');\n')
+            f.write('\t: /* no clobber */);\n')
+        if (outtyp != 'void'):
+            f.write('  return y; \n')
+        f.write('};\n\n')
 
 
 def munge_riscv_opc_files(s, f):

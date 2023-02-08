@@ -22,7 +22,7 @@ install:
 	make -C opcodes  install
 	make -C caveat   install
 	make -C cachesim install
-	make -C erised   install
+#	make -C erised   install
 
 
 
