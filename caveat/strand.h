@@ -52,11 +52,10 @@ struct Debug_t {
 
 
 class strand_t {
-  class hart_t* hart_pointer;	// simulation object
+  class hart_base_t* hart_pointer;	// simulation object
   reg_t  xrf[32];
   freg_t frf[32];
   long pc;
-  long* ap;			// ptr to end of address list
   
   union {
     struct {
@@ -76,33 +75,32 @@ class strand_t {
   friend int thread_interpreter(void* arg);
   
   long* addresses;		// address list is one per strand
-
-  void initialize(class hart_t* h);
-
-  friend class hart_t;
   Debug_t debug;
+
+  void initialize(class hart_base_t* h);
+
+  friend class hart_base_t;
+  friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator);
+    
 public:
-  strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[]);
-  strand_t(class hart_t* h, strand_t* p);
+  strand_t(class hart_base_t* h, int argc, const char* argv[], const char* envp[]);
+  strand_t(class hart_base_t* h, strand_t* p);
 
   void proxy_syscall(long sysnum);
   void proxy_ecall();
   
-  void interpreter(simfunc_t simulator);
-  void single_step();
+  bool interpreter(simfunc_t simulator);
+  bool single_step(simfunc_t simulator);
   void print_trace(long pc, Insn_t* i);
   void debug_print() { debug.print(); }
 
-  //  class hart_t* hart() { return hart_pointer; }
+  //  class hart_base_t* hart() { return hart_pointer; }
   //  static strand_t* list() { return (strand_t*)cpu_list; }
   //  strand_t* next() { return (strand_t*)link; }
   //  int number() { return _number; }
   //  long tid() { return my_tid; }
   static strand_t* find(int tid);
   //  static int threads() { return num_threads; }
-
-  template<typename T> inline T    LOAD( long a)      { *ap++ = a; return *(T*)a; }
-  template<typename T> inline void STORE(long a, T v) { *ap++ = a; *(T*)a = v; }
 
   long get_csr(int what);
   void set_csr(int what, long value);
@@ -113,7 +111,7 @@ public:
     return old;
   }
 
-  template<class T> bool cas(Insn_t* i)
+  template<class T> bool cas(Insn_t* i, long*& ap)
   {
     T* ptr = (T*)xrf[i->rs1()];
     T replace =  xrf[i->rs2()];
@@ -123,14 +121,14 @@ public:
     return (oldval != expect);
   }
 
-  template<typename op>	uint32_t amo_uint32(long a, op f) {
+  template<typename op>	uint32_t amo_uint32(long a, op f, long*& ap) {
     uint32_t lhs, *ptr = (uint32_t*)a;
     do lhs = *ptr;
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
     *ap++ = (long)ptr;
     return lhs;
   }
-  template<typename op>	uint64_t amo_uint64(long a, op f) {
+  template<typename op>	uint64_t amo_uint64(long a, op f, long*& ap) {
     uint64_t lhs, *ptr = (uint64_t*)a;
     do lhs = *ptr;
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));

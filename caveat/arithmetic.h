@@ -35,7 +35,7 @@ inline freg_t freg(float128_t f) { return f; }
 
 // RISC-V sign-injection instructions
 
-inline float32_t fsgnj_s(float32_t a, float32_t b, bool n, bool x)
+static inline float32_t fsgnj_s(float32_t a, float32_t b, bool n, bool x)
 {
   return f32((a.v & ~F32_SIGN) | ((((x) ? a.v : (n) ? F32_SIGN : 0) ^ b.v) & F32_SIGN));
 }
@@ -45,7 +45,7 @@ inline float32_t fsgnj_s(float32_t a, float32_t b, bool n, bool x)
 
 // RISC-V compliant FP min/max
 
-inline float32_t fmin_s(float32_t f1, float32_t f2)
+static inline float32_t fmin_s(float32_t f1, float32_t f2)
 {
   bool less = f32_lt_quiet(f1, f2) || (f32_eq(f1, f2) && (f1.v & F32_SIGN));
   if (isNaNF32UI(f1.v) && isNaNF32UI(f2.v))
@@ -54,7 +54,7 @@ inline float32_t fmin_s(float32_t f1, float32_t f2)
     return less || isNaNF32UI(f2.v) ? f1 : f2;
 }
 
-inline float32_t fmax_s(float32_t f1, float32_t f2)
+static inline float32_t fmax_s(float32_t f1, float32_t f2)
 {
   bool greater = f32_lt_quiet(f2, f1) || (f32_eq(f2, f1) && (f2.v & F32_SIGN));
   if (isNaNF32UI(f1.v) && isNaNF32UI(f2.v))
@@ -63,7 +63,7 @@ inline float32_t fmax_s(float32_t f1, float32_t f2)
     return greater || isNaNF32UI(f2.v) ? f1 : f2;
 }
 
-inline float64_t fmin_d(float64_t f1, float64_t f2)
+static inline float64_t fmin_d(float64_t f1, float64_t f2)
 {
   bool less = f64_lt_quiet(f1, f2) || (f64_eq(f1, f2) && (f1.v & F64_SIGN));
   if (isNaNF64UI(f1.v) && isNaNF64UI(f2.v))
@@ -72,7 +72,7 @@ inline float64_t fmin_d(float64_t f1, float64_t f2)
     return less || isNaNF64UI(f2.v) ? f1 : f2;
 }
 
-inline float64_t fmax_d(float64_t f1, float64_t f2)
+static inline float64_t fmax_d(float64_t f1, float64_t f2)
 {
   bool greater = f64_lt_quiet(f2, f1) || (f64_eq(f2, f1) && (f2.v & F64_SIGN));
   if (isNaNF64UI(f1.v) && isNaNF64UI(f2.v))
@@ -83,7 +83,7 @@ inline float64_t fmax_d(float64_t f1, float64_t f2)
 
 // RISCV-V classify (disappeared from SoftFloat-3e
 
-uint_fast16_t f32_classify( float32_t a )
+static inline uint_fast16_t f32_classify( float32_t a )
 {
   union ui32_f32 { uint32_t ui; float32_t f; } uA;
   uint_fast32_t uiA;
@@ -111,7 +111,7 @@ uint_fast16_t f32_classify( float32_t a )
     ( isNaN && !isSNaN )                       << 9;
 }
 
-uint_fast16_t f64_classify( float64_t a )
+static inline uint_fast16_t f64_classify( float64_t a )
 {
     union ui64_f64 uA;
     uint_fast64_t uiA;
@@ -144,7 +144,7 @@ uint_fast16_t f64_classify( float64_t a )
 
 // Integer multiplication routines
 
-inline uint64_t mulhu(uint64_t a, uint64_t b)
+static inline uint64_t mulhu(uint64_t a, uint64_t b)
 {
   uint64_t t;
   uint32_t y1, y2, y3;
@@ -165,14 +165,14 @@ inline uint64_t mulhu(uint64_t a, uint64_t b)
   return ((uint64_t)y3 << 32) | y2;
 }
 
-inline int64_t mulh(int64_t a, int64_t b)
+static inline int64_t mulh(int64_t a, int64_t b)
 {
   int negate = (a < 0) != (b < 0);
   uint64_t res = mulhu(a < 0 ? -a : a, b < 0 ? -b : b);
   return negate ? ~res + (a * b == 0) : res;
 }
 
-inline int64_t mulhsu(int64_t a, uint64_t b)
+static inline int64_t mulhsu(int64_t a, uint64_t b)
 {
   int negate = a < 0;
   uint64_t res = mulhu(a < 0 ? -a : a, b);

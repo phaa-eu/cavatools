@@ -24,10 +24,10 @@ option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
 
-long core_t::total_count()
+long hart_t::total_count()
 {
   long total = 0;
-  for (core_t* p=core_t::list(); p; p=p->next())
+  for (hart_t* p=hart_t::list(); p; p=p->next())
     total += p->executed();
   return total;
 }
@@ -35,11 +35,11 @@ long core_t::total_count()
 void status_report()
 {
   double realtime = elapse_time();
-  long total = core_t::total_count();
+  long total = hart_t::total_count();
   fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS, IPC(D$,V$)", total, realtime, total/1e6/realtime);
-  if (hart_t::num_harts() <= 16) {
+  if (hart_base_t::num_harts() <= 16) {
     char separator = '=';
-    for (core_t* p=core_t::list(); p; p=p->next()) {
+    for (hart_t* p=hart_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
       double N = p->executed();
       double M = p->dc->refs() + p->vc->refs();
@@ -49,13 +49,13 @@ void status_report()
       separator = ',';
     }
   }
-  else if (hart_t::num_harts() > 1)
-    fprintf(stderr, "(%d cores)", hart_t::num_harts());
+  else if (hart_base_t::num_harts() > 1)
+    fprintf(stderr, "(%d cores)", hart_base_t::num_harts());
 }
 
-void dumb_simulator(hart_t* h, Header_t* bb)
+void dumb_simulator(hart_base_t* h, Header_t* bb)
 {
-  core_t* p = (core_t*)h;
+  hart_t* p = (hart_t*)h;
   long* ap = p->addresses();
   Insn_t* i = insnp(bb);
   p->advance(bb->count);
@@ -77,9 +77,9 @@ void dumb_simulator(hart_t* h, Header_t* bb)
     status_report();
 }
 
-void view_simulator(hart_t* h, Header_t* bb)
+void view_simulator(hart_base_t* h, Header_t* bb)
 {
-  core_t* p = (core_t*)h;
+  hart_t* p = (hart_t*)h;
   long* ap = p->addresses();
   // long pc = bb->addr;
   Insn_t* i = insnp(bb);
@@ -110,15 +110,15 @@ void view_simulator(hart_t* h, Header_t* bb)
     status_report();
 }
 
-void core_t::print()
+void hart_t::print()
 {
   dc->print();
   vc->print();
 }
 
-volatile long core_t::global_time;
+volatile long hart_t::global_time;
 
-void core_t::initialize()
+void hart_t::initialize()
 {
   dc = new_cache("Data",   conf_Dways, conf_Dline, conf_Drows, true);
   vc = new_cache("Vector", conf_Vways, conf_Vline, conf_Vrows, true); 
@@ -131,7 +131,7 @@ void core_t::initialize()
 
 #if 0
 #define SYSCALL_OVERHEAD 100
-void core_t::proxy_syscall(long sysnum)
+void hart_t::proxy_syscall(long sysnum)
 {
   /*
   update_time();
@@ -144,7 +144,7 @@ void core_t::proxy_syscall(long sysnum)
   }
   local_time = LONG_MAX;
   */
-  hart_t::proxy_syscall(sysnum);
+  hart_base_t::proxy_syscall(sysnum);
   /*
   global_time += SYSCALL_OVERHEAD;
   local_time = global_time;
@@ -154,10 +154,10 @@ void core_t::proxy_syscall(long sysnum)
 }
 #endif
 
-void core_t::update_time()
+void hart_t::update_time()
 {
   long last_local = LONG_MAX;
-  for (core_t* p=core_t::list(); p; p=p->next()) {
+  for (hart_t* p=hart_t::list(); p; p=p->next()) {
     if (p->local_time < last_local)
       last_local = p->local_time;
   }
@@ -171,7 +171,7 @@ void signal_handler(int nSIGnum)
 {
   fprintf(stderr, "signal_handler");
   long my_tid = gettid();
-  for (core_t* p=core_t::list(); p; p=p->next()) {
+  for (hart_t* p=hart_t::list(); p; p=p->next()) {
     if (p->tid() == my_tid) {
       //      p->debug.print();
       exit(-1);

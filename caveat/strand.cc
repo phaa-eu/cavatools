@@ -22,7 +22,7 @@ const char* elf_find_pc(long pc, long* offset);
 volatile strand_t* strand_t::_list =0;
 volatile int strand_t::num_strands =0;
 
-const Insn_t* tcache =0;
+Insn_t* tcache =0;
 
 strand_t* strand_t::find(int tid)
 {
@@ -32,7 +32,7 @@ strand_t* strand_t::find(int tid)
   return 0;
 }
 
-void strand_t::initialize(class hart_t* h)
+void strand_t::initialize(class hart_base_t* h)
 {
   do {  // atomically attach to list of strands
     _next = _list;
@@ -48,7 +48,7 @@ void strand_t::initialize(class hart_t* h)
   dieif(!addresses, "Unable to mmap() addresses");
 }
 
-strand_t::strand_t(class hart_t* h, int argc, const char* argv[], const char* envp[])
+strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const char* envp[])
 {
   memset(this, 0, sizeof(strand_t));
   pc = load_elf_binary(argv[0], 1);
@@ -60,7 +60,7 @@ strand_t::strand_t(class hart_t* h, int argc, const char* argv[], const char* en
   initialize(h); // do at end because there are atomic stuff in initialize()
 }
 
-strand_t::strand_t(class hart_t* h, strand_t* from)
+strand_t::strand_t(class hart_base_t* h, strand_t* from)
 {
   memcpy(this, from, sizeof(strand_t));
   initialize(h);
@@ -103,8 +103,8 @@ void strand_t::set_csr(int what, long val)
 
 
 
-hart_t::hart_t(hart_t* from) { strand=new strand_t(this, from->strand); }
-hart_t::hart_t(int argc, const char* argv[], const char* envp[], bool counting)
+hart_base_t::hart_base_t(hart_base_t* from) { strand=new strand_t(this, from->strand); }
+hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], bool counting)
 {
   strand = new strand_t(this, argc, argv, envp);
   if (counting) {
@@ -115,18 +115,19 @@ hart_t::hart_t(int argc, const char* argv[], const char* envp[], bool counting)
     _counters = 0;
 }
 
-void hart_t::interpreter(simfunc_t simulator) { strand->interpreter(simulator); }
-long* hart_t::addresses() { return strand->addresses; }
-hart_t* hart_t::list() { return (hart_t*)strand_t::_list->hart_pointer; }
-hart_t* hart_t::next() { return (hart_t*)(strand->_next ? strand->_next->hart_pointer : 0); }
-int hart_t::number() { return strand->sid; }
-long hart_t::tid() { return strand->tid; }
+void hart_base_t::interpreter(simfunc_t simulator) { strand->interpreter(simulator); }
+void hart_base_t::single_step(simfunc_t simulator) { strand->single_step(simulator); }
+long* hart_base_t::addresses() { return strand->addresses; }
+hart_base_t* hart_base_t::list() { return (hart_base_t*)strand_t::_list->hart_pointer; }
+hart_base_t* hart_base_t::next() { return (hart_base_t*)(strand->_next ? strand->_next->hart_pointer : 0); }
+int hart_base_t::number() { return strand->sid; }
+long hart_base_t::tid() { return strand->tid; }
 
-hart_t* hart_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart_pointer : 0; }
-int hart_t::num_harts() { return strand_t::num_strands; }
-void hart_t::debug_print() { strand->debug_print(); }
+hart_base_t* hart_base_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart_pointer : 0; }
+int hart_base_t::num_harts() { return strand_t::num_strands; }
+void hart_base_t::debug_print() { strand->debug_print(); }
 
-void hart_t::print_debug_trace()
+void hart_base_t::print_debug_trace()
 {
 #ifdef DEBUG
   strand->debug.print();

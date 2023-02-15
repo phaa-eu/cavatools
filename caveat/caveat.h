@@ -80,32 +80,35 @@ inline Header_t* bbp(void* p) { return (Header_t*)p; }
 inline Insn_t* insnp(void* p) { return (Insn_t*)p; }
 inline Header_t** linkp(void* p)   { return (Header_t**)p; }
 
-extern const Insn_t* tcache; // only interpreter allowed to change instructions
+extern Insn_t* tcache; // only interpreter allowed to change instructions
 inline long tcache_size() { return *(long*)tcache; }
 inline long index(Insn_t* p) { return p-tcache; }
 inline long index(Header_t* p) { return insnp(p)-tcache; }
 
-typedef void (*simfunc_t)(class hart_t* h, Header_t* bb);
+typedef void (*simfunc_t)(class hart_base_t* h, Header_t* bb);
 
-class hart_t {
+class hart_base_t {
   class strand_t* strand;	// opaque pointer
+  friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator);
+  
 public:
   uint64_t* _counters;		// performance counter array (matching tcache)
   uint64_t* counters() { return _counters; }
   
-  hart_t(hart_t* from);
-  hart_t(int argc, const char* argv[], const char* envp[], bool counting =false);
+  hart_base_t(hart_base_t* from);
+  hart_base_t(int argc, const char* argv[], const char* envp[], bool counting =false);
   
   void interpreter(simfunc_t simulator);
+  void single_step(simfunc_t simulator);
   long* addresses();
 
 
-  static hart_t* list();
-  hart_t* next();
+  static hart_base_t* list();
+  hart_base_t* next();
   int number();
   long tid();
   void set_tid();
-  static hart_t* find(int tid);
+  static hart_base_t* find(int tid);
   static int num_harts();
   void debug_print();
   
@@ -114,6 +117,7 @@ public:
 
 void start_time();
 double elapse_time();
+void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator);
 
 const char* func_name(long pc);
 

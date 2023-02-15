@@ -12,7 +12,7 @@
 
 extern option<long> conf_report;
 
-class core_t : public hart_t {
+class hart_t : public hart_base_t {
   static volatile long global_time;
   long local_time;
   long _executed;
@@ -22,10 +22,10 @@ class core_t : public hart_t {
 public:
   cache_t* dc;
   cache_t* vc;
-  core_t(core_t* from) :hart_t(from) { initialize(); }
-  core_t(int argc, const char* argv[], const char* envp[], bool counters) :hart_t(argc, argv, envp, counters) { initialize(); }
+  hart_t(hart_t* from) :hart_base_t(from) { initialize(); }
+  hart_t(int argc, const char* argv[], const char* envp[], bool counters) :hart_base_t(argc, argv, envp, counters) { initialize(); }
 
-  //  core_t* newcore() { return new core_t(this); }
+  //  hart_t* newcore() { return new hart_t(this); }
   //  void proxy_syscall(long sysnum);
   long executed() { return _executed; }
   static long total_count();
@@ -37,14 +37,14 @@ public:
   long system_clock() { return global_time; }
   void update_time();
   
-  static core_t* list() { return (core_t*)hart_t::list(); }
-  core_t* next() { return (core_t*)hart_t::next(); }
+  static hart_t* list() { return (hart_t*)hart_base_t::list(); }
+  hart_t* next() { return (hart_t*)hart_base_t::next(); }
 
   void print();
 
-  friend void simulator(hart_t* h, Header_t* bb);
+  friend void simulator(hart_base_t* h, Header_t* bb);
 };
 
-void view_simulator(hart_t* h, Header_t* bb);
-void dumb_simulator(hart_t* h, Header_t* bb);
+void view_simulator(hart_base_t* h, Header_t* bb);
+void dumb_simulator(hart_base_t* h, Header_t* bb);
 void status_report();

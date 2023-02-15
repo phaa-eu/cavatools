@@ -17,7 +17,7 @@ const int HORDIV = 24;
 option<bool>conf_view("view", false, true, "View running program");
 option<long> conf_report("report", 100000000, "Status report frequency");
 
-core_t* mycpu;
+hart_t* mycpu;
 uint64_t* counters;
 
 //std::vector<long> topk;		// index into tcache, counters
@@ -183,7 +183,7 @@ void exitfunc()
   endwin();
   status_report();
   fprintf(stderr, "\n--------\n");
-  for (core_t* p=core_t::list(); p; p=p->next()) {
+  for (hart_t* p=hart_t::list(); p; p=p->next()) {
     fprintf(stderr, "Core [%ld] ", p->tid());
     p->print();
   }
@@ -202,7 +202,7 @@ int main(int argc, const char* argv[], const char* envp[])
   if (argc == 0)
     help_exit();
   
-  mycpu = new core_t(argc, argv, envp, true);
+  mycpu = new hart_t(argc, argv, envp, true);
   counters = mycpu->counters();
   atexit(exitfunc);
   start_time();

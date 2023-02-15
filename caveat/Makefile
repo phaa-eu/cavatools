@@ -8,15 +8,15 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-MINUS_O := -Ofast -Wswitch
-#MINUS_O := -O0 -DDEBUG -Wswitch
+#MINUS_O := -Ofast -Wswitch
+MINUS_O := -O0 -DDEBUG -Wswitch
 #MINUS_O := -O3 -DDEBUG -Wswitch
 
 # Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
 HEADERS := options.h opcodes.h caveat.h
 
-libfiles := options.o instructions.o elf_loader.o proxy_syscall.o interpreter.o strand.o
-bins := main.o gdblink.o $(libfiles)
+libfiles := options.o instructions.o loader.o proxy_syscall.o interpreter.o strand.o
+bins := uspike.o gdblink.o $(libfiles)
 
 # Compiling options
 CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include
@@ -29,7 +29,7 @@ uspike: $(bins)
 
 # Dependencies
 
-main.o instructions.o strand.o interpreter.o: caveat.h opcodes.h options.h
+uspike.o instructions.o strand.o interpreter.o: caveat.h opcodes.h options.h
 instructions.o: decoder.h constants.h
 interpreter.o:  strand.h semantics.h arithmetic.h
 strand.o: strand.h

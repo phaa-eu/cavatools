@@ -12,17 +12,26 @@
 #include <signal.h>
 #include <setjmp.h>
 
+#include "caveat.h"
+#include "strand.h"
+
+//#define msg(fmt, ...)                  { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); }
+#define msg(fmt, ...)
+
+extern Insn_t* tcache;
+
 //	E01 - Command syntax error.
 //	E02 - Error in hex data.
 
 
 #define NUMREGS   32		/* General purpose registers per context */
 
-jmp_buf mainGdbJmpBuf;
-int lastGdbSignal = 0;
-long *gdb_pc;
-long *gdb_reg;
-long gdbNumContinue = -1;	/* program started by 'c' */
+static jmp_buf mainGdbJmpBuf;
+static int lastGdbSignal = 0;
+static long *gdb_pc;
+static long *gdb_reg;
+//long gdbNumContinue = -1;	/* program started by 'c' */
+long gdbNumContinue = 0;	/* program started by 'c' */
 
 #define INBUFSIZE    ((NUMREGS+1)*16 + 100)
 #define OUTBUFSIZE   ((NUMREGS+1)*16 + 100)
@@ -71,9 +80,9 @@ putDebugChar(int ch) {
 }
 
 
-void
+static void
 OpenTcpLink(const char* name) {
-  char *port_str;
+  const char *port_str;
   int port;
   struct sockaddr_in sockaddr;
   //  int tmp;
@@ -86,34 +95,25 @@ OpenTcpLink(const char* name) {
   port = atoi (port_str + 1);
 
   tmp_desc = socket (PF_INET, SOCK_STREAM, 0);
-  perror("socket");
-  if (tmp_desc < 0)
-    perror ("Can't open socket");
+  dieif(tmp_desc<0, "Can't open socket");
 
       /* Allow rapid reuse of this port. */
   tmp = 1;
   setsockopt (tmp_desc, SOL_SOCKET, SO_REUSEADDR, (char *) &tmp,
 	      sizeof (tmp));
-  perror("setsockopt");
 
   sockaddr.sin_family = PF_INET;
   sockaddr.sin_port = htons (port);
   sockaddr.sin_addr.s_addr = INADDR_ANY;
 
-  if (bind (tmp_desc, (struct sockaddr *) &sockaddr, sizeof (sockaddr))
-      || listen (tmp_desc, 1))
-    perror ("Can't bind address");
-  perror("bind");
+  dieif(bind (tmp_desc, (struct sockaddr *) &sockaddr, sizeof (sockaddr)) || listen (tmp_desc, 1), "Can't bind address");
 
   tmp = sizeof (sockaddr);
   tcpLink = accept (tmp_desc, (struct sockaddr *) &sockaddr, &tmp);
-  if (tcpLink == -1)
-    perror ("Accept failed");
-  perror("accept");
+  dieif(tcpLink == -1, "Accept failed");
 
   protoent = getprotobyname ("tcp");
-  if (!protoent)
-    perror ("getprotobyname");
+  dieif(!protoent, "getprotobyname");
 
       /* Enable TCP keep alive process. */
   tmp = 1;
@@ -181,7 +181,7 @@ ReceivePacket() {
   }
 
   *p = '\0';
-  //  fprintf(stderr, "ReceivePacket: `%s'...", inBuf);
+  msg("ReceivePacket: `%s'...", inBuf);
   //
   // Now read checksum and compare.
   //
@@ -202,7 +202,7 @@ ReceivePacket() {
   *p = '\0';
   inPtr = inBuf;
 
-  //  fprintf(stderr, "OK\n");
+  //  msg("OK\n");
 }
 
 static void
@@ -226,7 +226,7 @@ SendPacket() {
   outPtr = outBuf;
   *outPtr = '\0';
 
-  //  fprintf(stderr, "SendPacket: `%s'\n", outBuf);
+  msg("SendPacket: `%s'\n", outBuf);
 }
 
 static void
@@ -238,7 +238,11 @@ Reply(const char* msg) {
 
 static void
 ReplyInHex(void* address, int bytes) {
-  //fprintf(stderr, "address=%p, bytes=%d\n", address, bytes);
+  if (address == 0) {
+    msg("ReplyInHex(address=ZERO, bytes=%d), ignored\n", bytes);
+    return;
+  }
+  msg("ReplyInHex(address=%p, bytes=%d)\n", address, bytes);
   char* p = (char*)address;
   char* tmpbuf = (char*)alloca(bytes);
   if (tmpbuf == NULL)
@@ -275,6 +279,7 @@ ReplyInHex(void* address, int bytes) {
 
 static void
 ReplyInt(long long unsigned v, int bytes) {
+  msg("ReplyInt(v=0x%llx, bytes=%d)\n", v, bytes);
   int hexdigits = 2 * bytes;
   if (outPtr + hexdigits > outBuf + OUTBUFSIZE-1)
     abort();			// Internal error: output buffer overflow.
@@ -325,7 +330,7 @@ RcvHexInt(long* ptr) {
 static int
 RcvHexToMemory(void* address, int bytes) {
   unsigned char* p = (unsigned char*)address;
-
+  msg("RcvHexToMemory(address=%p, bytes=%d)\n", p, bytes);
   /* Check addresses by writing zeros. */
   {
     struct sigaction sigsegv_buf, sigbus_buf;
@@ -357,19 +362,20 @@ RcvHexToMemory(void* address, int bytes) {
   return (*inPtr == '\0');	// In case of extraneous stuff.
 }
 
-void
+
+static void
 ProcessGdbCommand() {
   for (;;) {
     int errors = 0;
     ReceivePacket();		// Resets inPtr to beginning of inBuffer.
     switch (*inPtr++) {
     case 'g':			// Send all CPU register values to gdb.
-      //pr9intf("GDB_COMMAND: g\n");
+      msg("GDB_COMMAND: g\n");
       ReplyInHex((void*)gdb_reg, NUMREGS*8);
       ReplyInHex((void*)gdb_pc,  8);
       break;
     case 'G':			// gdb sets all CPU register values.
-      //pr9intf("GDB_COMMAND: G\n");
+      msg("GDB_COMMAND: G\n");
       errors += RcvHexToMemory((void*)gdb_reg, NUMREGS*8);
       errors += RcvHexToMemory((void*)gdb_pc,  8);
       if (errors)
@@ -378,13 +384,13 @@ ProcessGdbCommand() {
 	Reply("E02");
       break;
     case '?':			// gdb asks what was last signal.
-      //pr9intf("GDB_COMMAND: ?\n");
+      msg("GDB_COMMAND: ?\n");
       Reply("S");
       ReplyInt(lastGdbSignal, 1);
       break;
     case 'P':			// Prr=VVVV - gdb sets single CPU register rr.
       {
-        //pr9intf("GDB_COMMAND: P\n");
+        msg("GDB_COMMAND: P\n");
 	long regno;
 	if (RcvHexInt(&regno) && *inPtr++ == '=' && 0 <= regno && regno < NUMREGS) {
 	  if (RcvHexToMemory((void*)&gdb_reg[regno], 8))
@@ -398,7 +404,7 @@ ProcessGdbCommand() {
       break;
     case 'm':			// mAAAA,LLL - send LLL bytes at AAAA to gdb.
       {
-        //pr9intf("GDB_COMMAND: m\n");
+        msg("GDB_COMMAND: m\n");
 	long addr;		// Beginning address.
 	long length;		// Number of bytes.
 	if (RcvHexInt(&addr) && *inPtr++ == ',' && RcvHexInt(&length)) {
@@ -410,13 +416,11 @@ ProcessGdbCommand() {
       break;
     case 'M':			// Gdb writes LLL bytes at AA..AA.
       {
-        //pr9intf("GDB_COMMAND: M\n");
+        msg("GDB_COMMAND: M\n");
 	long addr;		// Beginning address.
 	long length;		// Number of bytes.
 	if (RcvHexInt(&addr) && *inPtr++ == ',' && RcvHexInt(&length) && *inPtr++ == ':') {
 	  if (RcvHexToMemory((char*)addr, length)) {
-	    void redecode(long pc);
-	    //redecode(addr);
 	    Reply("OK");
 	  }
 	  else
@@ -428,7 +432,7 @@ ProcessGdbCommand() {
       break;
     case 's':			// Single step.
       {
-        //pr9intf("GDB_COMMAND: s\n");
+        msg("GDB_COMMAND: s\n");
 	long addr;
 	if (*inPtr == '\0')
 	  return;		// Continue at current pc.
@@ -442,9 +446,10 @@ ProcessGdbCommand() {
       break;
 
     case 'c':			// cAA..AA - continue at address AA..AA
-      //printf("GDB_COMMAND: c\n");
+      msg("GDB_COMMAND: c\n");
       {
-	++gdbNumContinue;
+	//	++gdbNumContinue;
+	gdbNumContinue = 1;
 	long addr;
 	if (*inPtr == '\0')
 	  return;		// Continue at current pc.
@@ -464,14 +469,15 @@ ProcessGdbCommand() {
 
 
 
-void signal_handler(int nSIGnum)
+static void signal_handler(int nSIGnum)
 {
   lastGdbSignal = nSIGnum;
   longjmp(mainGdbJmpBuf, 1);
 }
 
-void ProcessGdbException()
+static void ProcessGdbException()
 {
+  msg("ProcessGdbException, lastGdbSignal=%d\n", lastGdbSignal);
   Reply("T");
   ReplyInt(lastGdbSignal, 1);	// signal number
   Reply("20:");			// PC is register #32
@@ -479,3 +485,38 @@ void ProcessGdbException()
   Reply(";");
   SendPacket();			// Resets outPtr.
 }
+
+
+void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator)
+{
+  gdb_pc = &cpu->strand->pc;
+  gdb_reg = (long*)cpu->strand->xrf;
+  msg("Opening TCP link to GDB\n");
+  OpenTcpLink(host_port);
+  signal(SIGABRT, signal_handler);
+  signal(SIGFPE,  signal_handler);
+  signal(SIGSEGV, signal_handler);
+  //    signal(SIGILL,  signal_handler);
+  //    signal(SIGINT,  signal_handler);
+  //    signal(SIGTERM, signal_handler);
+  msg("Waiting on GDB\n");
+  while (1) {
+    //    signal(SIGTRAP, signal_handler);
+    if (setjmp(mainGdbJmpBuf)) {
+      msg("ProcessGdbException() in exception\n");
+      ProcessGdbException();
+      gdbNumContinue = 0;
+    }
+    msg("ProcessGdbCommand()\n");
+    ProcessGdbCommand();
+    do {
+      //      Insn_t i = decoder(*gdb_pc);
+      //      labelpc(*gdb_pc);
+      //      disasm(*gdb_pc, &i);
+    } while (!cpu->strand->single_step(simulator));
+    lastGdbSignal = SIGTRAP;
+    msg("ProcessGdbException() mainline\n");
+    ProcessGdbException();
+  }
+}
+  
