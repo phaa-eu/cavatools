@@ -12,6 +12,7 @@
 #include <signal.h>
 
 #include <unordered_map>
+#include <map>
 
 #include "caveat.h"
 #include "strand.h"
@@ -25,7 +26,8 @@ extern "C" {
 
 #include "arithmetic.h"
 
-std::unordered_map<long, Header_t*> bbmap;
+//std::unordered_map<long, Header_t*> bbmap;
+std::map<long, Header_t*> bbmap;
 
 void substitute_cas(long pc, Insn_t* i3);
 
@@ -39,7 +41,8 @@ bool strand_t::interpreter(simfunc_t simulator)
       bb = target;		// valid link from last basic block
     }
     else { // no linkage or incorrect target (eg. jump register)
-      std::unordered_map<long, Header_t*>::const_iterator pair = bbmap.find(pc);
+      //      std::unordered_map<long, Header_t*>::const_iterator pair = bbmap.find(pc);
+      auto pair = bbmap.find(pc);
       if (pair != bbmap.end()) {
 	bb = pair->second;	// existing target
       }
@@ -83,8 +86,7 @@ bool strand_t::interpreter(simfunc_t simulator)
     Insn_t* i = insnp(bb+1);
     for(;; i++) {
       xrf[0] = 0;
-      debug.insert(pc, i);
-      // print_trace(pc, i);
+      debug.insert(pc, *i);
       /*
 	Abbreviations to keep isa.def semantics short
        */
@@ -123,21 +125,19 @@ bool strand_t::interpreter(simfunc_t simulator)
   }
 }
 
-bool strand_t::single_step(simfunc_t simulator)
+bool strand_t::single_step(simfunc_t simulator, bool show_trace)
 {
+  Header_t bb;
+  bb.addr = pc;
+  bb.count = 1;
+  Insn_t insn = decoder(pc);
+  Insn_t* i = &insn;
   long* ap = addresses;
-  Insn_t temp[2];
-  Header_t* bb = bbp(temp);
-  Insn_t* i = temp+1;
-
-  bb->addr = pc;
-  bb->count = 1;
-  *i = decoder(pc);
   if (i->opcode()==Op_sc_w || i->opcode()==Op_sc_d)
     substitute_cas(pc, i);
    
   xrf[0] = 0;
-  debug.insert(pc, i);
+  debug.insert(pc, *i);
 
 #undef branch
 #undef jump
@@ -157,7 +157,8 @@ bool strand_t::single_step(simfunc_t simulator)
   debug.addval(i->rd()!=NOREG ? xrf[i->rd()] : xrf[i->rs2()]);
  end_bb: // at this point pc=target basic block but i still points to last instruction.
   debug.addval(xrf[i->rd()]);
-  simulator(hart_pointer, bb);
+  //  print_trace(pc, i);
+  simulator(hart_pointer, &bb);
   return false;
 }
 

@@ -36,7 +36,7 @@ public:
   bool longimmed() { return (op.imm & 0x1) == 0; }
   long immed() { return longimmed() ? op_longimm : op.imm>>1; }
 
-  long opcode() { return op_code; }
+  Opcode_t opcode() { return op_code; }
   int rd()  { return op_rd; }
   int rs1() { return op_rs1; }
   int rs2() { return op.rs2; }
@@ -98,10 +98,11 @@ public:
   hart_base_t(hart_base_t* from);
   hart_base_t(int argc, const char* argv[], const char* envp[], bool counting =false);
   
-  void interpreter(simfunc_t simulator);
-  void single_step(simfunc_t simulator);
+  bool interpreter(simfunc_t simulator);
+  bool single_step(simfunc_t simulator, bool show_trace =false);
   long* addresses();
 
+  long pc();
 
   static hart_base_t* list();
   hart_base_t* next();

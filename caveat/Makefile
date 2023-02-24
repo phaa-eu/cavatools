@@ -8,8 +8,8 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-#MINUS_O := -Ofast -Wswitch
-MINUS_O := -O0 -DDEBUG -Wswitch
+MINUS_O := -Ofast -Wswitch
+#MINUS_O := -O0 -DDEBUG -Wswitch
 #MINUS_O := -O3 -DDEBUG -Wswitch
 
 # Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
@@ -34,6 +34,7 @@ instructions.o: decoder.h constants.h
 interpreter.o:  strand.h semantics.h arithmetic.h
 strand.o: strand.h
 proxy_syscall.o: ecall_nums.h
+gdblink.o:  caveat.h strand.h
 
 # Python scripts to create various files
 ecall_nums.h: Makefile syscall_mapping

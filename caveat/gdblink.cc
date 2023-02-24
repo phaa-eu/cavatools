@@ -12,13 +12,18 @@
 #include <signal.h>
 #include <setjmp.h>
 
+#include "options.h"
 #include "caveat.h"
 #include "strand.h"
 
-//#define msg(fmt, ...)                  { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); }
-#define msg(fmt, ...)
+extern option<bool> conf_show;
+
+#define msg(fmt, ...)                  { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n"); }
+//#define msg(fmt, ...)
 
 extern Insn_t* tcache;
+
+long gdb_text, gdb_data, gdb_bss;
 
 //	E01 - Command syntax error.
 //	E02 - Error in hex data.
@@ -26,8 +31,8 @@ extern Insn_t* tcache;
 
 #define NUMREGS   32		/* General purpose registers per context */
 
-static jmp_buf mainGdbJmpBuf;
 static int lastGdbSignal = 0;
+static hart_base_t* gdb_cpu;
 static long *gdb_pc;
 static long *gdb_reg;
 //long gdbNumContinue = -1;	/* program started by 'c' */
@@ -42,14 +47,57 @@ static char outBuf[OUTBUFSIZE];
 static char* inPtr = inBuf;
 static char* outPtr = outBuf;
 
-static jmp_buf bombed;
+
+static sigjmp_buf bombed;
 
 static void
 LocalExceptionHandler(int signum) {
-  longjmp(bombed, signum);
+  fprintf(stderr, "***** Caught exception %d\n", signum);
+  siglongjmp(bombed, signum);
 }
 
-static struct sigaction localaction = { &LocalExceptionHandler, };
+static struct sigaction localAction = { &LocalExceptionHandler, };
+
+bool valid_memory(void* address, int bytes, bool store =false)
+{
+  struct sigaction sigsegv_buf, sigbus_buf;
+  // new actions
+  sigaction(SIGSEGV, &localAction, &sigsegv_buf);
+  sigaction(SIGBUS,  &localAction, &sigbus_buf);
+  // prepare to catch exception
+  int signum;
+  if (signum = sigsetjmp(bombed, 1)) {
+    const char* signame = 0;
+    switch (signum) {
+    case SIGTRAP:	signame = "SIGTRAP";	break;
+    case SIGBUS:	signame = "SIGBUS";	break;
+    case SIGSEGV:	signame = "SIGSEGV";	break;
+    case SIGFPE:	signame = "SIGFPE";	break;
+    default:
+      fprintf(stderr, "Caught exception %d\n", signum);
+    }
+    fprintf(stderr, "Caught exception %s\n", signame);
+    sigaction(SIGSEGV, &sigsegv_buf, 0);
+    sigaction(SIGBUS,  &sigbus_buf,  0);
+    return false;
+  }
+  // probe for exception
+  volatile char* p = (char*)address;
+  if (store) {
+    for (int k=0; k<bytes; k++)
+      *p++ = 0;
+  }
+  else {
+    int sum = 0;
+    for (int k=0; k<bytes; k++)
+      sum += *p++;
+  }
+  // all okey
+  sigaction(SIGSEGV, &sigsegv_buf, 0);
+  sigaction(SIGBUS,  &sigbus_buf,  0);
+  return true;
+}
+
 
 static int tcpLink;
 
@@ -207,6 +255,7 @@ ReceivePacket() {
 
 static void
 SendPacket() {
+  msg("SendPacket: `%s'\n", outBuf);
   do {
     unsigned char checksum = 0;
     char* p = outBuf;
@@ -225,8 +274,6 @@ SendPacket() {
   } while (getDebugChar() != '+');
   outPtr = outBuf;
   *outPtr = '\0';
-
-  msg("SendPacket: `%s'\n", outBuf);
 }
 
 static void
@@ -238,43 +285,16 @@ Reply(const char* msg) {
 
 static void
 ReplyInHex(void* address, int bytes) {
-  if (address == 0) {
-    msg("ReplyInHex(address=ZERO, bytes=%d), ignored\n", bytes);
-    return;
-  }
-  msg("ReplyInHex(address=%p, bytes=%d)\n", address, bytes);
-  char* p = (char*)address;
-  char* tmpbuf = (char*)alloca(bytes);
-  if (tmpbuf == NULL)
-    abort();
-
-  if (outPtr + bytes > outBuf + OUTBUFSIZE-1)
-    abort();			// Internal error: output buffer overflow.
-
-  /* Check addresses. */
-  {
-    struct sigaction sigsegv_buf, sigbus_buf;
-    int k;
-    if (setjmp(bombed)) {
-      sigaction(SIGSEGV, &sigsegv_buf, 0);
-      sigaction(SIGBUS,  &sigbus_buf,  0);
-      Reply("E09");
-      return;
+  if (valid_memory(address, bytes)) {
+    char* p = (char*)address;
+    while (bytes-- > 0) {
+      *outPtr++ = val2hexch(*p >> 4);
+      *outPtr++ = val2hexch(*p++ & 0xF);
     }
-    sigaction(SIGSEGV, &localaction, &sigsegv_buf);
-    sigaction(SIGBUS,  &localaction, &sigbus_buf);
-    for (k=0; k<bytes; k++) {
-      tmpbuf[k] = *p++;
-    }
-    sigaction(SIGSEGV, &sigsegv_buf, 0);
-    sigaction(SIGBUS,  &sigbus_buf,  0);
+    *outPtr = '\0';
   }
-  p = tmpbuf;
-  while (bytes-- > 0) {
-    *outPtr++ = val2hexch(*p >> 4);
-    *outPtr++ = val2hexch(*p++ & 0xF);
-  }
-  *outPtr = '\0';
+  else
+    Reply("E09");
 }
 
 static void
@@ -329,37 +349,23 @@ RcvHexInt(long* ptr) {
 
 static int
 RcvHexToMemory(void* address, int bytes) {
-  unsigned char* p = (unsigned char*)address;
-  msg("RcvHexToMemory(address=%p, bytes=%d)\n", p, bytes);
-  /* Check addresses by writing zeros. */
-  {
-    struct sigaction sigsegv_buf, sigbus_buf;
-    int k;
-    sigaction(SIGSEGV, &localaction, &sigsegv_buf);
-    sigaction(SIGBUS,  &localaction, &sigbus_buf);
-    if (setjmp(bombed)) {
-      sigaction(SIGSEGV, &sigsegv_buf, 0);
-      sigaction(SIGBUS,  &sigbus_buf,  0);
-      return 0;
+  if (valid_memory(address, bytes, true)) {
+    unsigned char* p = (unsigned char*)address;
+    while (bytes-- > 0) {
+      int value;
+      int digit;
+      if (!RcvHexDigit(&digit))	/* First of two hex digit */
+	return 0;
+      value = digit << 4;
+      if (!RcvHexDigit(&digit))	/* Second hex digit in byte. */
+	return 0;
+      value |= digit;
+      *p++ = value;
     }
-    for (k=0; k<bytes; k++)
-      p[k] = 0;
-    sigaction(SIGSEGV, &sigsegv_buf, 0);
-    sigaction(SIGBUS,  &sigbus_buf,  0);
+    return (*inPtr == '\0');	// In case of extraneous stuff.
   }
-  p = (unsigned char*)address;
-  while (bytes-- > 0) {
-    int value;
-    int digit;
-    if (!RcvHexDigit(&digit))	/* First of two hex digit */
-      return 0;
-    value = digit << 4;
-    if (!RcvHexDigit(&digit))	/* Second hex digit in byte. */
-      return 0;
-    value |= digit;
-    *p++ = value;
-  }
-  return (*inPtr == '\0');	// In case of extraneous stuff.
+  else
+    return 0;
 }
 
 
@@ -462,18 +468,48 @@ ProcessGdbCommand() {
       }
       break;
 
+    case 'q':
+      msg("gdb command: q");
+      if (RcvWord("Offsets")) {
+	char buf[1024];
+	sprintf(buf, "TextSeg=%lx;DataSeg=%lx", gdb_text, gdb_data);
+	//        sprintf(buf, "TextSeg=%lx", gdb_text);
+	Reply(buf);
+      }
+      else if (RcvWord("Symbol::")) {
+	Reply("OK");
+      }
+#if 0
+      else if (RcvWord("L1")) {
+	char buf[1024];
+        sprintf(buf, "qM010%016lx", gdb_cpu->tid());
+	Reply(buf);
+      }
+      else if (RcvWord("L020")) {
+	long addr;
+	char buf[1024];
+	RcvHexInt(&addr);
+        sprintf(buf, "qM010%016lx", addr+gdb_text);
+	Reply(buf);
+      }
+#endif
+      break;
+
     } /* switch */
     SendPacket();		// Resets outPtr to beginning of outBuffer.
   } /* for (;;) */
 }
 
 
+static sigjmp_buf mainGdbJmpBuf;
 
 static void signal_handler(int nSIGnum)
 {
   lastGdbSignal = nSIGnum;
-  longjmp(mainGdbJmpBuf, 1);
+  siglongjmp(mainGdbJmpBuf, 1);
 }
+
+static struct sigaction mainGdbAction = { signal_handler, };
 
 static void ProcessGdbException()
 {
@@ -484,39 +520,52 @@ static void ProcessGdbException()
   ReplyInHex((void*)gdb_pc, 8);
   Reply(";");
   SendPacket();			// Resets outPtr.
+  lastGdbSignal = 0;
 }
 
 
 void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator)
 {
+  gdb_cpu = cpu;
   gdb_pc = &cpu->strand->pc;
   gdb_reg = (long*)cpu->strand->xrf;
   msg("Opening TCP link to GDB\n");
   OpenTcpLink(host_port);
-  signal(SIGABRT, signal_handler);
-  signal(SIGFPE,  signal_handler);
-  signal(SIGSEGV, signal_handler);
+  //  signal(SIGABRT, signal_handler);
+  //  signal(SIGFPE,  signal_handler);
+  //  signal(SIGSEGV, signal_handler);
   //    signal(SIGILL,  signal_handler);
   //    signal(SIGINT,  signal_handler);
   //    signal(SIGTERM, signal_handler);
   msg("Waiting on GDB\n");
   while (1) {
-    //    signal(SIGTRAP, signal_handler);
-    if (setjmp(mainGdbJmpBuf)) {
+    msg("ProcessGdbCommand() top of while loop\n");
+    ProcessGdbCommand();
+    msg("  Returned from ProcessGdbCommand()");
+#if 1
+    struct sigaction sigsegv_buf, sigbus_buf;
+    sigaction(SIGSEGV, &mainGdbAction, &sigsegv_buf);
+    sigaction(SIGBUS,  &mainGdbAction, &sigbus_buf);
+    if (sigsetjmp(mainGdbJmpBuf, 1)) {
       msg("ProcessGdbException() in exception\n");
       ProcessGdbException();
-      gdbNumContinue = 0;
+      goto cleanup;
     }
-    msg("ProcessGdbCommand()\n");
-    ProcessGdbCommand();
+#endif
+    //    signal(SIGTRAP, signal_handler);
     do {
-      //      Insn_t i = decoder(*gdb_pc);
-      //      labelpc(*gdb_pc);
-      //      disasm(*gdb_pc, &i);
+      if (conf_show) {
+	Insn_t i = decoder(*gdb_pc);
+	labelpc(*gdb_pc);
+	disasm(*gdb_pc, &i);
+      }
     } while (!cpu->strand->single_step(simulator));
     lastGdbSignal = SIGTRAP;
-    msg("ProcessGdbException() mainline\n");
     ProcessGdbException();
+  cleanup:
+    //    sigaction(SIGSEGV, &sigsegv_buf, 0);
+    //    sigaction(SIGBUS,  &sigbus_buf,  0);
+    ;
   }
 }
   

@@ -102,9 +102,15 @@ void strand_t::proxy_ecall()
     }
   }
   //fprintf(stderr, "ecall %ld --> x86 syscall %ld %s\n", rvnum, sysnum, name);
-  if (conf_ecall)
-    fprintf(stderr, "Ecall %s\n", name);
+  if (conf_ecall) {
+    long a0=xrf[10], a1=xrf[11], a2=xrf[12], a3=xrf[13], a4=xrf[14], a5=xrf[15];
+    fprintf(stderr, "Ecall %s(0x%lx, 0x%lx, 0x%lx, 0x%lx)", name, a0, a1, a2, a3);
+  }
   proxy_syscall(sysnum);
+  if (conf_ecall) {
+    long a0=xrf[10];
+    fprintf(stderr, " -> 0x%lx\n", a0);
+  }
 }
 
 #define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
@@ -137,12 +143,14 @@ void strand_t::proxy_syscall(long sysnum)
   case SYS_exit_group:
     exit(a0);
 
+#if 1
   case SYS_brk:
     //fprintf(stderr, "SYS_brk(%lx)\n", a0);
     //    retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
     //fprintf(stderr, "current.brk = 0x%lx\n", current.brk);
     retval = emulate_brk(a0);
     break;
+#endif
     
   case SYS_clone:
     {

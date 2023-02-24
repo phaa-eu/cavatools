@@ -6,12 +6,18 @@
 #include <signal.h>
 #include <setjmp.h>
 
+#include <map>
+
 #include "options.h"
 #include "caveat.h"
 
 option<long> conf_report("report", 100000000, "Status report frequency");
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
 option<> conf_gdb("gdb",	0, "localhost:1234", "Remote GDB connection");
+option<bool> conf_show("show",	false, true,			"Show instruction trace");
+option<bool> conf_calls("calls",	false, true,			"Show function calls and returns");
+
+extern std::map<long, const char*> fname; // dictionary of pc->name
 
 class hart_t : public hart_base_t {
   long executed;
@@ -112,25 +118,56 @@ int main(int argc, const char* argv[], const char* envp[])
   start_time();
 
 #ifdef DEBUG
-  static struct sigaction action;
-  memset(&action, 0, sizeof(struct sigaction));
-  sigemptyset(&action.sa_mask);
-  sigemptyset(&action.sa_mask);
-  action.sa_flags = 0;
-  action.sa_sigaction = segv_handler;
-  sigaction(SIGSEGV, &action, NULL);
-  sigaction(SIGABRT, &action, NULL);
-  sigaction(SIGINT,  &action, NULL);
-  if (setjmp(return_to_top_level) != 0) {
-    fprintf(stderr, "SIGSEGV signal was caught\n");
-    mycpu->print_debug_trace();
-    exit(-1);
+  if (!conf_gdb) {
+    static struct sigaction action;
+    memset(&action, 0, sizeof(struct sigaction));
+    sigemptyset(&action.sa_mask);
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    action.sa_sigaction = segv_handler;
+    sigaction(SIGSEGV, &action, NULL);
+    sigaction(SIGABRT, &action, NULL);
+    sigaction(SIGINT,  &action, NULL);
+    if (setjmp(return_to_top_level) != 0) {
+      fprintf(stderr, "SIGSEGV signal was caught\n");
+      mycpu->print_debug_trace();
+      exit(-1);
+    }
   }
 #endif
 
   dieif(atexit(exit_func), "atexit failed");
   if (conf_gdb)
     controlled_by_gdb(conf_gdb, mycpu, simulator);
+  else if (conf_show) {
+    while (1)
+      mycpu->single_step(simulator, true);
+  }
+  else if (conf_calls) {
+    int indent = 0;
+    while (1) {
+#if 1
+      long oldpc = mycpu->pc();
+      Insn_t insn = decoder(oldpc);
+      Opcode_t op = insn.opcode();
+      
+      if (op==Op_c_ret || op==Op_ret) {
+	indent--;
+      }
+#endif 
+      mycpu->single_step(simulator, true);
+#if 1
+      if (op==Op_jal || op==Op_c_jalr || op==Op_jalr) {
+	indent++;
+	long pc = mycpu->pc();
+	auto it = fname.find(pc);
+	//	fprintf(stderr, "\r%*s%s 0x%lx ", indent*4, "", op_name[op], pc);
+	//	fprintf(stderr, " %s from 0x%lx\n", it==fname.end() ? "NOT FOUND" : it->second, oldpc);
+	fprintf(stderr, "\r%*s%s\n", indent*4, "", it==fname.end() ? "NOT FOUND" : it->second);
+      }
+#endif
+    }      
+  }
   else
     mycpu->interpreter(simulator);
 }

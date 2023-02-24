@@ -16,6 +16,8 @@
 
 #include <map>
 
+extern long gdb_text, gdb_data, gdb_bss;
+
 extern std::map<long, const char*> fname; // dictionary of pc->name
 
 /*
@@ -30,6 +32,9 @@ extern std::map<long, const char*> fname; // dictionary of pc->name
 #define MEM_END		0x60000000L
 #define STACK_SIZE	0x01000000L
 #define BRK_SIZE	0x01000000L
+
+//#define BIAS  MEM_END
+#define BIAS  0x10000L
 
 #define ROUNDUP(a, b) ((((a)-1)/(b)+1)*(b))
 #define ROUNDDOWN(a, b) ((a)/(b)*(b))
@@ -127,7 +132,57 @@ long load_elf_binary( const char* file_name, int include_data )
   // don't load dynamic linker at 0, else we can't catch NULL pointer derefs
   uintptr_t bias = 0;
   if (eh.e_type == ET_DYN)
-    bias = RISCV_PGSIZE;
+    bias = BIAS;
+  
+#if 0
+  if (eh.e_type == ET_DYN) {
+    bias = BIAS;
+    struct stat s;
+    dieif(fstat(file, &s)<0, "fstat libfd failed");
+    void* rc = mmap((void*)bias, s.st_size, PROT_READ|PROT_WRITE, MAP_PRIVATE, file, 0);
+    dieif(rc != (void*)bias, "mmap dynamic linker failed");
+    //  current.entry = 0x1292 + bias;
+    current.entry = eh.e_entry + bias;
+    
+    // load symbol table
+    Elf64_Shdr header;
+    assert(lseek(file, eh.e_shoff + eh.e_shstrndx * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
+    assert(read(file, &header, sizeof header) >= 0);
+    shstrtbl = (char*)load_elf_section(file, header.sh_offset, header.sh_size);
+    assert(shstrtbl);
+    
+    for (int i=eh.e_shnum-1; i>=0; i--) {
+      assert(lseek(file, eh.e_shoff + i * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
+      assert(read(file, &header, sizeof header) >= 0);
+      if (strcmp(shstrtbl+header.sh_name, ".strtab") == 0) {
+	strtbl = new char[header.sh_size];
+	dieif(lseek(file, header.sh_offset, SEEK_SET)<0, "lseek strtbl failed");
+	dieif(read(file, strtbl, header.sh_size)!=header.sh_size, "read strtbl failed");
+      }
+      else if (strcmp(shstrtbl+header.sh_name, ".symtab") == 0) {
+	symtbl = (Elf64_Sym*)load_elf_section(file, header.sh_offset, header.sh_size);
+	dieif(symtbl==0, "could not read symbol table");
+	num_syms = header.sh_size / sizeof(Elf64_Sym);
+
+	for (int k=0; k<num_syms; k++) {
+	  Elf64_Sym* s = &symtbl[k];
+	  if (ELF64_ST_TYPE(s->st_info) == STT_FUNC)
+	    fname[s->st_value + bias] = &strtbl[s->st_name];
+	}
+      }
+#if 1
+      else if (strcmp(shstrtbl+header.sh_name, ".text") == 0)
+	gdb_text = header.sh_addr + bias;
+      else if (strcmp(shstrtbl+header.sh_name, ".rodata") == 0)
+	gdb_data = header.sh_addr + bias;
+      else if (strcmp(shstrtbl+header.sh_name, ".bss") == 0)
+	gdb_bss = header.sh_addr + bias;
+#endif
+    }
+    //    load_symbol_table(file, eh, BIAS);
+    goto finishing_up;
+  }
+#endif
 
   info->entry = eh.e_entry + bias;
   for (int i = eh.e_phnum - 1; i >= 0; i--) {
@@ -165,9 +220,7 @@ long load_elf_binary( const char* file_name, int include_data )
    *  2.  zero out BSS and SBSS segments
    *  3.  find lower and upper bounds of executable instructions
    */
-  uintptr_t low_bound  = 0-1;
-  uintptr_t high_bound = 0;
-  for (int i=0; i<eh.e_shnum; i++) {
+  for (int i=eh.e_shnum-1; i>=0; i--) {
     assert(lseek(file, eh.e_shoff + i * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
     assert(read(file, &header, sizeof header) >= 0);
     if (strcmp(shstrtbl+header.sh_name, ".bss") == 0 ||
@@ -175,8 +228,12 @@ long load_elf_binary( const char* file_name, int include_data )
       memset((void*)header.sh_addr, 0, header.sh_size);
     }
     if (strcmp(shstrtbl+header.sh_name, ".strtab") == 0) {
-      strtbl = (char*)load_elf_section(file, header.sh_offset, header.sh_size);
-      dieif(strtbl==0, "could not load string table");
+      //      strtbl = (char*)load_elf_section(file, header.sh_offset, header.sh_size);
+      //      dieif(strtbl==0, "could not load string table");
+      //      if (strcmp(shstrtbl+header.sh_name, ".strtab") == 0) {
+      strtbl = new char[header.sh_size];
+      dieif(lseek(file, header.sh_offset, SEEK_SET)<0, "lseek strtbl failed");
+      dieif(read(file, strtbl, header.sh_size)!=header.sh_size, "read strtbl failed");
     }
     if (strcmp(shstrtbl+header.sh_name, ".symtab") == 0) {
       symtbl = (Elf64_Sym*)load_elf_section(file, header.sh_offset, header.sh_size);
@@ -186,23 +243,18 @@ long load_elf_binary( const char* file_name, int include_data )
       for (int k=0; k<num_syms; k++) {
 	Elf64_Sym* s = &symtbl[k];
 	if (ELF64_ST_TYPE(s->st_info) == STT_FUNC)
-	  fname[s->st_value] = strtbl + s->st_name;
+	  fname[s->st_value + bias] = strtbl + s->st_name;
       }
-    }
-    /* find bounds of instruction segment */
-    if (header.sh_flags & SHF_EXECINSTR) {
-      if (header.sh_addr < low_bound)
-	low_bound = header.sh_addr;
-      if (header.sh_addr+header.sh_size > high_bound)
-	high_bound = header.sh_addr+header.sh_size;
     }
   }
   //  insnSpace.base = low_bound;
   //  insnSpace.bound = high_bound;
   //  fprintf(stderr, "Text segment [0x%lx, 0x%lx)\n", low_bound, high_bound);
   //insnSpace_init(low_bound, high_bound);
-  close(file);
   
+ finishing_up:
+  close(file);
+
   //  info->stack_top = MEM_END + 0x1000;
   info->stack_top = MEM_END;
   stack_lowest = (long)mmap((void*)(info->stack_top-STACK_SIZE), STACK_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -285,45 +337,66 @@ long initialize_stack(int argc, const char** argv, const char** envp)
     sp += sizeof(type); \
   } while (0)
   
-  stack_top -= (1 + argc + 1 + envc + 1 + 2*auxc) * sizeof(uintptr_t);
+  stack_top -= (1 + argc + 1 + envc + 1 + 2*auxc + 100) * sizeof(uintptr_t);
   stack_top &= -16;		/* align */
   current.stack_top = stack_top;
   long sp = stack_top;
+
+  // add stuff
   PUSH_ARG(uintptr_t, argc);
   for (unsigned i = 0; i < argc; i++)
     PUSH_ARG(uintptr_t, argv[i]);
   PUSH_ARG(uintptr_t, 0); /* argv[argc] = NULL */
+  
   for (unsigned i = 0; i < envc; i++)
     PUSH_ARG(uintptr_t, envp[i]);
+  PUSH_ARG(uintptr_t, "LD_DEBUG=all");
+  PUSH_ARG(uintptr_t, "LD_VERFBOSE=1");
+  PUSH_ARG(uintptr_t, "LD_LIBRARY_PATH=/opt/riscv/sysroot/lib");
+  PUSH_ARG(uintptr_t, "LD_ORIGIN_PATH=/opt/riscv/sysroot/lib");
+  PUSH_ARG(uintptr_t, "LD_HWCAP_MASK=0");
   PUSH_ARG(uintptr_t, 0); /* envp[envc] = NULL */
   
   for (unsigned i = 0; i < auxc; i++) {
     size_t value = auxv[i].value;
     size_t old = value;
     switch (auxv[i].key) {
-      //case AT_SYSINFO_EHDR:  continue; /* No vDSO */
-      //    case AT_HWCAP:	value = 0; break;
+    case AT_SYSINFO_EHDR:  continue; /* No vDSO */
     case AT_PAGESZ:	value = RISCV_PGSIZE; break;
     case AT_PHDR:	value = current.phdr; break;
     case AT_PHENT:	value = (size_t)current.phent; break;
     case AT_PHNUM:	value = (size_t)current.phnum; break;
       //    case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
-      //case AT_BASE:	continue;
     case AT_ENTRY:	value = current.entry; break;
     case AT_SECURE:	value = 0; break;
     case AT_RANDOM:	value = current.stack_top; break;
-      //    case AT_HWCAP2:	value = 0; break;
       //    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
-      //    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
-      //case AT_PLATFORM:	continue;
+    case AT_EXECFN:	value = (size_t)argv[0]; break;
+    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
+      
+    case AT_HWCAP:
+    case AT_HWCAP2:
+      value = 0;
+      break;
+
+    case AT_BASE:
+      value = BIAS;
+      break;
+
+    case AT_UID:
+    case AT_EUID:
+    case AT_GID:
+    case AT_EGID:
     case AT_NULL:
+      break;
+      
     default:
       continue;
       break;
     }
     PUSH_ARG(uintptr_t, auxv[i].key);
     PUSH_ARG(uintptr_t, value);
-    //fprintf(stderr, "AT=%ld, value=%lx, was %lx\n", auxv[i].key, value, old);
+    fprintf(stderr, "AT=%ld, value=%lx, was %lx\n", auxv[i].key, value, old);
   } /* last entry was AT_NULL */
 
   return current.stack_top;

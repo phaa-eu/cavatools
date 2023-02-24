@@ -27,8 +27,8 @@ typedef float128_t	freg_t;
 
 struct pctrace_t {
   long pc;
-  Insn_t* i;
   reg_t val;
+  Insn_t i;
 };
 
 #define PCTRACEBUFSZ  (1<<7)
@@ -39,12 +39,12 @@ struct Debug_t {
   pctrace_t get();
 #ifdef DEBUG
   void insert(pctrace_t pt);
-  void insert(long pc, Insn_t* i);
+  void insert(long pc, Insn_t i);
   void addval(reg_t val);
   void print();
 #else
   void insert(pctrace_t pt) { }
-  void insert(long pc, Insn_t* i) { }
+  void insert(long pc, Insn_t i) { }
   void addval(reg_t val) { }
   void print() { }
 #endif
@@ -90,7 +90,7 @@ public:
   void proxy_ecall();
   
   bool interpreter(simfunc_t simulator);
-  bool single_step(simfunc_t simulator);
+  bool single_step(simfunc_t simulator, bool show_trace =false);
   void print_trace(long pc, Insn_t* i);
   void debug_print() { debug.print(); }
 

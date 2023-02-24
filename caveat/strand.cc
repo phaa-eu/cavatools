@@ -115,13 +115,14 @@ hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], bool 
     _counters = 0;
 }
 
-void hart_base_t::interpreter(simfunc_t simulator) { strand->interpreter(simulator); }
-void hart_base_t::single_step(simfunc_t simulator) { strand->single_step(simulator); }
+bool hart_base_t::interpreter(simfunc_t simulator) { return strand->interpreter(simulator); }
+bool hart_base_t::single_step(simfunc_t simulator, bool show_trace) { return strand->single_step(simulator, show_trace); }
 long* hart_base_t::addresses() { return strand->addresses; }
 hart_base_t* hart_base_t::list() { return (hart_base_t*)strand_t::_list->hart_pointer; }
 hart_base_t* hart_base_t::next() { return (hart_base_t*)(strand->_next ? strand->_next->hart_pointer : 0); }
 int hart_base_t::number() { return strand->sid; }
 long hart_base_t::tid() { return strand->tid; }
+long hart_base_t::pc() { return strand->pc; }
 
 hart_base_t* hart_base_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart_pointer : 0; }
 int hart_base_t::num_harts() { return strand_t::num_strands; }
@@ -143,12 +144,12 @@ const char* func_name(long pc) { return fname.count(pc)==1 ? fname.at(pc) : 0; }
 #define OFFSET_WIDTH  8
 int slabelpc(char* buf, long pc)
 {
-  long offset;
-  const char* label = elf_find_pc(pc, &offset);
-  if (label)
-    return sprintf(buf, "%*.*s+%*ld %8lx: ", LABEL_WIDTH, LABEL_WIDTH, label, -(OFFSET_WIDTH-1), offset, pc);
-  else
-    return sprintf(buf, "%*s %8lx: ", LABEL_WIDTH+OFFSET_WIDTH, "<invalid pc>", pc);
+  auto it = fname.upper_bound(pc);
+  dieif(it==fname.end(), "upper_bound");
+  it--;
+  dieif(it==fname.end(), "minus");
+  long offset = pc - it->first;
+  return sprintf(buf, "%*.*s+%*ld %8lx: ", LABEL_WIDTH, LABEL_WIDTH, it->second, -(OFFSET_WIDTH-1), offset, pc);
 }
 
 void labelpc(long pc, FILE* f)
@@ -222,7 +223,7 @@ void Debug_t::insert(pctrace_t pt)
   trace[cursor] = pt;
 }
 
-void Debug_t::insert(long pc, Insn_t* i)
+void Debug_t::insert(long pc, Insn_t i)
 {
   cursor = (cursor+1) % PCTRACEBUFSZ;
   trace[cursor].pc    = pc;
@@ -239,15 +240,15 @@ void Debug_t::print()
 {
   for (int k=0; k<PCTRACEBUFSZ; k++) {
     pctrace_t t = get();
-    Insn_t* i = t.i;
-    if (i->rd() != NOREG)
-      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rd()], t.val);
-    else if (attributes[i->opcode()] & ATTR_st)
-      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs2()], t.val);
+    Insn_t i = t.i;
+    if (i.rd() != NOREG)
+      fprintf(stderr, "%4s[%016lx] ", reg_name[i.rd()], t.val);
+    else if (attributes[i.opcode()] & ATTR_st)
+      fprintf(stderr, "%4s[%016lx] ", reg_name[i.rs2()], t.val);
     else
       fprintf(stderr, "%4s[%16s] ", "", "");
     labelpc(t.pc);
-    disasm(t.pc, i, "");
+    disasm(t.pc, &i, "");
     fprintf(stderr, "\n");
   }
 }
