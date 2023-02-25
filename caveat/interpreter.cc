@@ -12,8 +12,8 @@
 #include <signal.h>
 
 #include <unordered_map>
-#include <map>
 
+#include "options.h"
 #include "caveat.h"
 #include "strand.h"
 
@@ -26,8 +26,9 @@ extern "C" {
 
 #include "arithmetic.h"
 
-//std::unordered_map<long, Header_t*> bbmap;
-std::map<long, Header_t*> bbmap;
+extern option<bool> conf_show;
+
+std::unordered_map<long, Header_t*> bbmap;
 
 void substitute_cas(long pc, Insn_t* i3);
 
@@ -41,7 +42,6 @@ bool strand_t::interpreter(simfunc_t simulator)
       bb = target;		// valid link from last basic block
     }
     else { // no linkage or incorrect target (eg. jump register)
-      //      std::unordered_map<long, Header_t*>::const_iterator pair = bbmap.find(pc);
       auto pair = bbmap.find(pc);
       if (pair != bbmap.end()) {
 	bb = pair->second;	// existing target
@@ -130,6 +130,7 @@ bool strand_t::single_step(simfunc_t simulator, bool show_trace)
   Header_t bb;
   bb.addr = pc;
   bb.count = 1;
+  long oldpc = pc;
   Insn_t insn = decoder(pc);
   Insn_t* i = &insn;
   long* ap = addresses;
@@ -157,7 +158,8 @@ bool strand_t::single_step(simfunc_t simulator, bool show_trace)
   debug.addval(i->rd()!=NOREG ? xrf[i->rd()] : xrf[i->rs2()]);
  end_bb: // at this point pc=target basic block but i still points to last instruction.
   debug.addval(xrf[i->rd()]);
-  //  print_trace(pc, i);
+  if (conf_show)
+    print_trace(oldpc, i);
   simulator(hart_pointer, &bb);
   return false;
 }

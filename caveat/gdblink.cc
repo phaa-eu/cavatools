@@ -18,8 +18,8 @@
 
 extern option<bool> conf_show;
 
-#define msg(fmt, ...)                  { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n"); }
-//#define msg(fmt, ...)
+//#define msg(fmt, ...)                  { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n"); }
+#define msg(fmt, ...)
 
 extern Insn_t* tcache;
 
@@ -52,7 +52,7 @@ static sigjmp_buf bombed;
 
 static void
 LocalExceptionHandler(int signum) {
-  fprintf(stderr, "***** Caught exception %d\n", signum);
+  msg("***** Caught exception %d\n", signum);
   siglongjmp(bombed, signum);
 }
 
@@ -74,9 +74,9 @@ bool valid_memory(void* address, int bytes, bool store =false)
     case SIGSEGV:	signame = "SIGSEGV";	break;
     case SIGFPE:	signame = "SIGFPE";	break;
     default:
-      fprintf(stderr, "Caught exception %d\n", signum);
+      msg("Caught exception %d\n", signum);
     }
-    fprintf(stderr, "Caught exception %s\n", signame);
+    msg("Caught exception %s\n", signame);
     sigaction(SIGSEGV, &sigsegv_buf, 0);
     sigaction(SIGBUS,  &sigbus_buf,  0);
     return false;
@@ -554,11 +554,11 @@ void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simula
 #endif
     //    signal(SIGTRAP, signal_handler);
     do {
-      if (conf_show) {
-	Insn_t i = decoder(*gdb_pc);
-	labelpc(*gdb_pc);
-	disasm(*gdb_pc, &i);
-      }
+      //      if (conf_show) {
+      //	Insn_t i = decoder(*gdb_pc);
+      //	labelpc(*gdb_pc);
+      //	disasm(*gdb_pc, &i);
+      //      }
     } while (!cpu->strand->single_step(simulator));
     lastGdbSignal = SIGTRAP;
     ProcessGdbException();

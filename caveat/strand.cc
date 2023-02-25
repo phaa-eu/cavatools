@@ -53,6 +53,8 @@ strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const cha
   memset(this, 0, sizeof(strand_t));
   pc = load_elf_binary(argv[0], 1);
   xrf[2] = initialize_stack(argc, argv, envp);
+  if (pc > xrf[2])
+    xrf[10] = xrf[2];
   // tcache is global to all strands
   tcache = (Insn_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   dieif(!tcache, "unable to mmap() tcache");
@@ -145,11 +147,9 @@ const char* func_name(long pc) { return fname.count(pc)==1 ? fname.at(pc) : 0; }
 int slabelpc(char* buf, long pc)
 {
   auto it = fname.upper_bound(pc);
-  dieif(it==fname.end(), "upper_bound");
   it--;
-  dieif(it==fname.end(), "minus");
-  long offset = pc - it->first;
-  return sprintf(buf, "%*.*s+%*ld %8lx: ", LABEL_WIDTH, LABEL_WIDTH, it->second, -(OFFSET_WIDTH-1), offset, pc);
+  long offset = pc - (it==fname.end() ? 0 : it->first);
+  return sprintf(buf, "%*.*s+%*ld %8lx: ", LABEL_WIDTH, LABEL_WIDTH, (it==fname.end() ? "UNKNOWN" : it->second), -(OFFSET_WIDTH-1), offset, pc);
 }
 
 void labelpc(long pc, FILE* f)
