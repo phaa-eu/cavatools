@@ -54,9 +54,15 @@ bool strand_t::interpreter(simfunc_t simulator)
 	bb = bbp(addresses);
 	Insn_t* j = insnp(addresses);
 	do {
+	  Insn_t insn = decoder(dpc);
+	  // instructions with attribute '<' must be first in basic block
+	  if (stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) {
+	    if (j > insnp(addresses))
+		break;
+	  }
 	  *++j = decoder(dpc);
 	  dpc += j->compressed() ? 2 : 4;
-	} while (!(attributes[j->opcode()] & ATTR_stop));
+	} while ((stop_after[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) == 0);
 	if (j->opcode()==Op_sc_w || j->opcode()==Op_sc_d)
 	  substitute_cas(dpc-4, j);
 	bb->addr = pc;

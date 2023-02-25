@@ -13,6 +13,8 @@ extern const char* op_name[];
 extern const char* reg_name[];
 extern const ISA_bv_t required_isa[];
 extern const ATTR_bv_t attributes[];
+extern const uint64_t stop_before[];
+extern const uint64_t stop_after[];
 
 #define GPREG	0
 #define FPREG	(GPREG+32)

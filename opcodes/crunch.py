@@ -109,8 +109,6 @@ for line in sys.stdin:
     if kind[0] == '#':
         continue
     attr = attr.split(',')
-    if '!' in kind:
-        attr.append('stop')
     if '+' in kind:
         attr.append('custom')
     opname = 'Op_' + opcode.replace('.', '_')
@@ -120,6 +118,7 @@ for line in sys.stdin:
         last_compressed_opcode = opcode
 
 opcodes = ['ZERO'] + [key for key in instructions] + ['ILLEGAL', 'UNKNOWN']
+#numopcodes = len(opcodes)
 
 with open('newcode.tmp', 'w') as f:
     json.dump(instructions, f)
@@ -135,13 +134,13 @@ for opcode, t in instructions.items():
         elif a != '-':
             attribute[a] = 1;
 
-def bitvec(names, typ, uppercase):
+def bitvec(names, typ, uc):
     f.write('enum {:s}_t {{'.format(typ))
     sa = 0
-    for n in sorted(names):
-        if uppercase and not n.isupper() or not uppercase and n.isupper():
-            continue
-        f.write('\n  {:s}_{:s} = 1<<{:d},'.format(typ, n, sa))
+    for t in sorted(names):
+        if t.isalpha():
+            if uc==1 and t.isupper() or uc==0 and t.islower():
+                f.write('\n  {:s}_{:s} = 1<<{:d},'.format(typ, t, sa))
         sa += 1
     if sa < 8:
         bv = 'uint8_t'
@@ -170,16 +169,31 @@ with open('newcode.tmp', 'w') as f:
     bitvec(attribute.keys(), 'ATTR', 0)
 diffcp('../caveat/opcodes.h')
 
-def make_bitvec(typ, tokens, uppercase):
+def make_bitvec(typ, tokens, uc):
     bv = []
     for t in tokens:
-        if uppercase and not t.isupper():  continue
-        if not uppercase and t.isupper():  continue
-        bv.append('{:s}_{:s}'.format(typ, t))
+        if t.isalpha():
+            if uc==1 and t.isupper() or uc==0 and t.islower():
+                bv.append('{:s}_{:s}'.format(typ, t))
     if len(bv) == 0:
         return '0'
     else:
         return '|'.join(bv)
+
+def make_mask(key):
+    val = []
+    mask = 0
+    n = 0
+    for opcode in opcodes:
+        if n == 64:
+            val.append(mask)
+            mask = 0
+            n = 0
+        if opcode in instructions and key in instructions[opcode][2]:
+            mask |= 1 << n
+        n += 1
+    val.append(mask)
+    return val
 
 with open('newcode.tmp', 'w') as f:
     f.write('const char* op_name[] = {')
@@ -209,6 +223,14 @@ with open('newcode.tmp', 'w') as f:
         f.write('  /* {:19s} */ {:20s}\n'.format(opcode, flags+','))
         n += 1
     f.write('};\n\n')
+    f.write('const uint64_t stop_before[] = {\n')
+    for t in make_mask('<'):
+        f.write('  0x{:016x},\n'.format(t))
+    f.write('};\n\n')
+    f.write('const uint64_t stop_after[] = {\n')
+    for t in make_mask('>'):
+        f.write('  0x{:016x},\n'.format(t))
+    f.write('};\n\n')
 diffcp('../caveat/constants.h')
 
 
@@ -227,6 +249,9 @@ diffcp('../caveat/decoder.h')
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
         (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
-        f.write('    case {:20s} {:s}; pc+={:d}; break;\n'.format(opname+':', action, int(bytes)))
+        stop = 'pc+={:d}; break'.format(int(bytes))
+        if '>' in attr:
+            stop = 'stop'
+        f.write('    case {:20s} {:s}; {:s};\n'.format(opname+':', action, stop))
 diffcp('../caveat/semantics.h')
     
