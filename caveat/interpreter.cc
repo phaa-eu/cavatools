@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <signal.h>
 
+#include <pthread.h>
 #include <unordered_map>
 
 #include "options.h"
@@ -32,7 +33,7 @@ std::unordered_map<long, Header_t*> bbmap;
 
 void substitute_cas(long pc, Insn_t* i3);
 
-bool strand_t::interpreter(simfunc_t simulator)
+bool strand_t::interpreter()
 {
   static Header_t dummy = { 0, 0 };
   Header_t* target = &dummy;	// tcache[0] never matches any pc
@@ -84,7 +85,10 @@ bool strand_t::interpreter(simfunc_t simulator)
 	memcpy((Insn_t*)tcache+oldlen, addresses, n*8);
 	// reset bb to point into tcache
 	bb = (Header_t*)tcache + oldlen;
+	static pthread_mutex_t bbmap_lock;
+	pthread_mutex_lock(&bbmap_lock);
 	bbmap[bb->addr] = bb;	// this need to be atomic too!
+	pthread_mutex_unlock(&bbmap_lock);
       }
       *linkp(target) = bb;
     }
@@ -127,11 +131,11 @@ bool strand_t::interpreter(simfunc_t simulator)
     }
   end_bb: // at this point pc=target basic block but i still points to last instruction.
     debug.addval(xrf[i->rd()]);
-    simulator(hart_pointer, bb);
+    hart_pointer->simulator(hart_pointer, bb);
   }
 }
 
-bool strand_t::single_step(simfunc_t simulator, bool show_trace)
+bool strand_t::single_step(bool show_trace)
 {
   Header_t bb;
   bb.addr = pc;
@@ -166,7 +170,7 @@ bool strand_t::single_step(simfunc_t simulator, bool show_trace)
   debug.addval(xrf[i->rd()]);
   if (conf_show)
     print_trace(oldpc, i);
-  simulator(hart_pointer, &bb);
+  hart_pointer->simulator(hart_pointer, &bb);
   return false;
 }
 

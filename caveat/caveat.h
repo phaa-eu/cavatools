@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "opcodes.h"
 
+#define dbmsg(fmt, ...)		       { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n"); }
 #define die(fmt, ...)                  { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); abort(); }
 #define dieif(bad, fmt, ...)  if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); abort(); }
 #define quitif(bad, fmt, ...) if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); exit(-1); }
@@ -92,17 +93,23 @@ typedef void (*simfunc_t)(class hart_base_t* h, Header_t* bb);
 
 class hart_base_t {
   class strand_t* strand;	// opaque pointer
-  friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator);
+  friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu);
+  friend int clone_thread(strand_t* s);
   
 public:
+  simfunc_t simulator;		// function pointer
+  int retval;			// if thread exits
+  
   uint64_t* _counters;		// performance counter array (matching tcache)
   uint64_t* counters() { return _counters; }
   
-  hart_base_t(hart_base_t* from);
-  hart_base_t(int argc, const char* argv[], const char* envp[], bool counting =false);
+  hart_base_t(int argc, const char* argv[], const char* envp[], simfunc_t simulator, bool counting =false);
+  hart_base_t(hart_base_t* from, simfunc_t simulator, bool counting =false);
+
+  virtual hart_base_t* new_hart(hart_base_t* from);
   
-  bool interpreter(simfunc_t simulator);
-  bool single_step(simfunc_t simulator, bool show_trace =false);
+  bool interpreter();
+  bool single_step(bool show_trace =false);
   long* addresses();
 
   long pc();

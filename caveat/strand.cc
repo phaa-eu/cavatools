@@ -105,10 +105,10 @@ void strand_t::set_csr(int what, long val)
 
 
 
-hart_base_t::hart_base_t(hart_base_t* from) { strand=new strand_t(this, from->strand); }
-hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], bool counting)
+hart_base_t::hart_base_t(hart_base_t* from, simfunc_t simfunc, bool counting)
 {
-  strand = new strand_t(this, argc, argv, envp);
+  strand = new strand_t(this, from->strand);
+  simulator = simfunc;
   if (counting) {
     _counters = (uint64_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
     dieif(!_counters, "Unable to mmap counters array");
@@ -117,8 +117,21 @@ hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], bool 
     _counters = 0;
 }
 
-bool hart_base_t::interpreter(simfunc_t simulator) { return strand->interpreter(simulator); }
-bool hart_base_t::single_step(simfunc_t simulator, bool show_trace) { return strand->single_step(simulator, show_trace); }
+hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], simfunc_t simfunc, bool counting)
+{
+  strand = new strand_t(this, argc, argv, envp);
+  simulator = simfunc;
+  if (counting) {
+    _counters = (uint64_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    dieif(!_counters, "Unable to mmap counters array");
+  }
+  else
+    _counters = 0;
+}
+
+hart_base_t* hart_base_t::new_hart(hart_base_t* from) { return new hart_base_t(from, simulator, _counters!=0); }
+bool hart_base_t::interpreter() { return strand->interpreter(); }
+bool hart_base_t::single_step(bool show_trace) { return strand->single_step(show_trace); }
 long* hart_base_t::addresses() { return strand->addresses; }
 hart_base_t* hart_base_t::list() { return (hart_base_t*)strand_t::_list->hart_pointer; }
 hart_base_t* hart_base_t::next() { return (hart_base_t*)(strand->_next ? strand->_next->hart_pointer : 0); }
@@ -193,6 +206,7 @@ void disasm(long pc, Insn_t* i, const char* end, FILE* f)
 
 void strand_t::print_trace(long pc, Insn_t* i)
 {
+  fprintf(stderr, "[%d] ", gettid());
   if (i->rd() == NOREG) {
     if (attributes[i->opcode()] & ATTR_st)
       fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs2()], xrf[i->rs2()]); 

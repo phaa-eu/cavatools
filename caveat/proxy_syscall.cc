@@ -22,6 +22,8 @@
 #include <signal.h>
 #include <sched.h>
 
+#include <pthread.h>
+
 #include "options.h"
 #include "caveat.h"
 #include "strand.h"
@@ -103,8 +105,9 @@ void strand_t::proxy_ecall()
   }
   //fprintf(stderr, "ecall %ld --> x86 syscall %ld %s\n", rvnum, sysnum, name);
   if (conf_ecall) {
+    int tid = gettid();
     long a0=xrf[10], a1=xrf[11], a2=xrf[12], a3=xrf[13], a4=xrf[14], a5=xrf[15];
-    fprintf(stderr, "Ecall %s(0x%lx, 0x%lx, 0x%lx, 0x%lx)", name, a0, a1, a2, a3);
+    fprintf(stderr, "[%d] Ecall %s(0x%lx, 0x%lx, 0x%lx, 0x%lx)", tid, name, a0, a1, a2, a3);
   }
   proxy_syscall(sysnum);
   if (conf_ecall) {
@@ -113,24 +116,40 @@ void strand_t::proxy_ecall()
   }
 }
 
+/*
+  RISC-V clone system call arguments not same as wrapper or X86_64:
+  a0 = flags
+  a1 = child_stack
+  a2 = parent_tidptr
+  a3 = tls
+  a4 = child_tidptr
+*/
+
 #define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)
 
-int thread_interpreter(void* arg)
+void* thread_interpreter(void* arg)
 {
-#if 0
-  strand_t* oldcpu = (strand_t*)arg;
-  strand_t* newcpu = oldcpu->newcore();
-  newcpu->write_reg(2, newcpu->read_reg(11)); // a1 = child_stack
-  newcpu->write_reg(4, newcpu->read_reg(13)); // a3 = tls
-  newcpu->write_reg(10, 0);	// indicating we are child thread
-  newcpu->write_pc(newcpu->read_pc()+4); // skip over ecall instruction
-  newcpu->set_tid();
-  oldcpu->clone_lock = 0;
-  futex(&oldcpu->clone_lock, FUTEX_WAKE, 1);
-  newcpu->interpreter();
-#endif
-  abort();
+  strand_t* me = (strand_t*)arg;
+  me->tid = gettid();
+  futex(&me->tid, FUTEX_WAKE, 1);
+  
+  me->xrf[2] = me->xrf[11];	// a1 = child_stack
+  me->xrf[4] = me->xrf[13];	// a3 = tls
+  me->xrf[10] = 0;		// indicate child thread
+  me->pc += 4;			// skip over ecall
+  me->interpreter();
   return 0;
+}
+
+int clone_thread(strand_t* s)
+{
+  pthread_t tnum;		// thread number
+  hart_base_t* child = s->hart_pointer->new_hart(s->hart_pointer); // do copy in parent to prevent race
+  child->strand->tid = 0;	// acts as futex lock
+  dieif(pthread_create(&tnum, 0, thread_interpreter, child->strand), "pthread_create() failed during clone");
+  while (child->strand->tid == 0)
+    futex(&child->strand->tid, FUTEX_WAIT, 0);
+  return child->strand->tid;
 }
 
 void strand_t::proxy_syscall(long sysnum)
@@ -153,15 +172,7 @@ void strand_t::proxy_syscall(long sysnum)
 #endif
     
   case SYS_clone:
-    {
-      char* interp_stack = new char[THREAD_STACK_SIZE];
-      interp_stack += THREAD_STACK_SIZE; // grows down
-      long flags = a0 & ~CLONE_SETTLS; // not implementing TLS in interpreter yet
-      clone_lock = 1;		       // private mutex
-      retval = clone(thread_interpreter, interp_stack, flags, this, (void*)a2, (void*)a4);
-      while (clone_lock)
-	futex(&clone_lock, FUTEX_WAIT, 1);
-    }
+    retval = clone_thread(this);
     break;
     
   default:

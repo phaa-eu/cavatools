@@ -524,7 +524,7 @@ static void ProcessGdbException()
 }
 
 
-void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator)
+void controlled_by_gdb(const char* host_port, hart_base_t* cpu)
 {
   gdb_cpu = cpu;
   gdb_pc = &cpu->strand->pc;
@@ -559,7 +559,7 @@ void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simula
       //	labelpc(*gdb_pc);
       //	disasm(*gdb_pc, &i);
       //      }
-    } while (!cpu->strand->single_step(simulator));
+    } while (!cpu->strand->single_step());
     lastGdbSignal = SIGTRAP;
     ProcessGdbException();
   cleanup:

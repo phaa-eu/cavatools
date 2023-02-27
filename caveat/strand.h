@@ -64,6 +64,8 @@ class strand_t {
     } f;
     uint32_t ui;
   } fcsr;
+
+  int retval;			// return value when thread exits
   
   static volatile strand_t* _list;	// for find() using thread id
   volatile strand_t* _next;		// list of strand_t
@@ -72,7 +74,6 @@ class strand_t {
   static volatile int num_strands;	// cloned in process
   
   volatile int clone_lock;	// 0=free, 1=locked
-  friend int thread_interpreter(void* arg);
   
   long* addresses;		// address list is one per strand
   Debug_t debug;
@@ -80,7 +81,9 @@ class strand_t {
   void initialize(class hart_base_t* h);
 
   friend class hart_base_t;
-  friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator);
+  friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu);
+  friend void* thread_interpreter(void* arg);
+  friend int clone_thread(strand_t* s);
     
 public:
   strand_t(class hart_base_t* h, int argc, const char* argv[], const char* envp[]);
@@ -89,8 +92,8 @@ public:
   void proxy_syscall(long sysnum);
   void proxy_ecall();
   
-  bool interpreter(simfunc_t simulator);
-  bool single_step(simfunc_t simulator, bool show_trace =false);
+  bool interpreter();
+  bool single_step(bool show_trace =false);
   void print_trace(long pc, Insn_t* i);
   void debug_print() { debug.print(); }
 

@@ -5,31 +5,34 @@
 #include <errno.h>
 #include <signal.h>
 #include <setjmp.h>
+#include <pthread.h>
 
 #include <map>
 
 #include "options.h"
 #include "caveat.h"
 
-option<long> conf_report("report", 100000000, "Status report frequency");
-option<bool> conf_quiet("quiet",	false, true,			"No status report");
-option<> conf_gdb("gdb",	0, "localhost:1234", "Remote GDB connection");
+option<long> conf_report("report", 1000, "Status report every N milliseconds");
+option<>     conf_gdb("gdb",	0, "localhost:1234", "Remote GDB connection");
 option<bool> conf_show("show",	false, true,			"Show instruction trace");
 option<bool> conf_calls("calls",	false, true,			"Show function calls and returns");
 
 extern std::map<long, const char*> fname; // dictionary of pc->name
 
 class hart_t : public hart_base_t {
-  long executed;
-  long next_report;
+  long _executed;
 public:
-  hart_t(int argc, const char* argv[], const char* envp[]) :hart_base_t(argc, argv, envp) {
-    executed=0; next_report=conf_report;
-  }
-  long more_insn(long n) { executed+=n; return executed; }
+  hart_t(int argc, const char* argv[], const char* envp[], simfunc_t simfunc)
+    :hart_base_t(argc, argv, envp, simfunc) { _executed=0; }
+  hart_t(simfunc_t simulator) :hart_base_t(this, simulator) { _executed=0; }
+  hart_t* new_hart(hart_t* from) { return new hart_t(simulator); }
+
+  long executed() { return _executed; }
+  void more_insn(long n) { _executed+=n; }
   static long total_count();
   static hart_t* list() { return (hart_t*)hart_base_t::list(); }
   hart_t* next() { return (hart_t*)hart_base_t::next(); }
+  static hart_t* find(int tid) { return (hart_t*)hart_base_t::find(tid); }
   friend void simulator(hart_base_t* h, Header_t* bb);
   friend void status_report();
 };
@@ -38,26 +41,20 @@ long hart_t::total_count()
 {
   long total = 0;
   for (hart_t* p=hart_t::list(); p; p=p->next())
-    total += p->executed;
+    total += p->executed();
   return total;
 }
 
-static long customi = 0;
-
 void status_report()
 {
-  if (conf_quiet)
-    return;
   double realtime = elapse_time();
   long total = hart_t::total_count();
-  //  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
-  fprintf(stderr, "\r\33[2K%12ld(%ld) insns %3.1fs %3.1f MIPS ", total, customi, realtime, total/1e6/realtime);
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
   if (hart_t::num_harts() <= 16) {
     char separator = '(';
-    long total = hart_t::total_count();
     for (hart_t* p=hart_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
-      fprintf(stderr, "%1ld%%", 100*p->executed/total);
+      fprintf(stderr, "%1ld%%", 100*p->executed()/total);
       separator = ',';
     }
     fprintf(stderr, ")");
@@ -69,13 +66,7 @@ void status_report()
 void simulator(hart_base_t* h, Header_t* bb)
 {
   hart_t* c = (hart_t*)h;
-  for (Insn_t* i=insnp(bb+1); i<=insnp(bb)+bb->count; i++)
-    if (attributes[i->opcode()] & ATTR_custom)
-      customi++;
-  if (c->more_insn(bb->count) > c->next_report) {
-    status_report();
-    c->next_report += conf_report;
-  }
+  c->more_insn(bb->count);
 }
 
 void exit_func()
@@ -100,21 +91,29 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 {
   //  ucontext_t* context = (ucontext_t*)vcontext;
   //  context->uc_mcontext.gregs[]
-  fprintf(stderr, "\n\nsignal_handler(%d)\n", nSIGnum);
-  //  strand_t* thisCPU = hart_t::find(gettid())->
-  //  thisCPU->debug.print();
-  mycpu->debug_print();
+  fprintf(stderr, "\n\nsignal_handler, signum=%d, tid=%d\n", nSIGnum, gettid());
+  hart_t* thisCPU = hart_t::find(gettid());
+  thisCPU->debug_print();
+  //  mycpu->debug_print();
   exit(-1);
   //  longjmp(return_to_top_level, 1);
 }
 #endif
+
+void* status_thread(void* arg)
+{
+  while (1) {
+    usleep(1000*conf_report);
+    status_report();
+  }
+}
 
 int main(int argc, const char* argv[], const char* envp[])
 {
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
   if (argc == 0)
     help_exit();
-  mycpu = new hart_t(argc, argv, envp);
+  mycpu = new hart_t(argc, argv, envp, simulator);
   start_time();
 
 #ifdef DEBUG
@@ -124,7 +123,8 @@ int main(int argc, const char* argv[], const char* envp[])
     sigemptyset(&action.sa_mask);
     sigemptyset(&action.sa_mask);
     action.sa_flags = 0;
-    action.sa_sigaction = segv_handler;
+    //    action.sa_sigaction = segv_handler;
+    action.sa_sigaction = signal_handler;
     sigaction(SIGSEGV, &action, NULL);
     sigaction(SIGABRT, &action, NULL);
     sigaction(SIGINT,  &action, NULL);
@@ -138,10 +138,10 @@ int main(int argc, const char* argv[], const char* envp[])
 
   dieif(atexit(exit_func), "atexit failed");
   if (conf_gdb)
-    controlled_by_gdb(conf_gdb, mycpu, simulator);
+    controlled_by_gdb(conf_gdb, mycpu);
   else if (conf_show) {
     while (1)
-      mycpu->single_step(simulator, true);
+      mycpu->single_step(true);
   }
   else if (conf_calls) {
     int indent = 0;
@@ -155,7 +155,7 @@ int main(int argc, const char* argv[], const char* envp[])
 	indent--;
       }
 #endif 
-      mycpu->single_step(simulator, true);
+      mycpu->single_step(true);
 #if 1
       if (op==Op_jal || op==Op_c_jalr || op==Op_jalr) {
 	indent++;
@@ -168,6 +168,11 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
     }      
   }
-  else
-    mycpu->interpreter(simulator);
+  else {
+    if (conf_report > 0) {
+      pthread_t tnum;
+      dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
+    }
+    mycpu->interpreter();
+  }
 }
