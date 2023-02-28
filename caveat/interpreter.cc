@@ -106,9 +106,9 @@ int strand_t::interpreter()
 	    //	  std::shared_lock<std::shared_mutex> writerlock(bbmap_mutex);
 	    //		  bbmap[bb->addr] = bb;
 
-	    //	  bbmap_mutex.lock();
+	    bbmap_mutex.lock();
 	    bbmap[bb->addr] = bb;
-	    //	  bbmap_mutex.unlock();
+	    bbmap_mutex.unlock();
 	  }
 	}
 	*linkp(target) = bb;

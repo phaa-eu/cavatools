@@ -124,7 +124,7 @@ long host_syscall(int sysnum, long* a) {
     if (gettid() == maintid) {
       for (hart_base_t* p=hart_base_t::list()->next(); p; p=p->next())
 	kill(p->tid(), SIGQUIT);
-      throw(a[0]);
+      throw((int)a[0]);
     }
     else {
       while (1)
