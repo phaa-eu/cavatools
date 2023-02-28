@@ -125,6 +125,7 @@ hart_base_t::hart_base_t(hart_base_t* from, bool counting)
 hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], bool counting)
 {
   strand = new strand_t(this, argc, argv, envp);
+  syscall = default_syscall_func;
   if (counting) {
     _counters = (uint64_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
     dieif(!_counters, "Unable to mmap counters array");

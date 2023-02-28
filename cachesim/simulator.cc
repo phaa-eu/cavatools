@@ -15,11 +15,6 @@ option<int> conf_Dways("dways", 4,		"Data cache number of ways associativity");
 option<int> conf_Dline("dline",	6,		"Data cache log-base-2 line size");
 option<int> conf_Drows("drows",	8,		"Data cache log-base-2 number of rows");
 
-option<int> conf_Vmiss("vmiss",	100,		"Vector cache miss penalty");
-option<int> conf_Vways("vways", 4,		"Vector cache number of ways associativity");
-option<int> conf_Vline("vline",	10,		"Vector cache log-base-2 line size");
-option<int> conf_Vrows("vrows",	4,		"Vector cache log-base-2 number of rows");
-
 option<int> conf_cores("cores",	8,		"Maximum number of cores");
 
 option<bool> conf_quiet("quiet",	false, true,			"No status report");
@@ -36,16 +31,14 @@ void status_report()
 {
   double realtime = elapse_time();
   long total = hart_t::total_count();
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS, IPC(D$,V$)", total, realtime, total/1e6/realtime);
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS, IPC(D$)", total, realtime, total/1e6/realtime);
   if (hart_base_t::num_harts() <= 16) {
     char separator = '=';
     for (hart_t* p=hart_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
       double N = p->executed();
-      double M = p->dc->refs() + p->vc->refs();
-      fprintf(stderr, "%4.2f(%1.0f%%:%4.2f%%,%1.0f%%:%4.2f%%)", N/p->local_clock(),
-	      100.0*p->dc->refs()/M, 100.0*p->dc->misses()/N,
-	      100.0*p->vc->refs()/M, 100.0*p->vc->misses()/N);
+      double M = p->dc->refs();
+      fprintf(stderr, "%4.2f(%1.0f%%)", N/p->local_clock(), 100.0*p->dc->misses()/N);
       separator = ',';
     }
   }
@@ -63,18 +56,10 @@ void dumb_simulator(hart_base_t* h, Header_t* bb)
     ++i;
     ATTR_bv_t attr = attributes[i->opcode()];
     if (attr & (ATTR_ld|ATTR_st)) {
-      if (attr & ATTR_vec) {
-	if (!p->vc->lookup(*ap++, (attr&ATTR_st)))
-	  p->advance(conf_Vmiss);
-      }
-      else {
-	if (!p->dc->lookup(*ap++, (attr&ATTR_st)))
-	  p->advance(conf_Dmiss);
-      }
+      if (!p->dc->lookup(*ap++, (attr&ATTR_st)))
+	p->advance(conf_Dmiss);
     }
   }
-  if (p->more_insn(bb->count))
-    status_report();
 }
 
 void view_simulator(hart_base_t* h, Header_t* bb)
@@ -91,17 +76,9 @@ void view_simulator(hart_base_t* h, Header_t* bb)
     ++i, ++c;
     ATTR_bv_t attr = attributes[i->opcode()];
     if (attr & (ATTR_ld|ATTR_st)) {
-      if (attr & ATTR_vec) {
-	if (!p->vc->lookup(*ap++, (attr&ATTR_st))) {
-	  *c += 1;
-	  p->advance(conf_Vmiss);
-	}
-      }
-      else {
-	if (!p->dc->lookup(*ap++, (attr&ATTR_st))) {
-	  *c += 1;
-	  p->advance(conf_Dmiss);
-	}
+      if (!p->dc->lookup(*ap++, (attr&ATTR_st))) {
+	*c += 1;
+	p->advance(conf_Dmiss);
       }
     }
     // pc += i->compressed() ? 2 : 4;
@@ -113,7 +90,6 @@ void view_simulator(hart_base_t* h, Header_t* bb)
 void hart_t::print()
 {
   dc->print();
-  vc->print();
 }
 
 volatile long hart_t::global_time;
@@ -121,7 +97,6 @@ volatile long hart_t::global_time;
 void hart_t::initialize()
 {
   dc = new_cache("Data",   conf_Dways, conf_Dline, conf_Drows, true);
-  vc = new_cache("Vector", conf_Vways, conf_Vline, conf_Vrows, true); 
   local_time = 0;
   _executed = 0;
   next_report = conf_report;

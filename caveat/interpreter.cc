@@ -29,7 +29,7 @@ extern "C" {
 
 #include "arithmetic.h"
 
-extern option<bool> conf_show;
+option<bool> conf_show("show",	false, true,			"Show instruction trace");
 
 /*
  * Parallel hash table for basic block pc->tcache mapping

@@ -110,7 +110,10 @@ void strand_t::riscv_syscall()
     int tid = gettid();
     fprintf(stderr, "[%d] Ecall %s(0x%lx, 0x%lx, 0x%lx, 0x%lx)", tid, name, a0, a1, a2, a3);
   }
-  xrf[10] = hart_pointer->syscall(hart_pointer, sysnum, (long*)xrf+10);
+  if (sysnum == SYS_clone)
+    xrf[10] = hart_pointer->clone(hart_pointer, (long*)xrf+10);
+  else
+    xrf[10] = hart_pointer->syscall(hart_pointer, sysnum, (long*)xrf+10);
   if (conf_ecall)
     fprintf(stderr, " -> 0x%lx\n", xrf[10]);
 }
@@ -148,6 +151,11 @@ long host_syscall(int sysnum, long* a) {
     retval = asm_syscall(sysnum, a[0], a[1], a[2], a[3], a[4], a[5]);
   }
   return retval;
+}
+ 
+long default_syscall_func(class hart_base_t* h, long num, long* args)
+{
+  return host_syscall(num, args);
 }
 
 

@@ -5,7 +5,6 @@
 #include <errno.h>
 #include <signal.h>
 #include <setjmp.h>
-#include <sys/syscall.h>
 #include <pthread.h>
 
 #include <map>
@@ -15,8 +14,9 @@
 
 option<long> conf_report("report", 1000, "Status report every N milliseconds");
 option<>     conf_gdb("gdb",	0, "localhost:1234", "Remote GDB connection");
-option<bool> conf_show("show",	false, true,			"Show instruction trace");
 option<bool> conf_calls("calls",	false, true,			"Show function calls and returns");
+
+extern option<bool> conf_show;
 
 extern std::map<long, const char*> fname; // dictionary of pc->name
 
@@ -69,14 +69,10 @@ void simulator(hart_base_t* h, Header_t* bb)
   c->more_insn(bb->count);
 }
 
-long syscall_proxy(class hart_base_t* h, long num, long* args)
+long clone_proxy(class hart_base_t* h, long* args)
 {
-  if (num == SYS_clone) {
-    hart_t* child = new hart_t(h);
-    return clone_thread(child);
-  }
-  else
-    return host_syscall(num, args);
+  hart_t* child = new hart_t(h);
+  return clone_thread(child);
 }
 
 
@@ -121,7 +117,7 @@ int main(int argc, const char* argv[], const char* envp[])
     help_exit();
   mycpu = new hart_t(argc, argv, envp);
   mycpu->simulator = simulator;
-  mycpu->syscall = syscall_proxy;
+  mycpu->clone = clone_proxy;
   start_time();
 
 #ifdef DEBUG

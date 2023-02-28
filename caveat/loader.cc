@@ -17,7 +17,7 @@
 #include <map>
 
 const char* sysroot = "/opt/riscv/sysroot";
-extern long gdb_text, gdb_data, gdb_bss;
+//extern long gdb_text, gdb_data, gdb_bss;
 
 extern std::map<long, const char*> fname; // dictionary of pc->name
 
@@ -187,7 +187,7 @@ long load_elf_binary( const char* file_name, int include_data )
 	    strcmp(shstrtbl+header.sh_name, ".sbss") == 0) {
 	  memset((void*)(header.sh_addr+interp_bias), 0, header.sh_size);
 	}
-#if 1
+#if 0
 	if (strcmp(shstrtbl+header.sh_name, ".text") == 0)
 	  gdb_text = header.sh_addr + interp_bias;
 	else if (strcmp(shstrtbl+header.sh_name, ".rodata") == 0)

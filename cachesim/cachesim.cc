@@ -52,6 +52,7 @@ void paint_highest()
   getmaxyx(highest, lines, columns);
   //  std::nth_element(topk.begin(), topk.begin()+lines, topk.end(), cmpfunc);
   //  std::sort(topk.begin(), topk.begin()+lines, cmpfunc);
+  
   std::sort(topK.begin(), topK.end(), cmpfunc);
   wmove(highest, 0, 0);
   for (int j=0; j<lines; j++)
@@ -177,6 +178,11 @@ void* viewer(void* arg)
   }
 }
 
+long clone_proxy(class hart_base_t* h, long* args)
+{
+  hart_t* child = new hart_t(h);
+  return clone_thread(child);
+}
 
 void exitfunc()
 {
@@ -203,15 +209,19 @@ int main(int argc, const char* argv[], const char* envp[])
     help_exit();
   
   mycpu = new hart_t(argc, argv, envp, true);
+  mycpu->clone = clone_proxy;
   counters = mycpu->counters();
   atexit(exitfunc);
   start_time();
   
   if (conf_view) {
+    mycpu->simulator = view_simulator;
     pthread_t viewer_thread;
     pthread_create(&viewer_thread, NULL, viewer, 0);
-    mycpu->interpreter(view_simulator);
+    mycpu->interpreter();
   }
-  else
-    mycpu->interpreter(dumb_simulator);
+  else {
+    mycpu->simulator = dumb_simulator;
+    mycpu->interpreter();
+  }
 }

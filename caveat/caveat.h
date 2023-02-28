@@ -91,6 +91,7 @@ inline long index(Header_t* p) { return insnp(p)-tcache; }
 
 typedef void (*simfunc_t)(class hart_base_t* h, Header_t* bb);
 typedef long (*syscallfunc_t)(class hart_base_t* h, long num, long* args);
+typedef long (*clonefunc_t)(class hart_base_t* h, long* args);
 
 class hart_base_t {
   class strand_t* strand;	// opaque pointer
@@ -99,7 +100,8 @@ class hart_base_t {
   
 public:
   simfunc_t simulator;		// function pointer for simulation
-  syscallfunc_t syscall;	// function pointer for system calls
+  clonefunc_t clone;		// function pointer just for clone system call
+  syscallfunc_t syscall;	// function pointer for other system calls
   long host_syscall(int sysnum, long* args);
   
   uint64_t* _counters;		// performance counter array (matching tcache)
@@ -139,4 +141,6 @@ void labelpc(long pc, FILE* f =stderr);
 int sdisasm(char* buf, long pc, Insn_t* i);
 void disasm(long pc, Insn_t* i, const char* end ="\n", FILE* f =stderr);
 
+int clone_thread(hart_base_t* s);
 long host_syscall(int sysnum, long* a);
+long default_syscall_func(class hart_base_t* h, long num, long* args);
