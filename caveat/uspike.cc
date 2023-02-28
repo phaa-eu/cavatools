@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <setjmp.h>
+#include <sys/syscall.h>
 #include <pthread.h>
 
 #include <map>
@@ -22,10 +23,9 @@ extern std::map<long, const char*> fname; // dictionary of pc->name
 class hart_t : public hart_base_t {
   long _executed;
 public:
-  hart_t(int argc, const char* argv[], const char* envp[], simfunc_t simfunc)
-    :hart_base_t(argc, argv, envp, simfunc) { _executed=0; }
-  hart_t(simfunc_t simulator) :hart_base_t(this, simulator) { _executed=0; }
-  hart_t* new_hart(hart_t* from) { return new hart_t(simulator); }
+  hart_t(int argc, const char* argv[], const char* envp[])
+    :hart_base_t(argc, argv, envp) { _executed=0; }
+  hart_t(hart_base_t* from) :hart_base_t(from, have_counters()) { _executed=0; }
 
   long executed() { return _executed; }
   void more_insn(long n) { _executed+=n; }
@@ -50,7 +50,7 @@ void status_report()
   double realtime = elapse_time();
   long total = hart_t::total_count();
   fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
-  if (hart_t::num_harts() <= 16) {
+  if (hart_t::num_harts() <= 16 && total > 0) {
     char separator = '(';
     for (hart_t* p=hart_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
@@ -69,19 +69,25 @@ void simulator(hart_base_t* h, Header_t* bb)
   c->more_insn(bb->count);
 }
 
-void exit_func()
+long syscall_proxy(class hart_base_t* h, long num, long* args)
 {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "EXIT_FUNC() called\n\n");
-  status_report();
-  fprintf(stderr, "\n");
-}  
+  if (num == SYS_clone) {
+    hart_t* child = new hart_t(h);
+    return clone_thread(child);
+  }
+  else
+    return host_syscall(num, args);
+}
+
+
+
 
 static jmp_buf return_to_top_level;
 
 static void segv_handler(int, siginfo_t*, void*) {
   longjmp(return_to_top_level, 1);
 }
+
   
   
 hart_t* mycpu;
@@ -113,7 +119,9 @@ int main(int argc, const char* argv[], const char* envp[])
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
   if (argc == 0)
     help_exit();
-  mycpu = new hart_t(argc, argv, envp, simulator);
+  mycpu = new hart_t(argc, argv, envp);
+  mycpu->simulator = simulator;
+  mycpu->syscall = syscall_proxy;
   start_time();
 
 #ifdef DEBUG
@@ -136,7 +144,6 @@ int main(int argc, const char* argv[], const char* envp[])
   }
 #endif
 
-  dieif(atexit(exit_func), "atexit failed");
   if (conf_gdb)
     controlled_by_gdb(conf_gdb, mycpu);
   else if (conf_show) {
@@ -173,6 +180,11 @@ int main(int argc, const char* argv[], const char* envp[])
       pthread_t tnum;
       dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
     }
-    mycpu->interpreter();
+    int retval = mycpu->interpreter();
+    //terminate_threads();
+    fprintf(stderr, "\n");
+    status_report();
+    fprintf(stderr, "\n\n");
+    return retval;
   }
 }

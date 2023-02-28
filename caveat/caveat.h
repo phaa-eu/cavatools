@@ -90,28 +90,29 @@ inline long index(Insn_t* p) { return p-tcache; }
 inline long index(Header_t* p) { return insnp(p)-tcache; }
 
 typedef void (*simfunc_t)(class hart_base_t* h, Header_t* bb);
+typedef long (*syscallfunc_t)(class hart_base_t* h, long num, long* args);
 
 class hart_base_t {
   class strand_t* strand;	// opaque pointer
   friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu);
-  friend int clone_thread(strand_t* s);
+  friend int clone_thread(hart_base_t* s);
   
 public:
-  simfunc_t simulator;		// function pointer
-  int retval;			// if thread exits
+  simfunc_t simulator;		// function pointer for simulation
+  syscallfunc_t syscall;	// function pointer for system calls
+  long host_syscall(int sysnum, long* args);
   
   uint64_t* _counters;		// performance counter array (matching tcache)
   uint64_t* counters() { return _counters; }
+  bool have_counters() { return _counters != 0; }
   
-  hart_base_t(int argc, const char* argv[], const char* envp[], simfunc_t simulator, bool counting =false);
-  hart_base_t(hart_base_t* from, simfunc_t simulator, bool counting =false);
-
-  virtual hart_base_t* new_hart(hart_base_t* from);
+  hart_base_t(int argc, const char* argv[], const char* envp[], bool counting =false);
+  hart_base_t(hart_base_t* from, bool counting =false);
+  static void join_all();
   
   bool interpreter();
   bool single_step(bool show_trace =false);
   long* addresses();
-
   long pc();
 
   static hart_base_t* list();
@@ -137,3 +138,5 @@ int slabelpc(char* buf, long pc);
 void labelpc(long pc, FILE* f =stderr);
 int sdisasm(char* buf, long pc, Insn_t* i);
 void disasm(long pc, Insn_t* i, const char* end ="\n", FILE* f =stderr);
+
+long host_syscall(int sysnum, long* a);

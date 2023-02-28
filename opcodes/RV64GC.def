@@ -96,7 +96,7 @@
 
    fence	rd,rs1		<,I,ex,>	"{11:0}            ..... 000   ..... 00011 11"		l[11:7],l[19:15],-,-			"fence(imm)"
    fence.i	rd,rs1		<,I,ex,>	"{11:0}            ..... 001   ..... 00011 11"		l[11:7],l[19:15],-,-			"fence_i(imm)"
-   ecall	-		<,I,ex,>	"000000000000      00000 000   00000 11100 11"		-,-,-,-					"proxy_ecall()"
+   ecall	-		<,I,ex,>	"000000000000      00000 000   00000 11100 11"		-,-,-,-					"riscv_syscall()"
    ebreak	-		I,ex		"000000000001      00000 000   00000 11100 11"		-,-,-,-					"ebreak()"
 
    csrrw	d,E,s		<,I,sr,>	"{11:0}            ..... 001   ..... 11100 11"		l[11:7],l[19:15],-,-			"wrd(csr_func(imm,       [&](uint64_t old) { return        r1;                  } ))"
@@ -144,29 +144,29 @@
 
 # RV32A Standard Extension
 
-   lr.w		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 010   ..... 01011 11"		w[11:7],l[19:15],-,-			"wrd(LOAD( int32_t, r1))"
-   sc.w		d,t,0(s)	A,amo,st,>	"00011 {1:0} ..... ..... 010   ..... 01011 11"		l[11:7],l[19:15],w[24:20],-		"STORE(uint32_t, r1, r2); wrd(0)"
-   amoswap.w	d,t,0(s)	A,amo,st,>	"00001 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return       r2; }, ap)))"
-   amoadd.w	d,t,0(s)	A,amo,st,>	"00000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(sext32(amo_uint32(r1, [&]( int32_t lhs) { return lhs + r2; }, ap)))"
-   amoxor.w	d,t,0(s)	A,amo,st,>	"00100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return lhs ^ r2; }, ap)))"
-   amoand.w	d,t,0(s)	A,amo,st,>	"01100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return lhs & r2; }, ap)))"
-   amoor.w	d,t,0(s)	A,amo,st,>	"01000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return lhs | r2; }, ap)))"
-   amomin.w	d,t,0(s)	A,amo,st,>	"10000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(sext32(amo_uint32(r1, [&]( int32_t lhs) { return std::min(lhs,  int32_t(r2)); }, ap)))"
-   amomax.w	d,t,0(s)	A,amo,st,>	"10100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(sext32(amo_uint32(r1, [&]( int32_t lhs) { return std::max(lhs,  int32_t(r2)); }, ap)))"
-   amominu.w	d,t,0(s)	A,amo,st,>	"11000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return std::min(lhs, uint32_t(r2)); }, ap)))"
-   amomaxu.w	d,t,0(s)	A,amo,st,>	"11100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(sext32(amo_uint32(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); }, ap)))"
+   lr.w		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 010   ..... 01011 11"		w[11:7],l[19:15],-,-			"wrd(LOAD(int32_t, r1))"
+   sc.w		d,t,0(s)	A,amo,st,>	"00011 {1:0} ..... ..... 010   ..... 01011 11"		l[11:7],l[19:15],w[24:20],-		"STORE(int32_t, r1, r2); wrd(0)"
+   amoswap.w	d,t,0(s)	A,amo,st,>	"00001 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return       r2; }, ap))"
+   amoadd.w	d,t,0(s)	A,amo,st,>	"00000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return lhs + r2; }, ap))"
+   amoxor.w	d,t,0(s)	A,amo,st,>	"00100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return lhs ^ r2; }, ap))"
+   amoand.w	d,t,0(s)	A,amo,st,>	"01100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return lhs & r2; }, ap))"
+   amoor.w	d,t,0(s)	A,amo,st,>	"01000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return lhs | r2; }, ap))"
+   amomin.w	d,t,0(s)	A,amo,st,>	"10000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return std::min(lhs,  int32_t(r2)); }, ap))"
+   amomax.w	d,t,0(s)	A,amo,st,>	"10100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return std::max(lhs,  int32_t(r2)); }, ap))"
+   amominu.w	d,t,0(s)	A,amo,st,>	"11000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd((uint32_t)amo_int32(r1, [&](uint32_t lhs) { return std::min(lhs, uint32_t(r2)); }, ap))"
+   amomaxu.w	d,t,0(s)	A,amo,st,>	"11100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd((uint32_t)amo_int32(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); }, ap))"
 
    lr.d		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 011   ..... 01011 11"		l[11:7],l[19:15],-,-			"wrd(LOAD(int64_t,  r1))"
-   sc.d		d,t,0(s)	A,amo,st,>	"00011 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"STORE(uint64_t, r1, r2); wrd(0)"
-   amoswap.d	d,t,0(s)	A,amo,st,>	"00001 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(      (amo_uint64(r1, [&](uint64_t lhs) { return       r2; }, ap)))"
-   amoadd.d	d,t,0(s)	A,amo,st,>	"00000 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(      (amo_uint64(r1, [&]( int64_t lhs) { return lhs + r2; }, ap)))"
-   amoxor.d	d,t,0(s)	A,amo,st,>	"00100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(      (amo_uint64(r1, [&](uint64_t lhs) { return lhs ^ r2; }, ap)))"
-   amoand.d	d,t,0(s)	A,amo,st,>	"01100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(      (amo_uint64(r1, [&](uint64_t lhs) { return lhs & r2; }, ap)))"
-   amoor.d	d,t,0(s)	A,amo,st,>	"01000 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(      (amo_uint64(r1, [&](uint64_t lhs) { return lhs | r2; }, ap)))"
-   amomin.d	d,t,0(s)	A,amo,st,>	"10000 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(      (amo_uint64(r1, [&]( int64_t lhs) { return std::min(lhs,  int64_t(r2)); }, ap)))"
-   amomax.d	d,t,0(s)	A,amo,st,>	"10100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(      (amo_uint64(r1, [&]( int64_t lhs) { return std::max(lhs,  int64_t(r2)); }, ap)))"
-   amominu.d	d,t,0(s)	A,amo,st,>	"11000 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(      (amo_uint64(r1, [&](uint64_t lhs) { return std::min(lhs, uint64_t(r2)); }, ap)))"
-   amomaxu.d	d,t,0(s)	A,amo,st,>	"11100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(      (amo_uint64(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); }, ap)))"
+   sc.d		d,t,0(s)	A,amo,st,>	"00011 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"STORE(int64_t, r1, r2); wrd(0)"
+   amoswap.d	d,t,0(s)	A,amo,st,>	"00001 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t lhs) { return       r2; }, ap))"
+   amoadd.d	d,t,0(s)	A,amo,st,>	"00000 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t lhs) { return lhs + r2; }, ap))"
+   amoxor.d	d,t,0(s)	A,amo,st,>	"00100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t lhs) { return lhs ^ r2; }, ap))"
+   amoand.d	d,t,0(s)	A,amo,st,>	"01100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t lhs) { return lhs & r2; }, ap))"
+   amoor.d	d,t,0(s)	A,amo,st,>	"01000 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t lhs) { return lhs | r2; }, ap))"
+   amomin.d	d,t,0(s)	A,amo,st,>	"10000 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t  lhs) { return std::min(lhs,  int64_t(r2)); }, ap))"
+   amomax.d	d,t,0(s)	A,amo,st,>	"10100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t  lhs) { return std::max(lhs,  int64_t(r2)); }, ap))"
+   amominu.d	d,t,0(s)	A,amo,st,>	"11000 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](uint64_t lhs) { return std::min(lhs, uint64_t(r2)); }, ap))"
+   amomaxu.d	d,t,0(s)	A,amo,st,>	"11100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); }, ap))"
 
 # Internal instructions to emulate Compare-And-Swap
    cas.w	d,t,0(s),r	A,amo,st,>	"..... 11    ..... ..... 111   ..... 11111 11"		w[11:7],l[19:15],w[24:20],w[31:27]	"wrd(cas<int32_t>(i, ap))"
@@ -194,9 +194,9 @@
    fmin.s	D,S,T		F,fp		"00101 00    ..... ..... 000   ..... 10100 11"		f[11:7],f[19:15],f[24:20],-		"     wfd(fmin_s(f32(f1), f32(f2)))"
    fmax.s	D,S,T		F,fp		"00101 00    ..... ..... 001   ..... 10100 11"		f[11:7],f[19:15],f[24:20],-		"     wfd(fmax_s(f32(f1), f32(f2)))"
 
-   fcvt.w.s	d,S,m		F,fp		"11000 00    00000 ..... {2:0} ..... 10100 11"		l[11:7],f[19:15],-,-			"srm; wrd(sext32(f32_to_i32( f32(f1), RM, true))); sfx"
-   fcvt.wu.s	d,S,m		F,fp		"11000 00    00001 ..... {2:0} ..... 10100 11"		l[11:7],f[19:15],-,-			"srm; wrd(sext32(f32_to_ui32(f32(f1), RM, true))); sfx"
-   fmv.x.w	d,S		F,fp		"11100 00    00000 ..... 000   ..... 10100 11"		l[11:7],f[19:15],-,-			"     wrd(sext32(f1.v[0]))"
+   fcvt.w.s	d,S,m		F,fp		"11000 00    00000 ..... {2:0} ..... 10100 11"		l[11:7],f[19:15],-,-			"srm; wrd(f32_to_i32( f32(f1), RM, true)); sfx"
+   fcvt.wu.s	d,S,m		F,fp		"11000 00    00001 ..... {2:0} ..... 10100 11"		l[11:7],f[19:15],-,-			"srm; wrd(f32_to_ui32(f32(f1), RM, true)); sfx"
+   fmv.x.w	d,S		F,fp		"11100 00    00000 ..... 000   ..... 10100 11"		l[11:7],f[19:15],-,-			"     wrd(f1.v[0])"
 
    feq.s	d,S,T		F,fp		"10100 00    ..... ..... 010   ..... 10100 11"		l[11:7],f[19:15],f[24:20],-		"     wrd(f32_eq(f32(f1), f32(f2)))"
    flt.s	d,S,T		F,fp		"10100 00    ..... ..... 001   ..... 10100 11"		l[11:7],f[19:15],f[24:20],-		"     wrd(f32_lt(f32(f1), f32(f2)))"
@@ -209,10 +209,10 @@
 
 # RV64F Standard Extension (in addition to RV32F)
 
-   fcvt.l.s	d,S,m		F,fp		"11000 00    00010 ..... {2:0} ..... 10100 11"		l[11:7],f[19:15],-,-			"srm; wrd(sext32(f32_to_i64( f32(f1), RM, true))); sfx"
-   fcvt.lu.s	d,S,m		F,fp		"11000 00    00011 ..... {2:0} ..... 10100 11"		l[11:7],f[19:15],-,-			"srm; wrd(sext32(f32_to_ui64(f32(f1), RM, true))); sfx"
-   fcvt.s.l	D,s,m		F,fp		"11010 00    00010 ..... {2:0} ..... 10100 11"		f[11:7],l[19:15],-,-			"srm; wfd(i64_to_f32( ( int32_t)r1));              sfx"
-   fcvt.s.lu	D,s,m		F,fp		"11010 00    00011 ..... {2:0} ..... 10100 11"		f[11:7],l[19:15],-,-			"srm; wfd(ui64_to_f32((uint32_t)r1));              sfx"
+   fcvt.l.s	d,S,m		F,fp		"11000 00    00010 ..... {2:0} ..... 10100 11"		l[11:7],f[19:15],-,-			"srm; wrd(f32_to_i64( f32(f1), RM, true)); sfx"
+   fcvt.lu.s	d,S,m		F,fp		"11000 00    00011 ..... {2:0} ..... 10100 11"		l[11:7],f[19:15],-,-			"srm; wrd(f32_to_ui64(f32(f1), RM, true)); sfx"
+   fcvt.s.l	D,s,m		F,fp		"11010 00    00010 ..... {2:0} ..... 10100 11"		f[11:7],l[19:15],-,-			"srm; wfd(i64_to_f32( ( int32_t)r1));      sfx"
+   fcvt.s.lu	D,s,m		F,fp		"11010 00    00011 ..... {2:0} ..... 10100 11"		f[11:7],l[19:15],-,-			"srm; wfd(ui64_to_f32((uint32_t)r1));      sfx"
 
 # RV32D Standard Extension
 
@@ -244,17 +244,17 @@
    fle.d	d,S,T		D,fp		"10100 01    ..... ..... 000   ..... 10100 11"		l[11:7],d[19:15],d[24:20],-		"     wrd(f64_lt(f64(f1), f64(f2)))"
    fclass.d	d,S		D,fp		"11100 01    00000 ..... 001   ..... 10100 11"		l[11:7],d[19:15],-,-			"     wrd(f64_classify(f64(f1)))"
 
-   fcvt.w.d	d,S,m		D,fp		"11000 01    00000 ..... {2:0} ..... 10100 11"		l[11:7],d[19:15],-,-			"srm; wrd(sext32(f64_to_i32( f64(f1), RM, true))); sfx"
-   fcvt.wu.d	d,S,m		D,fp		"11000 01    00001 ..... {2:0} ..... 10100 11"		l[11:7],d[19:15],-,-			"srm; wrd(sext32(f64_to_ui32(f64(f1), RM, true))); sfx"
-   fcvt.d.w	D,s,m		D,fp		"11010 01    00000 ..... {2:0} ..... 10100 11"		d[11:7],l[19:15],-,-			"srm; wfd(i32_to_f64( ( int32_t)r1));              sfx"
-   fcvt.d.wu	D,s,m		D,fp		"11010 01    00001 ..... {2:0} ..... 10100 11"		d[11:7],l[19:15],-,-			"srm; wfd(ui32_to_f64((uint32_t)r1));              sfx"
+   fcvt.w.d	d,S,m		D,fp		"11000 01    00000 ..... {2:0} ..... 10100 11"		l[11:7],d[19:15],-,-			"srm; wrd(f64_to_i32( f64(f1), RM, true)); sfx"
+   fcvt.wu.d	d,S,m		D,fp		"11000 01    00001 ..... {2:0} ..... 10100 11"		l[11:7],d[19:15],-,-			"srm; wrd(f64_to_ui32(f64(f1), RM, true)); sfx"
+   fcvt.d.w	D,s,m		D,fp		"11010 01    00000 ..... {2:0} ..... 10100 11"		d[11:7],l[19:15],-,-			"srm; wfd(i32_to_f64( ( int32_t)r1));      sfx"
+   fcvt.d.wu	D,s,m		D,fp		"11010 01    00001 ..... {2:0} ..... 10100 11"		d[11:7],l[19:15],-,-			"srm; wfd(ui32_to_f64((uint32_t)r1));      sfx"
 
 # RV64D Standard Extension (in addition to RV32D)
 
-   fcvt.l.d	d,S,m		D,fp		"11000 01    00010 ..... {2:0} ..... 10100 11"		l[11:7],d[19:15],-,-			"wrd(sext32(f64_to_i64( f64(f1), RM, true))); sfx"
-   fcvt.lu.d	d,S,m		D,fp		"11000 01    00011 ..... {2:0} ..... 10100 11"		l[11:7],d[19:15],-,-			"wrd(sext32(f64_to_ui64(f64(f1), RM, true))); sfx"
+   fcvt.l.d	d,S,m		D,fp		"11000 01    00010 ..... {2:0} ..... 10100 11"		l[11:7],d[19:15],-,-			"wrd(f64_to_i64( f64(f1), RM, true)); sfx"
+   fcvt.lu.d	d,S,m		D,fp		"11000 01    00011 ..... {2:0} ..... 10100 11"		l[11:7],d[19:15],-,-			"wrd(f64_to_ui64(f64(f1), RM, true)); sfx"
    fmv.x.d	d,S		D,fp		"11100 01    00000 ..... 000   ..... 10100 11"		l[11:7],d[19:15],-,-			"wrd(f1.v[0])"
-   fcvt.d.l	D,s,m		D,fp		"11010 01    00010 ..... {2:0} ..... 10100 11"		d[11:7],l[19:15],-,-			"wfd(i64_to_f64( ( int64_t)r1));              sfx"
-   fcvt.d.lu	D,s,m		D,fp		"11010 01    00011 ..... {2:0} ..... 10100 11"		d[11:7],l[19:15],-,-			"wfd(ui64_to_f64((uint64_t)r1));              sfx"
+   fcvt.d.l	D,s,m		D,fp		"11010 01    00010 ..... {2:0} ..... 10100 11"		d[11:7],l[19:15],-,-			"wfd(i64_to_f64( ( int64_t)r1));      sfx"
+   fcvt.d.lu	D,s,m		D,fp		"11010 01    00011 ..... {2:0} ..... 10100 11"		d[11:7],l[19:15],-,-			"wfd(ui64_to_f64((uint64_t)r1));      sfx"
    fmv.d.x	D,s		D,fp		"11110 01    00000 ..... 000   ..... 10100 11"		d[11:7],l[19:15],-,-			"wfd(f64(r1))"
 

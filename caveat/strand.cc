@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <pthread.h>
 
 #include <map>
 
@@ -42,7 +43,6 @@ void strand_t::initialize(class hart_base_t* h)
     old_n = num_strands;
   } while (!__sync_bool_compare_and_swap(&num_strands, old_n, old_n+1));
   sid = old_n;			// after loop in case of race
-  tid = gettid();
   hart_pointer = h;
   addresses = (long*)mmap(0, 8*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   dieif(!addresses, "Unable to mmap() addresses");
@@ -59,7 +59,11 @@ strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const cha
   tcache = (Insn_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   dieif(!tcache, "unable to mmap() tcache");
   *(long*)tcache = 1; // always has one slot containing number of slots
+  tid = gettid();
+  ptnum = pthread_self();
   initialize(h); // do at end because there are atomic stuff in initialize()
+  extern int maintid;
+  maintid = tid;
 }
 
 strand_t::strand_t(class hart_base_t* h, strand_t* from)
@@ -104,11 +108,12 @@ void strand_t::set_csr(int what, long val)
 }
 
 
-
-hart_base_t::hart_base_t(hart_base_t* from, simfunc_t simfunc, bool counting)
+hart_base_t::hart_base_t(hart_base_t* from, bool counting)
 {
-  strand = new strand_t(this, from->strand);
-  simulator = simfunc;
+  strand_t* s = new strand_t(this, from->strand);
+  memcpy(this, from, sizeof(hart_base_t));
+  strand = s;
+  simulator = from->simulator;
   if (counting) {
     _counters = (uint64_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
     dieif(!_counters, "Unable to mmap counters array");
@@ -117,10 +122,9 @@ hart_base_t::hart_base_t(hart_base_t* from, simfunc_t simfunc, bool counting)
     _counters = 0;
 }
 
-hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], simfunc_t simfunc, bool counting)
+hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], bool counting)
 {
   strand = new strand_t(this, argc, argv, envp);
-  simulator = simfunc;
   if (counting) {
     _counters = (uint64_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
     dieif(!_counters, "Unable to mmap counters array");
@@ -129,7 +133,6 @@ hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], simfu
     _counters = 0;
 }
 
-hart_base_t* hart_base_t::new_hart(hart_base_t* from) { return new hart_base_t(from, simulator, _counters!=0); }
 bool hart_base_t::interpreter() { return strand->interpreter(); }
 bool hart_base_t::single_step(bool show_trace) { return strand->single_step(show_trace); }
 long* hart_base_t::addresses() { return strand->addresses; }
@@ -142,6 +145,7 @@ long hart_base_t::pc() { return strand->pc; }
 hart_base_t* hart_base_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart_pointer : 0; }
 int hart_base_t::num_harts() { return strand_t::num_strands; }
 void hart_base_t::debug_print() { strand->debug_print(); }
+
 
 void hart_base_t::print_debug_trace()
 {
