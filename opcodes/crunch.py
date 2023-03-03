@@ -249,9 +249,10 @@ diffcp('../caveat/decoder.h')
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
         (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
-        stop = 'pc+={:d}; break'.format(int(bytes))
-        if '>' in attr:
-            stop = 'stop'
-        f.write('    case {:20s} {:s}; {:s};\n'.format(opname+':', action, stop))
+#        stop = 'pc+={:d}; break'.format(int(bytes))
+#        if '>' in attr:
+#            stop = 'stop'
+#        f.write('    case {:20s} {:s}; {:s};\n'.format(opname+':', action, stop))
+        f.write('    case {:20s} {:s}; pc+={:d}; break;\n'.format(opname+':', action, int(bytes)))
 diffcp('../caveat/semantics.h')
     

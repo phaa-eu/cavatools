@@ -8,7 +8,7 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-ISA := RV64GC.def
+ISA := RV64GC-nfp.def
 
 install: custom_asm_macros.h isa.json ../caveat/opcodes.h
 	cp custom_asm_macros.h $(CAVA)/include/

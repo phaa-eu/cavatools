@@ -528,7 +528,7 @@ void controlled_by_gdb(const char* host_port, hart_base_t* cpu)
 {
   gdb_cpu = cpu;
   gdb_pc = &cpu->strand->pc;
-  gdb_reg = (long*)cpu->strand->xrf;
+  gdb_reg = (long*)cpu->strand->s.xrf;
   msg("Opening TCP link to GDB\n");
   OpenTcpLink(host_port);
   //  signal(SIGABRT, signal_handler);

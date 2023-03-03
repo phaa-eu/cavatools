@@ -59,13 +59,11 @@ Insn_t decoder(long pc);
   instruction, a basic block header, or a branch target pointer.  Translated
   instructions are described above.  Each basic block begins with a header
   (defind below) followed by one or more translated instructions.  Each basic block
-  is terminated by a link (index) to the next basic block's header.  If the link
-  is  zero the target is unknown.  Links are always confirmed by computed branch
-  target pc.  Thus they act as branch predictors for jump-register instructions.
-  Basic blocks that end in a conditional branch have two pointers, the branch-taken
-  target followed by the fall-thru target.
-
-  The first slot (index zero) of the Translation Cache contains number of active slots.
+  is terminated by a link pointer to the next basic block's header.
+  
+  Links are always confirmed by computed branch target pc.  Thus they act as branch
+  predictors for jump-register instructions.  Basic blocks that end in a conditional
+  branch have two pointers, the branch-taken target followed by the fall-thru target.
 */
 
 struct Header_t {
@@ -77,39 +75,54 @@ struct Header_t {
 };
 static_assert(sizeof(Header_t) == 8);
 
-/*
-  We can freely convert between pointers to instructions, headers and links.
-*/
-inline Header_t* bbp(void* p) { return (Header_t*)p; }
-inline Insn_t* insnp(void* p) { return (Insn_t*)p; }
-inline Header_t** linkp(void* p)   { return (Header_t**)p; }
+class Tpointer {
+  void* generic;
+public:
+  Tpointer(void* p) { generic=p; }
+  operator Insn_t*() { return (Insn_t*)generic; }
+  operator Header_t*() { return (Header_t*)generic; }
+  operator Header_t**() { return (Header_t**)generic; }
+  operator uint64_t*() { return (uint64_t*)generic; }
+  void operator=(Insn_t v) { *((Insn_t*)generic) = v; }
+  void operator=(Header_t v) { *((Header_t*)generic) = v; }
+  void operator=(Header_t* v) { *((Header_t**)generic) = v; }
+  void operator=(uint64_t v) { *((uint64_t*)generic) = v; }
+};
 
-extern Insn_t* tcache; // only interpreter allowed to change instructions
-inline long tcache_size() { return *(long*)tcache; }
-inline long index(Insn_t* p) { return p-tcache; }
-inline long index(Header_t* p) { return insnp(p)-tcache; }
+class Tcache_t {
+  uint64_t* cache;
+  unsigned _extent;
+  unsigned _size;
+public:
+  void clear();
+  Tcache_t(long l) { cache=new uint64_t[l]; _extent=l; clear(); }
+  unsigned extent() { return _extent; }
+  unsigned size() { return _size; }
+  Tpointer operator[](unsigned k) { dieif(k>_size, "cache index %u out of bounds %u", k, _size); return { &cache[k] }; }
+  unsigned index(Tpointer  p) { return p-cache; }
+  Tpointer add(Header_t* begin, unsigned entries);
+  void extend(unsigned entries) { _size+=entries; }
+};
 
-typedef void (*simfunc_t)(class hart_base_t* h, Header_t* bb);
+
+
+typedef void (*simfunc_t)(class hart_base_t* h, Header_t* bb, uint64_t* counters);
 typedef long (*syscallfunc_t)(class hart_base_t* h, long num, long* args);
 typedef long (*clonefunc_t)(class hart_base_t* h, long* args);
 
 class hart_base_t {
   class strand_t* strand;	// opaque pointer
+  
   friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu);
   friend int clone_thread(hart_base_t* s);
-  
 public:
   simfunc_t simulator;		// function pointer for simulation
   clonefunc_t clone;		// function pointer just for clone system call
   syscallfunc_t syscall;	// function pointer for other system calls
   long host_syscall(int sysnum, long* args);
   
-  uint64_t* _counters;		// performance counter array (matching tcache)
-  uint64_t* counters() { return _counters; }
-  bool have_counters() { return _counters != 0; }
-  
-  hart_base_t(int argc, const char* argv[], const char* envp[], bool counting =false);
-  hart_base_t(hart_base_t* from, bool counting =false);
+  hart_base_t(int argc, const char* argv[], const char* envp[]);
+  hart_base_t(hart_base_t* from);
   static void join_all();
   
   bool interpreter();

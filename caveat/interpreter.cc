@@ -11,10 +11,8 @@
 #include <sys/mman.h>
 #include <signal.h>
 
-#include <pthread.h>
+//#include <pthread.h>
 #include <unordered_map>
-//#include <mutex>
-#include <shared_mutex>
 
 #include "options.h"
 #include "caveat.h"
@@ -30,109 +28,99 @@ extern "C" {
 #include "arithmetic.h"
 
 option<bool> conf_show("show",	false, true,			"Show instruction trace");
-
-/*
- * Parallel hash table for basic block pc->tcache mapping
- * Multiple reader, single writer
- */
-std::unordered_map<long, Header_t*> bbmap;
-
-//std::shared_mutex bbmap_mutex;
-std::mutex bbmap_mutex;
+extern option<long> conf_tcache;
 
 void substitute_cas(long pc, Insn_t* i3);
+
+inline float  m32(freg_t x) { union { freg_t r; float  f; } cv; cv.r=x; return cv.f; }
+inline double m64(freg_t x) { union { freg_t r; double f; } cv; cv.r=x; return cv.f; }
+inline float32_t n32(float  x)  { union { float32_t t; float  f; } cv; cv.f=x; return cv.t; }
+inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; return cv.t; }
+#define w32(e)	s.frf[i->rd()-FPREG] = freg(n32(e)) 
+#define w64(e)	s.frf[i->rd()-FPREG] = freg(n64(e)) 
 
 int strand_t::interpreter()
 {
   try {
-    static Header_t dummy = { 0, 0 };
-    Header_t* target = &dummy;	// tcache[0] never matches any pc
-    for (;;) {			  // once per basic block
-      Header_t* bb = 0;		  // current basic block
-      if (target->addr == pc) {
-	bb = target;		// valid link from last basic block
+    static Header_t mismatch_header = { 0, 0 };
+    Header_t* mismatch = &mismatch_header;
+    Header_t** target = &mismatch;
+    for (;;) {			// once per basic block
+      Header_t* bb;		// current basic block
+      if ((*target)->addr == pc) {
+	bb = *target;		// valid link from last basic block
       }
       else { // no linkage or incorrect target (eg. jump register)
-	bool found;
-	{
-	  //	std::lock_guard<std::shared_mutex> readerlock(bbmap_mutex);
-	  //	bbmap_mutex.lock();
-	  auto pair = bbmap.find(pc);
-	  if (pair != bbmap.end())
+	auto pair = bbmap.find(pc);
+	if (pair != bbmap.end()) {
 	    bb = pair->second;
-	  //	bbmap_mutex.unlock();
 	}
-	if (bb == 0) {		// never seen target
+	else {			// never seen target
 	  //
-	  // Pre-decode entire basic block temporarily into address list
+	  // Pre-decode entire basic block temporarily into address array
 	  //
-	  long dpc = pc;		// decode pc
-	  bb = bbp(addresses);
-	  Insn_t* j = insnp(addresses);
+	  long dpc = pc;	// decode pc
+	  bb = (Header_t*)addresses;
+	  Insn_t* j = Tpointer(bb); // note pre-incremented in loop
 	  do {
-	    Insn_t insn = decoder(dpc);
-	    // instructions with attribute '<' must be first in basic block
-	    if (stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) {
-	      if (j > insnp(addresses))
-		break;
-	    }
 	    *++j = decoder(dpc);
+	    // instructions with attribute '<' must be first in basic block
+	    //	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (Tpointer(j) > bb+1)) {
+	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (Tpointer(j) > bb+1)) {
+	      --j;		// remove ourself for next time
+	      break;
+	    }
 	    dpc += j->compressed() ? 2 : 4;
 	  } while ((stop_after[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) == 0);
 	  if (j->opcode()==Op_sc_w || j->opcode()==Op_sc_d)
 	    substitute_cas(dpc-4, j);
 	  bb->addr = pc;
-	  bb->count = j - insnp(addresses);
+	  bb->count = j - (Insn_t*)bb;
 	  bb->branch = (attributes[j->opcode()] & (ATTR_uj|ATTR_cj)) != 0;
 	  bb->conditional = (attributes[j->opcode()] & ATTR_cj) != 0;
 	  //
 	  // Always end with one pointer to next basic block
 	  // Conditional branches have second fall-thru pointer
 	  //
-	  *linkp(++j) = &dummy;	// space for branch taken pointer
+	  *(Header_t**)(++j) = &mismatch_header; // space for branch taken pointer
 	  if (bb->conditional)
-	    *linkp(++j) = &dummy;	// space for fall-thru pointer
-	  //
-	  // Atomically add basic block to tcache.
-	  //
-	  long n = j+1 - insnp(addresses);
-	  long oldlen = __sync_fetch_and_add((long*)tcache, n);
-	  memcpy((Insn_t*)tcache+oldlen, addresses, n*8);
-	  // reset bb to point into tcache
-	  bb = (Header_t*)tcache + oldlen;
-
-	  // atomically add to STL unordered_map
-	  {
-	    //	  std::shared_lock<std::shared_mutex> writerlock(bbmap_mutex);
-	    //		  bbmap[bb->addr] = bb;
-
-	    bbmap_mutex.lock();
-	    bbmap[bb->addr] = bb;
-	    bbmap_mutex.unlock();
+	    *(Header_t**)(++j) = &mismatch_header; // space for fall-thru pointer
+	  // Add basic block to tcache.
+	  long n = Tpointer(j+2) - bb;
+	  if (tcache.size()+n > tcache.extent()) {
+	    dieif(n>tcache.extent(), "basic block size %ld bigger than cache %u", n, tcache.extent());
+	    tcache.clear();
+	    counters.clear();
+	    bbmap.clear();
+	    mismatch = &mismatch_header;
+	    target = &mismatch;
 	  }
+	  bb = tcache.add(bb, n); // points into tcache
+	  counters.extend(n);	  // initially zero
+	  bbmap[bb->addr] = bb;
 	}
-	*linkp(target) = bb;
+	*target = bb;
       }
       long* ap = addresses;
-      Insn_t* i = insnp(bb+1);
-      for(;; i++) {
-	xrf[0] = 0;
-	debug.insert(pc, *i);
 
-	//      labelpc(pc);
-	//      disasm(pc, i);
-      
+      for (Insn_t* i=Tpointer(bb+1); i<Tpointer(bb+1+bb->count); i++) {
+	s.xrf[0] = 0;
+	debug.insert(pc, *i);
+#if 0
+	labelpc(pc);
+	disasm(pc, i);
+#endif 
 	/*
 	  Abbreviations to keep isa.def semantics short
 	*/
-#define wrd(e)	xrf[i->rd()] = (e)
-#define r1	xrf[i->rs1()]
-#define r2	xrf[i->rs2()]
+#define wrd(e)	s.xrf[i->rd()] = (e)
+#define r1	s.xrf[i->rs1()]
+#define r2	s.xrf[i->rs2()]
 #define imm	i->immed()
-#define wfd(e)	frf[i->rd()-FPREG] = freg(e)
-#define f1	frf[i->rs1()-FPREG]
-#define f2	frf[i->rs2()-FPREG]
-#define f3	frf[i->rs3()-FPREG]
+#define wfd(e)	s.frf[i->rd()-FPREG] = freg(e)
+#define f1	s.frf[i->rs1()-FPREG]
+#define f2	s.frf[i->rs2()-FPREG]
+#define f3	s.frf[i->rs3()-FPREG]
 
 #define LOAD(T, a)     *(T*)(*ap++=a)
 #define STORE(T, a, v) *(T*)(*ap++=a)=(v)
@@ -142,22 +130,22 @@ int strand_t::interpreter()
       
 	//#define ebreak() return true
 #define ebreak() kill(tid, SIGTRAP)
-      
-#define branch(test, taken, fall)  { if (test) { pc=(taken); target=bbp(i+1); } else { pc=(fall); target=bbp(i+2); } goto end_bb; }
-#define jump(npc)  { pc=(npc); target=bbp(i+1); goto end_bb; }
-#define stop       { pc+=4;    target=bbp(i+1); goto end_bb; }
 
+#define stop debug.addval(s.xrf[i->rd()]); goto end_bb
+#define branch(test, taken, fall)  { if (test) { pc=(taken); target=Tpointer(i+1); } else { pc=(fall); target=Tpointer(i+2); } stop; }
+#define jump(npc)  { pc=(npc); target=Tpointer(i+1); stop; }
+	
 	switch (i->opcode()) {
 	case Op_ZERO:	die("Should never see Op_ZERO at pc=%lx", pc);
 #include "semantics.h"
-	case Op_ILLEGAL:  die("Op_ILLEGAL opcode");
-	case Op_UNKNOWN:  die("Op_UNKNOWN opcode");
+	case Op_ILLEGAL:  die("Op_ILLEGAL opcode, i=%08x, pc=%lx", *(unsigned*)pc, pc);
+	case Op_UNKNOWN:  die("Op_UNKNOWN opcode, i=%08x, pc=%lx", *(unsigned*)pc, pc);
 	}
-	debug.addval(i->rd()!=NOREG ? xrf[i->rd()] : xrf[i->rs2()]);
-      }
-    end_bb: // at this point pc=target basic block but i still points to last instruction.
-      debug.addval(xrf[i->rd()]);
-      hart_pointer->simulator(hart_pointer, bb);
+	debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
+      } // if loop exits there was no branch
+      target = Tpointer(bb+1+bb->count);
+    end_bb:
+      hart_pointer->simulator(hart_pointer, bb, counters[tcache.index(bb)]);
     }
   } catch (int retval) {
     return retval;
@@ -166,17 +154,18 @@ int strand_t::interpreter()
 
 bool strand_t::single_step(bool show_trace)
 {
-  Header_t bb;
-  bb.addr = pc;
-  bb.count = 1;
+  Header_t bb[2];		// header & insn together
+  uint64_t cc[2];		// same for counters
+  bb[0].addr = pc;
+  bb[0].count = 1;
+  Insn_t* i = (Insn_t*)&bb[1];
   long oldpc = pc;
-  Insn_t insn = decoder(pc);
-  Insn_t* i = &insn;
+  *i = decoder(pc);
   long* ap = addresses;
   if (i->opcode()==Op_sc_w || i->opcode()==Op_sc_d)
     substitute_cas(pc, i);
    
-  xrf[0] = 0;
+  s.xrf[0] = 0;
   debug.insert(pc, *i);
 
 #undef branch
@@ -194,12 +183,12 @@ bool strand_t::single_step(bool show_trace)
   case Op_UNKNOWN:  die("Op_UNKNOWN opcode");
   }
     
-  debug.addval(i->rd()!=NOREG ? xrf[i->rd()] : xrf[i->rs2()]);
+  debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
  end_bb: // at this point pc=target basic block but i still points to last instruction.
-  debug.addval(xrf[i->rd()]);
+  debug.addval(s.xrf[i->rd()]);
   if (conf_show)
     print_trace(oldpc, i);
-  hart_pointer->simulator(hart_pointer, &bb);
+  hart_pointer->simulator(hart_pointer, bb, cc);
   return false;
 }
 

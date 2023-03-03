@@ -23,11 +23,11 @@ inline freg_t freg(float128_t f) { return f; }
 
 #undef RM
 #define RM ({ int rm = i->immed(); \
-              if(rm == 7) rm = fcsr.f.rm; \
+              if(rm == 7) rm = s.fcsr.f.rm; \
               if(rm > 4) die("Illegal instruction"); \
               rm; })
 #define srm  softfloat_roundingMode = RM
-#define sfx  fcsr.f.flags |= softfloat_exceptionFlags
+#define sfx  s.fcsr.f.flags |= softfloat_exceptionFlags
 
 #define F32_SIGN ((uint32_t)1 << 31)
 #define F64_SIGN ((uint64_t)1 << 63)

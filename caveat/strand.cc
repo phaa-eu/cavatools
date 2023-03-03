@@ -13,7 +13,7 @@
 
 std::map<long, const char*> fname; // dictionary of pc->name
 
-option<long> conf_tcache("tcache", 1024, "Binary translation cache size in 4K pages");
+option<long> conf_tcache("tcache", 64*1024, "Binary translation cache size");
 
 long load_elf_binary(const char* file_name, int include_data);
 long initialize_stack(int argc, const char** argv, const char** envp);
@@ -22,8 +22,6 @@ const char* elf_find_pc(long pc, long* offset);
 
 volatile strand_t* strand_t::_list =0;
 volatile int strand_t::num_strands =0;
-
-Insn_t* tcache =0;
 
 strand_t* strand_t::find(int tid)
 {
@@ -44,21 +42,16 @@ void strand_t::initialize(class hart_base_t* h)
   } while (!__sync_bool_compare_and_swap(&num_strands, old_n, old_n+1));
   sid = old_n;			// after loop in case of race
   hart_pointer = h;
-  addresses = (long*)mmap(0, 8*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  dieif(!addresses, "Unable to mmap() addresses");
 }
 
 strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const char* envp[])
+  : tcache(conf_tcache), counters(conf_tcache)
 {
-  memset(this, 0, sizeof(strand_t));
+  memset(&s, 0, sizeof(processor_state_t));
   pc = load_elf_binary(argv[0], 1);
-  xrf[2] = initialize_stack(argc, argv, envp);
-  if (pc > xrf[2])
-    xrf[10] = xrf[2];
-  // tcache is global to all strands
-  tcache = (Insn_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  dieif(!tcache, "unable to mmap() tcache");
-  *(long*)tcache = 1; // always has one slot containing number of slots
+  s.xrf[2] = initialize_stack(argc, argv, envp);
+  if (pc > s.xrf[2])
+    s.xrf[10] = s.xrf[2];
   tid = gettid();
   ptnum = pthread_self();
   initialize(h); // do at end because there are atomic stuff in initialize()
@@ -67,8 +60,10 @@ strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const cha
 }
 
 strand_t::strand_t(class hart_base_t* h, strand_t* from)
+  : tcache(conf_tcache), counters(conf_tcache)
 {
-  memcpy(this, from, sizeof(strand_t));
+  memcpy(&s, &from->s, sizeof(processor_state_t));
+  pc = from->pc;		// not in state
   initialize(h);
 }
 
@@ -80,11 +75,11 @@ long strand_t::get_csr(int what)
 {
   switch (what) {
   case CSR_FFLAGS:
-    return fcsr.f.flags;
+    return s.fcsr.f.flags;
   case CSR_FRM:
-    return fcsr.f.rm;
+    return s.fcsr.f.rm;
   case CSR_FCSR:
-    return fcsr.ui;
+    return s.fcsr.ui;
   default:
     die("unsupported CSR number %d", what);
   }
@@ -94,13 +89,13 @@ void strand_t::set_csr(int what, long val)
 {
   switch (what) {
   case CSR_FFLAGS:
-    fcsr.f.flags = val;
+    s.fcsr.f.flags = val;
     break;
   case CSR_FRM:
-    fcsr.f.rm = val;
+    s.fcsr.f.rm = val;
     break;
   case CSR_FCSR:
-    fcsr.ui = val;
+    s.fcsr.ui = val;
     break;
   default:
     die("unsupported CSR number %d", what);
@@ -108,30 +103,37 @@ void strand_t::set_csr(int what, long val)
 }
 
 
-hart_base_t::hart_base_t(hart_base_t* from, bool counting)
+
+
+void Tcache_t::clear()
 {
-  strand_t* s = new strand_t(this, from->strand);
-  memcpy(this, from, sizeof(hart_base_t));
-  strand = s;
-  simulator = from->simulator;
-  if (counting) {
-    _counters = (uint64_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    dieif(!_counters, "Unable to mmap counters array");
-  }
-  else
-    _counters = 0;
+  if (cache == 0)
+    return;
+  memset(cache, 0, _extent*sizeof(uint64_t));
+  _size = 0;
 }
 
-hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[], bool counting)
+Tpointer Tcache_t::add(Header_t* begin, unsigned entries)
+{
+  dieif(_size+entries>_extent, "Tcache::add() _size=%d + %d _extent=%d", _size, entries, _extent);
+  void* before = cache + _size;
+  memcpy(before, begin, entries*sizeof(uint64_t));
+  _size += entries;
+  return before;
+}
+
+
+
+hart_base_t::hart_base_t(hart_base_t* from)
+{
+  memcpy(this, from, sizeof(hart_base_t));
+  strand = new strand_t(this, from->strand);
+}
+
+hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[])
 {
   strand = new strand_t(this, argc, argv, envp);
   syscall = default_syscall_func;
-  if (counting) {
-    _counters = (uint64_t*)mmap(0, conf_tcache*4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    dieif(!_counters, "Unable to mmap counters array");
-  }
-  else
-    _counters = 0;
 }
 
 bool hart_base_t::interpreter() { return strand->interpreter(); }
@@ -214,16 +216,16 @@ void strand_t::print_trace(long pc, Insn_t* i)
   fprintf(stderr, "[%d] ", gettid());
   if (i->rd() == NOREG) {
     if (attributes[i->opcode()] & ATTR_st)
-      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs2()], xrf[i->rs2()]); 
+      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs2()], s.xrf[i->rs2()]); 
     else if ((attributes[i->opcode()] & (ATTR_cj|ATTR_uj)) && (i->rs1() != NOREG))
-      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs1()], xrf[i->rs1()]); 
+      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs1()], s.xrf[i->rs1()]); 
     else if (attributes[i->opcode()] & ATTR_ex)
-      fprintf(stderr, "%4s[%016lx] ", reg_name[10], xrf[10]);
+      fprintf(stderr, "%4s[%016lx] ", reg_name[10], s.xrf[10]);
     else
       fprintf(stderr, "%4s[%16s] ", "", "");
   }
   else
-    fprintf(stderr, "%4s[%016lx] ", reg_name[i->rd()], xrf[i->rd()]);
+    fprintf(stderr, "%4s[%016lx] ", reg_name[i->rd()], s.xrf[i->rd()]);
   labelpc(pc);
   disasm(pc, i, "\n");
 }

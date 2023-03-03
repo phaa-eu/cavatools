@@ -87,8 +87,8 @@ int maintid;
 
 void strand_t::riscv_syscall()
 {
-  long a0=xrf[10], a1=xrf[11], a2=xrf[12], a3=xrf[13], a4=xrf[14], a5=xrf[15];
-  long rvnum = xrf[17];
+  long a0=s.xrf[10], a1=s.xrf[11], a2=s.xrf[12], a3=s.xrf[13], a4=s.xrf[14], a5=s.xrf[15];
+  long rvnum = s.xrf[17];
   if (rvnum<0 || rvnum>HIGHEST_ECALL_NUM || !rv_to_host[rvnum].name) {
     fprintf(stderr, "Illegal ecall number %ld\n", rvnum);
     abort();
@@ -111,11 +111,11 @@ void strand_t::riscv_syscall()
     fprintf(stderr, "[%d] Ecall %s(0x%lx, 0x%lx, 0x%lx, 0x%lx)", tid, name, a0, a1, a2, a3);
   }
   if (sysnum == SYS_clone)
-    xrf[10] = hart_pointer->clone(hart_pointer, (long*)xrf+10);
+    s.xrf[10] = hart_pointer->clone(hart_pointer, (long*)s.xrf+10);
   else
-    xrf[10] = hart_pointer->syscall(hart_pointer, sysnum, (long*)xrf+10);
+    s.xrf[10] = hart_pointer->syscall(hart_pointer, sysnum, (long*)s.xrf+10);
   if (conf_ecall)
-    fprintf(stderr, " -> 0x%lx\n", xrf[10]);
+    fprintf(stderr, " -> 0x%lx\n", s.xrf[10]);
 }
 
 long host_syscall(int sysnum, long* a) {
@@ -178,9 +178,9 @@ void thread_interpreter(strand_t* me)
   me->tid = gettid();
   futex(&me->tid, FUTEX_WAKE, 1);
   
-  me->xrf[2] = me->xrf[11];	// a1 = child_stack
-  me->xrf[4] = me->xrf[13];	// a3 = tls
-  me->xrf[10] = 0;		// indicate child thread
+  me->s.xrf[2] = me->s.xrf[11];	// a1 = child_stack
+  me->s.xrf[4] = me->s.xrf[13];	// a3 = tls
+  me->s.xrf[10] = 0;		// indicate child thread
   me->pc += 4;			// skip over ecall
   me->interpreter();
 }

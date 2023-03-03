@@ -1,6 +1,7 @@
 /*
   Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/mman.h>
@@ -19,6 +20,7 @@ Insn_t decoder(long pc)
   
 #include "decoder.h"
 
+  //  fprintf(stderr, "Illegal instruction pc=%lx, %08x\n", pc, *(unsigned*)pc);
   i.op_code = Op_ILLEGAL;
   return i;
 }

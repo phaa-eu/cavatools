@@ -6,6 +6,7 @@ extern "C" {
 #include "softfloat/softfloat.h"
 #include "softfloat/softfloat_types.h"
 };
+#include <unordered_map>
 
 typedef int64_t		sreg_t;
 typedef uint64_t	reg_t;
@@ -50,12 +51,9 @@ struct Debug_t {
 #endif
 };
 
-
-class strand_t {
-  class hart_base_t* hart_pointer;	// simulation object
+struct processor_state_t {
   reg_t  xrf[32];
   freg_t frf[32];
-  long pc;
   
   union {
     struct {
@@ -64,6 +62,12 @@ class strand_t {
     } f;
     uint32_t ui;
   } fcsr;
+};
+
+class strand_t {
+  class hart_base_t* hart_pointer;	// simulation object
+  processor_state_t s;
+  long pc;
   
   static volatile strand_t* _list;	// for find() using thread id
   volatile strand_t* _next;		// list of strand_t
@@ -73,8 +77,12 @@ class strand_t {
   int tid;				// Linux thread number
   pthread_t ptnum;			// pthread handle
   
-  long* addresses;		// address list is one per strand
+  long addresses[1000];		// address list is one per strand
   Debug_t debug;
+
+  Tcache_t tcache;		// translated instruction cache
+  Tcache_t counters;		// counting array (1:1 with tcache)
+  std::unordered_map<long, Header_t*> bbmap;
 
   void initialize(class hart_base_t* h);
 
@@ -92,7 +100,6 @@ public:
   strand_t(class hart_base_t* h, strand_t* p);
 
   void riscv_syscall();
-  void proxy_ecall();
   
   int interpreter();
   bool single_step(bool show_trace =false);
@@ -112,9 +119,9 @@ public:
 
   template<class T> bool cas(Insn_t* i, long*& ap)
   {
-    T* ptr = (T*)xrf[i->rs1()];
-    T replace =  xrf[i->rs2()];
-    T expect  =  xrf[i->rs3()];
+    T* ptr = (T*)s.xrf[i->rs1()];
+    T replace =  s.xrf[i->rs2()];
+    T expect  =  s.xrf[i->rs3()];
     T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
     *ap++ = (long)ptr;
     return (oldval != expect);

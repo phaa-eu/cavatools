@@ -25,7 +25,7 @@ class hart_t : public hart_base_t {
 public:
   hart_t(int argc, const char* argv[], const char* envp[])
     :hart_base_t(argc, argv, envp) { _executed=0; }
-  hart_t(hart_base_t* from) :hart_base_t(from, have_counters()) { _executed=0; }
+  hart_t(hart_base_t* from) :hart_base_t(from) { _executed=0; }
 
   long executed() { return _executed; }
   void more_insn(long n) { _executed+=n; }
@@ -33,7 +33,7 @@ public:
   static hart_t* list() { return (hart_t*)hart_base_t::list(); }
   hart_t* next() { return (hart_t*)hart_base_t::next(); }
   static hart_t* find(int tid) { return (hart_t*)hart_base_t::find(tid); }
-  friend void simulator(hart_base_t* h, Header_t* bb);
+  friend void simulator(hart_base_t* h, Header_t* bb, uint64_t* counters);
   friend void status_report();
 };
 
@@ -49,7 +49,12 @@ void status_report()
 {
   double realtime = elapse_time();
   long total = hart_t::total_count();
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS ", total, realtime, total/1e6/realtime);
+  static double last_time;
+  static long last_total;
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs MIPS(%3.1f,%3.1f) ", total, realtime,
+	  (total-last_total)/1e6/(realtime-last_time), total/1e6/realtime);
+  last_time = realtime;
+  last_total = total;
   if (hart_t::num_harts() <= 16 && total > 0) {
     char separator = '(';
     for (hart_t* p=hart_t::list(); p; p=p->next()) {
@@ -63,7 +68,7 @@ void status_report()
     fprintf(stderr, "(%d cores)", hart_t::num_harts());
 }
 
-void simulator(hart_base_t* h, Header_t* bb)
+void simulator(hart_base_t* h, Header_t* bb, uint64_t* counters)
 {
   hart_t* c = (hart_t*)h;
   c->more_insn(bb->count);
