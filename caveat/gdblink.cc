@@ -23,7 +23,7 @@ extern option<bool> conf_show;
 
 extern Insn_t* tcache;
 
-long gdb_text, gdb_data, gdb_bss;
+Addr_t gdb_text, gdb_data, gdb_bss;
 
 //	E01 - Command syntax error.
 //	E02 - Error in hex data.
@@ -33,7 +33,7 @@ long gdb_text, gdb_data, gdb_bss;
 
 static int lastGdbSignal = 0;
 static hart_base_t* gdb_cpu;
-static long *gdb_pc;
+static Addr_t *gdb_pc;
 static long *gdb_reg;
 //long gdbNumContinue = -1;	/* program started by 'c' */
 long gdbNumContinue = 0;	/* program started by 'c' */

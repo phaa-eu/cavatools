@@ -11,9 +11,9 @@
 #include "caveat.h"
 #include "strand.h"
 
-std::map<long, const char*> fname; // dictionary of pc->name
+extern option<long> conf_tcache;
 
-option<long> conf_tcache("tcache", 64*1024, "Binary translation cache size");
+std::map<long, const char*> fname; // dictionary of pc->name
 
 long load_elf_binary(const char* file_name, int include_data);
 long initialize_stack(int argc, const char** argv, const char** envp);
@@ -45,7 +45,6 @@ void strand_t::initialize(class hart_base_t* h)
 }
 
 strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const char* envp[])
-  : tcache(conf_tcache), counters(conf_tcache)
 {
   memset(&s, 0, sizeof(processor_state_t));
   pc = load_elf_binary(argv[0], 1);
@@ -60,7 +59,6 @@ strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const cha
 }
 
 strand_t::strand_t(class hart_base_t* h, strand_t* from)
-  : tcache(conf_tcache), counters(conf_tcache)
 {
   memcpy(&s, &from->s, sizeof(processor_state_t));
   pc = from->pc;		// not in state
@@ -105,32 +103,50 @@ void strand_t::set_csr(int what, long val)
 
 
 
+void Counters_t::attach(Tcache_t &tc)
+{
+  array = new uint64_t[tc.extent()];
+  memset((void*)array, 0, tc.extent()*sizeof(uint64_t));
+  tcache = &tc;
+  next = tc.list;
+  tc.list = this;
+}
+
 void Tcache_t::clear()
 {
-  if (cache == 0)
-    return;
-  memset(cache, 0, _extent*sizeof(uint64_t));
+  memset((void*)cache, 0, _extent*sizeof(uint64_t));
+  for (Counters_t* c=list; c; c=c->next) {
+    memset((void*)c->array, 0, _extent*sizeof(uint64_t));
+  }
   _size = 0;
 }
 
-Tpointer Tcache_t::add(Header_t* begin, unsigned entries)
+const Header_t* Tcache_t::add(Header_t* begin, unsigned entries)
 {
   dieif(_size+entries>_extent, "Tcache::add() _size=%d + %d _extent=%d", _size, entries, _extent);
-  void* before = cache + _size;
-  memcpy(before, begin, entries*sizeof(uint64_t));
+  uint64_t* before = cache + _size;
+  //  memcpy(before, begin, entries*sizeof(uint64_t));
+  Header_t* p = (Header_t*)before;
+  for (int k=0; k<entries; k++)
+    *p++ = *begin++;
   _size += entries;
-  return before;
+  return (const Header_t*)before;
 }
+
 
 
 
 hart_base_t::hart_base_t(hart_base_t* from)
+  : tcache(conf_tcache()), counters(conf_tcache())
 {
-  memcpy(this, from, sizeof(hart_base_t));
   strand = new strand_t(this, from->strand);
+  simulator = from->simulator;
+  clone = from->clone;
+  syscall = from->syscall;
 }
 
 hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[])
+  : tcache(conf_tcache()), counters(conf_tcache())
 {
   strand = new strand_t(this, argc, argv, envp);
   syscall = default_syscall_func;
@@ -138,12 +154,12 @@ hart_base_t::hart_base_t(int argc, const char* argv[], const char* envp[])
 
 bool hart_base_t::interpreter() { return strand->interpreter(); }
 bool hart_base_t::single_step(bool show_trace) { return strand->single_step(show_trace); }
-long* hart_base_t::addresses() { return strand->addresses; }
+Addr_t* hart_base_t::addresses() { return strand->addresses; }
 hart_base_t* hart_base_t::list() { return (hart_base_t*)strand_t::_list->hart_pointer; }
 hart_base_t* hart_base_t::next() { return (hart_base_t*)(strand->_next ? strand->_next->hart_pointer : 0); }
 int hart_base_t::number() { return strand->sid; }
-long hart_base_t::tid() { return strand->tid; }
-long hart_base_t::pc() { return strand->pc; }
+int hart_base_t::tid() { return strand->tid; }
+Addr_t hart_base_t::pc() { return strand->pc; }
 
 hart_base_t* hart_base_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart_pointer : 0; }
 int hart_base_t::num_harts() { return strand_t::num_strands; }
@@ -159,12 +175,12 @@ void hart_base_t::print_debug_trace()
 #endif
 }
 
-const char* func_name(long pc) { return fname.count(pc)==1 ? fname.at(pc) : 0; }
+const char* func_name(Addr_t pc) { return fname.count(pc)==1 ? fname.at(pc) : 0; }
 
 
 #define LABEL_WIDTH  16
 #define OFFSET_WIDTH  8
-int slabelpc(char* buf, long pc)
+int slabelpc(char* buf, Addr_t pc)
 {
   auto it = fname.upper_bound(pc);
   it--;
@@ -172,14 +188,14 @@ int slabelpc(char* buf, long pc)
   return sprintf(buf, "%*.*s+%*ld %8lx: ", LABEL_WIDTH, LABEL_WIDTH, (it==fname.end() ? "UNKNOWN" : it->second), -(OFFSET_WIDTH-1), offset, pc);
 }
 
-void labelpc(long pc, FILE* f)
+void labelpc(Addr_t pc, FILE* f)
 {
   char buffer[1024];
   slabelpc(buffer, pc);
   fprintf(f, "%s", buffer);
 }
 
-int sdisasm(char* buf, long pc, Insn_t* i)
+int sdisasm(char* buf, Addr_t pc, const Insn_t* i)
 {
   int n = 0;
   if (i->opcode() == Op_ZERO) {
@@ -204,14 +220,14 @@ int sdisasm(char* buf, long pc, Insn_t* i)
   return n;
 }
 
-void disasm(long pc, Insn_t* i, const char* end, FILE* f)
+void disasm(Addr_t pc, const Insn_t* i, const char* end, FILE* f)
 {
   char buffer[1024];
   sdisasm(buffer, pc, i);
   fprintf(f, "%s%s", buffer, end);
 }
 
-void strand_t::print_trace(long pc, Insn_t* i)
+void strand_t::print_trace(Addr_t pc, Insn_t* i)
 {
   fprintf(stderr, "[%d] ", gettid());
   if (i->rd() == NOREG) {

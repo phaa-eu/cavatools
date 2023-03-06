@@ -12,9 +12,11 @@
 #include "options.h"
 #include "caveat.h"
 
-option<long> conf_report("report", 1000, "Status report every N milliseconds");
+option<long> conf_report("report", 1, "Status report per second");
 option<>     conf_gdb("gdb",	0, "localhost:1234", "Remote GDB connection");
 option<bool> conf_calls("calls",	false, true,			"Show function calls and returns");
+
+option<long> conf_tcache("tcache", 64*1024, "Binary translation cache size");
 
 extern option<bool> conf_show;
 
@@ -68,9 +70,10 @@ void status_report()
     fprintf(stderr, "(%d cores)", hart_t::num_harts());
 }
 
-void simulator(hart_base_t* h, Header_t* bb, uint64_t* counters)
+void simulator(hart_base_t* h, long index)
 {
   hart_t* c = (hart_t*)h;
+  const Header_t* bb = c->tcache.bbptr(index);
   c->more_insn(bb->count);
 }
 
@@ -110,7 +113,7 @@ void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
 void* status_thread(void* arg)
 {
   while (1) {
-    usleep(1000*conf_report);
+    usleep(1000000/conf_report());
     status_report();
   }
 }
@@ -145,13 +148,13 @@ int main(int argc, const char* argv[], const char* envp[])
   }
 #endif
 
-  if (conf_gdb)
-    controlled_by_gdb(conf_gdb, mycpu);
-  else if (conf_show) {
+  if (conf_gdb())
+    controlled_by_gdb(conf_gdb(), mycpu);
+  else if (conf_show()) {
     while (1)
       mycpu->single_step(true);
   }
-  else if (conf_calls) {
+  else if (conf_calls()) {
     int indent = 0;
     while (1) {
 #if 1
@@ -177,7 +180,7 @@ int main(int argc, const char* argv[], const char* envp[])
     }      
   }
   else {
-    if (conf_report > 0) {
+    if (conf_report() > 0) {
       pthread_t tnum;
       dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
     }

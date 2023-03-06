@@ -36,9 +36,9 @@ void status_report()
     char separator = '=';
     for (hart_t* p=hart_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
-      double N = p->executed();
-      double M = p->dc->refs();
-      fprintf(stderr, "%4.2f(%1.0f%%)", N/p->local_clock(), 100.0*p->dc->misses()/N);
+      long N = p->executed();
+      long M = p->dc->refs();
+      fprintf(stderr, "%4.2f(%1.0f%%)", (double)N/p->local_clock(), 100.0*p->dc->misses()/N);
       separator = ',';
     }
   }
@@ -46,45 +46,45 @@ void status_report()
     fprintf(stderr, "(%d cores)", hart_base_t::num_harts());
 }
 
-void dumb_simulator(hart_base_t* h, Header_t* bb)
+void dumb_simulator(hart_base_t* h, long index)
 {
   hart_t* p = (hart_t*)h;
-  long* ap = p->addresses();
-  Insn_t* i = insnp(bb);
-  p->advance(bb->count);
+  Addr_t* ap = p->addresses();
+  const Header_t* bb = p->tcache.bbptr(index);
+  const Insn_t* i = insnp(bb);
+  p->addtime(bb->count);
   for (long k=0; k<bb->count; k++) {
     ++i;
     ATTR_bv_t attr = attributes[i->opcode()];
     if (attr & (ATTR_ld|ATTR_st)) {
       if (!p->dc->lookup(*ap++, (attr&ATTR_st)))
-	p->advance(conf_Dmiss);
+	p->addtime(conf_Dmiss());
     }
   }
+  p->more_insn(bb->count);
 }
 
-void view_simulator(hart_base_t* h, Header_t* bb)
+void view_simulator(hart_base_t* h, long index)
 {
   hart_t* p = (hart_t*)h;
-  long* ap = p->addresses();
-  // long pc = bb->addr;
-  Insn_t* i = insnp(bb);
-  uint64_t* c = &p->counters()[index(bb)];
-  //  *c += bb->count;			// header counts number of executions
-  *c += 1;
-  p->advance(bb->count);
+  Addr_t* ap = p->addresses();
+  const Header_t* bb = p->tcache.bbptr(index);
+  const Insn_t* i = insnp(bb);
+  uint64_t* c = p->counters.wptr(index);
+  *c += 1;			// header counts number of executions
+  p->addtime(bb->count);
   for (long k=0; k<bb->count; k++) {
     ++i, ++c;
     ATTR_bv_t attr = attributes[i->opcode()];
     if (attr & (ATTR_ld|ATTR_st)) {
       if (!p->dc->lookup(*ap++, (attr&ATTR_st))) {
 	*c += 1;
-	p->advance(conf_Dmiss);
+	p->addtime(conf_Dmiss());
       }
     }
     // pc += i->compressed() ? 2 : 4;
   }
-  if (p->more_insn(bb->count))
-    status_report();
+  p->more_insn(bb->count);
 }
 
 void hart_t::print()
@@ -96,10 +96,10 @@ volatile long hart_t::global_time;
 
 void hart_t::initialize()
 {
-  dc = new_cache("Data",   conf_Dways, conf_Dline, conf_Drows, true);
+  dc = new_cache("Data",   conf_Dways(), conf_Dline(), conf_Drows(), true);
+  counters.attach(tcache);
   local_time = 0;
   _executed = 0;
-  next_report = conf_report;
 }  
 
 #define futex(a, b, c)  syscall(SYS_futex, a, b, c, 0, 0, 0)

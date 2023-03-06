@@ -27,7 +27,7 @@ typedef float128_t	freg_t;
 
 
 struct pctrace_t {
-  long pc;
+  Addr_t pc;
   reg_t val;
   Insn_t i;
 };
@@ -67,7 +67,7 @@ struct processor_state_t {
 class strand_t {
   class hart_base_t* hart_pointer;	// simulation object
   processor_state_t s;
-  long pc;
+  Addr_t pc;
   
   static volatile strand_t* _list;	// for find() using thread id
   volatile strand_t* _next;		// list of strand_t
@@ -77,12 +77,10 @@ class strand_t {
   int tid;				// Linux thread number
   pthread_t ptnum;			// pthread handle
   
-  long addresses[1000];		// address list is one per strand
+  Addr_t addresses[1000];	// address list is one per strand
   Debug_t debug;
 
-  Tcache_t tcache;		// translated instruction cache
-  Tcache_t counters;		// counting array (1:1 with tcache)
-  std::unordered_map<long, Header_t*> bbmap;
+  std::unordered_map<long, const Header_t*> bbmap;
 
   void initialize(class hart_base_t* h);
 
@@ -103,7 +101,7 @@ public:
   
   int interpreter();
   bool single_step(bool show_trace =false);
-  void print_trace(long pc, Insn_t* i);
+  void print_trace(Addr_t pc, Insn_t* i);
   void debug_print() { debug.print(); }
   
   static strand_t* find(int tid);
@@ -117,7 +115,7 @@ public:
     return old;
   }
 
-  template<class T> bool cas(Insn_t* i, long*& ap)
+  template<class T> bool cas(const Insn_t* i, Addr_t*& ap)
   {
     T* ptr = (T*)s.xrf[i->rs1()];
     T replace =  s.xrf[i->rs2()];
@@ -127,14 +125,14 @@ public:
     return (oldval != expect);
   }
 
-  template<typename op>	int32_t amo_int32(long a, op f, long*& ap) {
+  template<typename op>	int32_t amo_int32(Addr_t a, op f, Addr_t*& ap) {
     int32_t lhs, *ptr = (int32_t*)a;
     do lhs = *ptr;
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
     *ap++ = (long)ptr;
     return lhs;
   }
-  template<typename op>	int64_t amo_int64(long a, op f, long*& ap) {
+  template<typename op>	int64_t amo_int64(Addr_t a, op f, Addr_t*& ap) {
     int64_t lhs, *ptr = (int64_t*)a;
     do lhs = *ptr;
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));

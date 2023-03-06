@@ -3,6 +3,9 @@
 */
 
 #include <stdint.h>
+
+#include <pthread.h>
+
 #include "opcodes.h"
 
 #define dbmsg(fmt, ...)		       { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n"); }
@@ -23,6 +26,8 @@ extern const uint64_t stop_after[];
 #define VMREG	(VPREG+32)
 #define NOREG	-1
 
+typedef unsigned long Addr_t;
+
 class alignas(8) Insn_t {
   Opcode_t op_code;
   int8_t op_rd;
@@ -37,22 +42,22 @@ class alignas(8) Insn_t {
   };
   void setimm(int16_t v) { op.imm=(v<<1)|0x1; }
 public:
-  bool longimmed() { return (op.imm & 0x1) == 0; }
-  long immed() { return longimmed() ? op_longimm : op.imm>>1; }
+  bool longimmed() const { return (op.imm & 0x1) == 0; }
+  long immed() const { return longimmed() ? op_longimm : op.imm>>1; }
 
-  Opcode_t opcode() { return op_code; }
-  int rd()  { return op_rd; }
-  int rs1() { return op_rs1; }
-  int rs2() { return op.rs2; }
-  int rs3() { return op.rs3; }
-  bool compressed() { return op_code <= Last_Compressed_Opcode; }
+  Opcode_t opcode() const { return op_code; }
+  int rd()  const { return op_rd; }
+  int rs1() const { return op_rs1; }
+  int rs2() const { return op.rs2; }
+  int rs3() const { return op.rs3; }
+  bool compressed() const { return op_code <= Last_Compressed_Opcode; }
 
-  friend Insn_t decoder(long pc);
-  friend void substitute_cas(long pc, Insn_t* i3);
+  friend Insn_t decoder(Addr_t pc);
+  friend void substitute_cas(Addr_t pc, Insn_t* i3);
 };
 static_assert(sizeof(Insn_t) == 8);
 
-Insn_t decoder(long pc);
+Insn_t decoder(Addr_t pc);
 
 /*
   The Translation Cache is an array of 64-bit slots.  A slot can be a translated
@@ -66,47 +71,56 @@ Insn_t decoder(long pc);
   branch have two pointers, the branch-taken target followed by the fall-thru target.
 */
 
-struct Header_t {
-  //  uint16_t count;
-  bool branch		:  1;
-  bool conditional	:  1;
-  uint16_t count	: 14;
-  long addr		: 48;
+struct alignas(8) Header_t {
+  bool conditional	:  1;	// end in conditional branch
+  unsigned count	:  7;	// number of instructions
+  unsigned length	:  8;	// number of 16-bit parcels
+  Addr_t addr		: 48;	// beginning address
+  Header_t(Addr_t a, unsigned l, unsigned c, bool p) { addr=a; length=l; count=c; conditional=p; }
 };
 static_assert(sizeof(Header_t) == 8);
 
-class Tpointer {
-  void* generic;
-public:
-  Tpointer(void* p) { generic=p; }
-  operator Insn_t*() { return (Insn_t*)generic; }
-  operator Header_t*() { return (Header_t*)generic; }
-  operator Header_t**() { return (Header_t**)generic; }
-  operator uint64_t*() { return (uint64_t*)generic; }
-  void operator=(Insn_t v) { *((Insn_t*)generic) = v; }
-  void operator=(Header_t v) { *((Header_t*)generic) = v; }
-  void operator=(Header_t* v) { *((Header_t**)generic) = v; }
-  void operator=(uint64_t v) { *((uint64_t*)generic) = v; }
-};
-
 class Tcache_t {
   uint64_t* cache;
+  volatile unsigned _size;
   unsigned _extent;
-  unsigned _size;
+  class Counters_t* list;	// of counter arrays
+  
+  friend class Counters_t;
+  
 public:
-  void clear();
-  Tcache_t(long l) { cache=new uint64_t[l]; _extent=l; clear(); }
+  pthread_mutex_t lock;
+  
+  Tcache_t(Addr_t l) { cache=new uint64_t[l]; _extent=l; _size=0; list=0; pthread_mutex_init(&lock, NULL); }
   unsigned extent() { return _extent; }
-  unsigned size() { return _size; }
-  Tpointer operator[](unsigned k) { dieif(k>_size, "cache index %u out of bounds %u", k, _size); return { &cache[k] }; }
-  unsigned index(Tpointer  p) { return p-cache; }
-  Tpointer add(Header_t* begin, unsigned entries);
-  void extend(unsigned entries) { _size+=entries; }
+  volatile unsigned size() { return _size; }
+  
+  unsigned index(const Header_t* bb) { return (uint64_t*)bb - cache; }
+  const Header_t* bbptr(unsigned k) { dieif(k>_size, "cache index %u out of bounds %u", k, _size); return (const Header_t*)&cache[k]; }
+  
+  void clear();
+  const Header_t* add(Header_t* begin, unsigned entries);
 };
 
+class Counters_t {
+  uint64_t* array;		// counters parallel tcache
+  Tcache_t* tcache;		// who we are associated with
+  Counters_t* next;		// so tcache can find us
+  friend class Tcache_t;
+public:
+  const uint64_t* ptr(unsigned k) { dieif(k>tcache->size(), "cache index %u out of bounds", k); return &array[k]; }
+  uint64_t* wptr(unsigned k) { dieif(k>tcache->size(), "cache index %u out of bounds", k); return &array[k]; }
+  uint64_t operator[](unsigned k) const { dieif(k>tcache->size(), "cache index %u out of bounds", k); return array[k]; }
+  void attach(Tcache_t &tc);
+};
+
+static inline const Insn_t* insnp(uint64_t p) { return (const Insn_t*)p; }
+static inline const Insn_t* insnp(const Header_t* p) { return (const Insn_t*)p; }
+static inline const Header_t* bbp(uint64_t p) { return (const Header_t*)p; }
+static inline const Header_t* bbp(const Insn_t* p) { return (const Header_t*)p; }
 
 
-typedef void (*simfunc_t)(class hart_base_t* h, Header_t* bb, uint64_t* counters);
+typedef void (*simfunc_t)(class hart_base_t* h, long index);
 typedef long (*syscallfunc_t)(class hart_base_t* h, long num, long* args);
 typedef long (*clonefunc_t)(class hart_base_t* h, long* args);
 
@@ -116,6 +130,9 @@ class hart_base_t {
   friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu);
   friend int clone_thread(hart_base_t* s);
 public:
+  Tcache_t tcache;		// translated instruction cache
+  Tcache_t counters;		// counting array (1:1 with tcache)
+  
   simfunc_t simulator;		// function pointer for simulation
   clonefunc_t clone;		// function pointer just for clone system call
   syscallfunc_t syscall;	// function pointer for other system calls
@@ -127,13 +144,13 @@ public:
   
   bool interpreter();
   bool single_step(bool show_trace =false);
-  long* addresses();
-  long pc();
+  Addr_t* addresses();
+  Addr_t pc();
 
   static hart_base_t* list();
   hart_base_t* next();
   int number();
-  long tid();
+  int tid();
   void set_tid();
   static hart_base_t* find(int tid);
   static int num_harts();
@@ -146,14 +163,18 @@ void start_time();
 double elapse_time();
 void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator);
 
-const char* func_name(long pc);
+const char* func_name(Addr_t pc);
 
 
-int slabelpc(char* buf, long pc);
-void labelpc(long pc, FILE* f =stderr);
-int sdisasm(char* buf, long pc, Insn_t* i);
-void disasm(long pc, Insn_t* i, const char* end ="\n", FILE* f =stderr);
+int slabelpc(char* buf, Addr_t pc);
+void labelpc(Addr_t pc, FILE* f =stderr);
+int sdisasm(char* buf, Addr_t pc, const Insn_t* i);
+void disasm(Addr_t pc, const Insn_t* i, const char* end ="\n", FILE* f =stderr);
 
 int clone_thread(hart_base_t* s);
 long host_syscall(int sysnum, long* a);
 long default_syscall_func(class hart_base_t* h, long num, long* args);
+
+void wait_until_zero(volatile int* vp);
+void release_waiter(volatile int* vp);
+

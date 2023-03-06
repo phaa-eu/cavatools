@@ -10,25 +10,24 @@
   number of times branch prediction failed, etc.
 */
 
-extern option<long> conf_report;
-
 class hart_t : public hart_base_t {
   static volatile long global_time;
   long local_time;
   long _executed;
-  long next_report;
-  long* counter;		// performance counter array, if enabled
   void initialize();
+  
 public:
+  Counters_t counters;
   cache_t* dc;
-  hart_t(hart_base_t* from) :hart_base_t(from, from->have_counters()) { initialize(); }
-  hart_t(int argc, const char* argv[], const char* envp[], bool counters) :hart_base_t(argc, argv, envp, counters) { initialize(); }
+  
+  hart_t(hart_base_t* from) :hart_base_t(from) { initialize(); }
+  hart_t(int argc, const char* argv[], const char* envp[]) :hart_base_t(argc, argv, envp) { initialize(); }
 
   long executed() { return _executed; }
   static long total_count();
-  bool more_insn(long n) { bool s=(_executed+=n)>next_report; if (s) next_report+=conf_report; return s; }
+  void more_insn(long n) { _executed += n; }
   
-  void advance(long delta) { local_time+=delta; }
+  void addtime(long delta) { local_time+=delta; }
   long local_clock() { return local_time; }
   
   long system_clock() { return global_time; }
@@ -42,6 +41,6 @@ public:
   friend void simulator(hart_base_t* h, Header_t* bb);
 };
 
-void view_simulator(hart_base_t* h, Header_t* bb);
-void dumb_simulator(hart_base_t* h, Header_t* bb);
+void view_simulator(hart_base_t* h, long index);
+void dumb_simulator(hart_base_t* h, long index);
 void status_report();

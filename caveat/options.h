@@ -29,7 +29,7 @@ class option : public options_t {
 public:
   option(const char* n, T ini,        const char* e) : options_t(n, e, false) { value=ini;           }
   option(const char* n, T ini, T def, const char* e) : options_t(n, e, true ) { value=ini; none=def; }
-  operator T() { return value; }
+  T operator()() { return value; }
   void setval(const char* v);
   void printval();
 };

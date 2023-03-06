@@ -195,3 +195,16 @@ int clone_thread(hart_base_t* h)
   t.detach();
   return child->tid;
 }
+
+
+void wait_until_zero(volatile int* vp)
+{
+  while (*vp != 0)
+    futex(vp, FUTEX_WAIT, 0);
+}
+
+void release_waiter(volatile int* vp)
+{
+  *vp = 0;
+  futex(vp, FUTEX_WAKE, 1);
+}

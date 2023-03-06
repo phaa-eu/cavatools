@@ -10,7 +10,7 @@
 #include "caveat.h"
 
 
-Insn_t decoder(long pc)
+Insn_t decoder(Addr_t pc)
 {
   int32_t b = *(int32_t*)pc;
   Insn_t i;
