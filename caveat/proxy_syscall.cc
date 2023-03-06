@@ -106,7 +106,7 @@ void strand_t::riscv_syscall()
     }
   }
   //fprintf(stderr, "ecall %ld --> x86 syscall %ld %s\n", rvnum, sysnum, name);
-  if (conf_ecall) {
+  if (conf_ecall()) {
     int tid = gettid();
     fprintf(stderr, "[%d] Ecall %s(0x%lx, 0x%lx, 0x%lx, 0x%lx)", tid, name, a0, a1, a2, a3);
   }
@@ -114,7 +114,7 @@ void strand_t::riscv_syscall()
     s.xrf[10] = hart_pointer->clone(hart_pointer, (long*)s.xrf+10);
   else
     s.xrf[10] = hart_pointer->syscall(hart_pointer, sysnum, (long*)s.xrf+10);
-  if (conf_ecall)
+  if (conf_ecall())
     fprintf(stderr, " -> 0x%lx\n", s.xrf[10]);
 }
 

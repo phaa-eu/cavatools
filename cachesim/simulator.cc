@@ -31,7 +31,10 @@ void status_report()
 {
   double realtime = elapse_time();
   long total = hart_t::total_count();
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs %3.1f MIPS, IPC(D$)", total, realtime, total/1e6/realtime);
+  static double last_time;
+  static long last_total;
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs MIPS(%3.1f,%3.1f), IPC(D$)", total, realtime,
+	  (total-last_total)/1e6/(realtime-last_time), total/1e6/realtime);
   if (hart_base_t::num_harts() <= 16) {
     char separator = '=';
     for (hart_t* p=hart_t::list(); p; p=p->next()) {
@@ -44,6 +47,8 @@ void status_report()
   }
   else if (hart_base_t::num_harts() > 1)
     fprintf(stderr, "(%d cores)", hart_base_t::num_harts());
+  last_total = total;
+  last_time = realtime;
 }
 
 void dumb_simulator(hart_base_t* h, long index)
