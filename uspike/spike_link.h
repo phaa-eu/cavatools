@@ -5,6 +5,7 @@
 #include "trap.h"
 #include "arith.h"
 #include "processor.h"
+#include "internals.h"
 
 #undef MMU
 #undef set_pc
