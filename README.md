@@ -11,9 +11,9 @@ Cavatools simulates a multi-core RISC-V machine.  The simulator runs on X86 Linu
 
 Environment variable RVTOOLS should be path to the riscv-tools tree.  The subtrees are:
 
-    riscv-tools/riscv-opcodes       [from https://github.com/riscv/riscv-opcodes]
-    riscv-tools/riscv-isa-sim       [from https://github.com/riscv-software-src/riscv-isa-sim]
-    riscv-tools/riscv-pk            [from https://github.com/riscv-software-src/riscv-pk]
+    riscv-tools/riscv-opcodes       [from https://github.com/riscv/riscv-opcodes commit 7c3db437d8d3b6961f8eb2931792eaea1c469ff3]
+    riscv-tools/riscv-isa-sim       [from https://github.com/riscv-software-src/riscv-isa-sim commit 761629f197600246226b905f97e0ae62a82ff6af]
+    riscv-tools/riscv-pk            [from https://github.com/riscv-software-src/riscv-pk commit 97b683ed3cbeeb059e5ad3de8f884db734447d56]
     riscv-tools/riscv-gnu-toolchain [from https://github.com/riscv-collab/riscv-gnu-toolchain]
 
 You need to build at least riscv-isa-sim (spike) because uspike links to libraries there.  RVTOOLS defaults to /opt/riscv-tools.
