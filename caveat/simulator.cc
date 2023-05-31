@@ -42,20 +42,20 @@ public:
   long load_model( long a,  long pc);
   long store_model(long a,  long pc);
   void amo_model(  long a,  long pc);
-  cache_t* dcache() { return &dc; }
+  cache_t* dcache() { return dc; }
   long clock() { return local_time; }
   void print();
 private:
-  cache_t ic;
-  cache_t dc;
+  cache_t* ic;
+  cache_t* dc;
 };
 
 inline void mem_t::insn_model(long pc)
 {
-  if (!ic.lookup(pc)) {
-    local_time += ic.penalty();
+  if (!ic->lookup(pc)) {
+    local_time += conf_Imiss;
     inc_imiss(pc);
-    inc_cycle(pc, ic.penalty());
+    inc_cycle(pc, conf_Imiss);
   }
   inc_count(pc);
   inc_cycle(pc);
@@ -71,30 +71,30 @@ inline long mem_t::jump_model(long npc, long pc)
 
 inline long mem_t::load_model(long a, long pc)
 {
-  if (!dc.lookup(a)) {
+  if (!dc->lookup(a)) {
     inc_dmiss(pc);
-    local_time += dc.penalty();
-    inc_cycle(pc, dc.penalty());
+    local_time += conf_Dmiss;
+    inc_cycle(pc, conf_Dmiss);
   }
   return a;
 }
 
 inline long mem_t::store_model(long a, long pc)
 {
-  if (!dc.lookup(a, true)) {
+  if (!dc->lookup(a, true)) {
     inc_dmiss(pc);
-    local_time += dc.penalty();
-    inc_cycle(pc, dc.penalty());
+    local_time += conf_Dmiss;
+    inc_cycle(pc, conf_Dmiss);
   }
   return a;
 }
 
 inline void mem_t::amo_model(long a, long pc)
 {
-  if (!dc.lookup(a, true)) {
+  if (!dc->lookup(a, true)) {
     inc_dmiss(pc);
-    local_time += dc.penalty();
-    inc_cycle(pc, dc.penalty());
+    local_time += conf_Dmiss;
+    inc_cycle(pc, conf_Dmiss);
   }
 }
 
@@ -119,18 +119,17 @@ public:
 volatile long core_t::global_time;
 
 mem_t::mem_t(long n)
-  : perf_t(n),
-    ic("Instruction", conf_Imiss, conf_Iways, conf_Iline, conf_Irows, false),
-    dc("Data",        conf_Dmiss, conf_Dways, conf_Dline, conf_Drows, true)
-		 
+  : perf_t(n)
 {
   local_time = 0;
+  ic = new_cache("Instruction", conf_Iways, conf_Iline, conf_Irows, false);
+  dc = new_cache("Data",        conf_Dways, conf_Dline, conf_Drows, true);
 }
 
 void mem_t::print()
 {
-  ic.print();
-  dc.print();
+  ic->print();
+  dc->print();
 }
 
 core_t::core_t() : hart_t(mem()), mem_t(number())

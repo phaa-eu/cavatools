@@ -45,4 +45,3 @@ lru_fsm_3way.h: make_cache
 
 lru_fsm_4way.h: make_cache
 	./make_cache 4
-

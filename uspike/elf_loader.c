@@ -39,6 +39,29 @@ static long num_syms;
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define CLAMP(a, lo, hi) MIN(MAX(a, lo), hi)
 
+long emulate_brk(long addr)
+{
+  struct pinfo_t* info = &current;
+  long newbrk = addr;
+  if (addr < info->brk_min)
+    newbrk = info->brk_min;
+  else if (addr > info->brk_max)
+    newbrk = info->brk_max;
+
+  if (info->brk == 0)
+    info->brk = ROUNDUP(info->brk_min, RISCV_PGSIZE);
+
+  long newbrk_page = ROUNDUP(newbrk, RISCV_PGSIZE);
+  if (info->brk > newbrk_page)
+    munmap((void*)newbrk_page, info->brk - newbrk_page);
+  else if (info->brk < newbrk_page)
+    assert(mmap((void*)info->brk, newbrk_page - info->brk, -1, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0) == (void*)info->brk);
+  info->brk = newbrk_page;
+
+  return newbrk;
+}
+
+
 /**
  * Get an annoymous memory segment using mmap() and load
  * from file at offset.  Return 0 if fail.

@@ -8,9 +8,9 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-#MINUS_O := -Ofast
+MINUS_O := -Ofast
 #MINUS_O := -O0 -DDEBUG
-MINUS_O := -O3 -DDEBUG
+#MINUS_O := -O3 -DDEBUG
 
 # Paths to riscv-tools build directories on local system
 B := $(RVTOOLS)/riscv-isa-sim

@@ -144,6 +144,8 @@ void hart_t::proxy_syscall(long sysnum)
 	futex(&clone_lock, FUTEX_WAIT, 1);
     }
     break;
+  case SYS_brk:
+    retval = emulate_brk(a0);
   default:
     retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
   }
