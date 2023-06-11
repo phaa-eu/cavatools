@@ -159,6 +159,7 @@ public:
   void print_debug_trace();  
 };
 
+
 void start_time();
 double elapse_time();
 void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator);

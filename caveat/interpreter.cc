@@ -201,7 +201,8 @@ bool strand_t::single_step(bool show_trace)
  end_bb: // at this point pc=target basic block but i still points to last instruction.
   debug.addval(s.xrf[i->rd()]);
   if (conf_show())
-    print_trace(oldpc, i);
+    //    print_trace(oldpc, i);
+    printf("%lx\n", pc);
   hart_pointer->simulator(hart_pointer, 0);
   return false;
 }

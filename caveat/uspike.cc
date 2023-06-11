@@ -129,7 +129,7 @@ int main(int argc, const char* argv[], const char* envp[])
   start_time();
 
 #ifdef DEBUG
-  if (!conf_gdb) {
+  if (!conf_gdb()) {
     static struct sigaction action;
     memset(&action, 0, sizeof(struct sigaction));
     sigemptyset(&action.sa_mask);

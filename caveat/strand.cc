@@ -15,8 +15,15 @@ extern option<long> conf_tcache;
 
 std::map<long, const char*> fname; // dictionary of pc->name
 
-long load_elf_binary(const char* file_name, int include_data);
+#if 0
+class elf_object_t* load_elf_file(const char* filename, uintptr_t bias, Addr_t &entry);
+long initialize_stack(int argc, const char** argv, const char** envp, elf_object_t* elf);
+void read_elf_symbols(const char* filename, uintptr_t bias);
+#else
+long load_elf_binary(const char*, int);
 long initialize_stack(int argc, const char** argv, const char** envp);
+#endif
+
 int elf_find_symbol(const char* name, long* begin, long* end);
 const char* elf_find_pc(long pc, long* offset);
 
@@ -47,10 +54,17 @@ void strand_t::initialize(class hart_base_t* h)
 strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const char* envp[])
 {
   memset(&s, 0, sizeof(processor_state_t));
+#if 0
+  class elf_object_t* elf = load_elf_file(argv[0], 0, pc);
+  read_elf_symbols(argv[0], 0);
+  s.xrf[2] = initialize_stack(argc, argv, envp, elf);
+  //  if (pc > s.xrf[2])
+  //    s.xrf[10] = s.xrf[2];
+#else
   pc = load_elf_binary(argv[0], 1);
   s.xrf[2] = initialize_stack(argc, argv, envp);
-  if (pc > s.xrf[2])
-    s.xrf[10] = s.xrf[2];
+
+#endif
   tid = gettid();
   ptnum = pthread_self();
   initialize(h); // do at end because there are atomic stuff in initialize()
