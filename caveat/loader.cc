@@ -14,6 +14,8 @@
 #include <fcntl.h>
 #include <elf.h>
 
+#include <map>
+
 #define RISCV_PGSHIFT 12
 #define RISCV_PGSIZE (1 << RISCV_PGSHIFT)
 
@@ -43,6 +45,8 @@ const char* elf_find_pc(long pc, long* offset);
 long initialize_stack(int argc, const char** argv, const char** envp);
 long emulate_brk(long addr);
   
+
+extern std::map<long, const char*> fname; // dictionary of pc->name
 
 
 /*
@@ -134,7 +138,6 @@ long load_elf_binary( const char* file_name, int include_data )
   ssize_t ehdr_size;
   size_t phdr_size;
   long number_of_insn;
-  long stack_lowest;
   size_t tblsz;
   char* shstrtbl;
   ssize_t ret;
@@ -204,7 +207,8 @@ long load_elf_binary( const char* file_name, int include_data )
   //  uintptr_t high_bound = 0;
   low_bound  = 0-1;
   high_bound = 0;
-  for (int i=0; i<eh.e_shnum; i++) {
+  //  for (int i=0; i<eh.e_shnum; i++) {
+  for (int i=eh.e_shnum-1; i>=0; i--) {
     assert(lseek(file, eh.e_shoff + i * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
     assert(read(file, &header, sizeof header) >= 0);
     if (strcmp(shstrtbl+header.sh_name, ".bss") == 0 ||
@@ -219,6 +223,12 @@ long load_elf_binary( const char* file_name, int include_data )
       symtbl = (Elf64_Sym*)load_elf_section(file, header.sh_offset, header.sh_size);
       dieif(symtbl==0, "could not read symbol table");
       num_syms = header.sh_size / sizeof(Elf64_Sym);
+#if 1
+      for (int i=0; i<num_syms; i++) {
+	if (ELF64_ST_TYPE(symtbl[i].st_info) == STT_FUNC)
+	  fname[symtbl[i].st_value] = strtbl + symtbl[i].st_name;
+      }
+#endif
     }
     /* find bounds of instruction segment */
     if (header.sh_flags & SHF_EXECINSTR) {
@@ -233,25 +243,27 @@ long load_elf_binary( const char* file_name, int include_data )
   //  fprintf(stderr, "Text segment [0x%lx, 0x%lx)\n", low_bound, high_bound);
   //insnSpace_init(low_bound, high_bound);
   close(file);
-  
-  //  info->stack_top = MEM_END + 0x1000;
-  info->stack_top = MEM_END;
-  stack_lowest = (long)mmap((void*)(info->stack_top-STACK_SIZE), STACK_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  dieif(stack_lowest != info->stack_top-STACK_SIZE, "Could not allocate stack\n");
 
   return current.entry;
 }
 
+struct aux_t {
+  long key;
+  size_t value;
+};
 
 long initialize_stack(int argc, const char** argv, const char** envp)
 {
-//  fprintf(stderr, "current.stack_top=%lx, phdr_size=%lx\n", current.stack_top, current.phdr_size);
+#if 0
+  
+  current.stack_top = MEM_END;
+  long stack_lowest = (long)mmap((void*)(current.stack_top-STACK_SIZE), STACK_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  dieif(stack_lowest != current.stack_top-STACK_SIZE, "Could not allocate stack\n");
 
   // copy phdrs to user stack
-  size_t stack_top = current.stack_top - current.phdr_size;
+  uintptr_t stack_top = current.stack_top - current.phdr_size;
   memcpy((void*)stack_top, (void*)current.phdr, current.phdr_size);
   current.phdr = stack_top;
-
   // copy argv strings to user stack
   for (size_t i=0; i<argc; i++) {
     size_t len = strlen((char*)(uintptr_t)argv[i])+1;
@@ -333,6 +345,87 @@ long initialize_stack(int argc, const char** argv, const char** envp)
     //fprintf(stderr, "AT=%ld, value=%lx, was %lx\n", auxv[i].key, value, old);
   } /* last entry was AT_NULL */
 
+#else
+
+  // allocate stack space
+  void* stack_lowest = mmap((void*)(MEM_END-STACK_SIZE), STACK_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  dieif(stack_lowest != (void*)(MEM_END-STACK_SIZE), "Could not allocate stack\n");
+  uintptr_t stack_top = MEM_END;
+
+  // first comes copy of program header
+  stack_top -= current.phdr_size;
+  memcpy((void*)stack_top, (void*)current.phdr, current.phdr_size);
+
+#define PUSH_STR(x) do {					\
+    stack_top -= strlen(x) + 1;					\
+    memcpy((void*)stack_top, (x), strlen(x)+1);			\
+  } while (0)
+    
+  // envp strings
+  int envc = 0;
+  while (envp[envc]) {
+    PUSH_STR(envp[envc]);
+    envp[envc++] = (const char*)stack_top;
+  }
+  
+  // argv strings
+  for (int i=0; i<argc; i++)
+    PUSH_STR(argv[i]);
+
+  // align stack
+  stack_top &= -16;
+  current.stack_top = stack_top;
+
+#define PUSH_ARG(value) do {				\
+    stack_top -= sizeof(uintptr_t);			\
+    *((uintptr_t*)stack_top) = (uintptr_t)value;	\
+  } while (0)
+
+  // auxv terminated with this entry
+  PUSH_ARG(0);
+  PUSH_ARG(AT_NULL);
+  // auxv is after envp
+  for (struct aux_t* auxv=(struct aux_t*)(&envp[envc+1]); auxv->key != AT_NULL; auxv++) {
+    size_t value = auxv->value;
+    switch (auxv->key) {
+      //case AT_SYSINFO_EHDR:  continue; /* No vDSO */
+      //    case AT_HWCAP:	value = 0; break;
+    case AT_PAGESZ:	value = RISCV_PGSIZE; break;
+    case AT_PHDR:	value = current.phdr; break;
+    case AT_PHENT:	value = (size_t)current.phent; break;
+    case AT_PHNUM:	value = (size_t)current.phnum; break;
+      //    case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
+      //case AT_BASE:	continue;
+    case AT_ENTRY:	value = current.entry; break;
+    case AT_SECURE:	value = 0; break;
+    case AT_RANDOM:	value = current.stack_top; break;
+      //    case AT_HWCAP2:	value = 0; break;
+      //    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
+      //    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
+      //case AT_PLATFORM:	continue;
+    default:
+      continue;
+    }
+    PUSH_ARG(value);
+    PUSH_ARG(auxv->key);
+  }
+
+  // envp[]
+  PUSH_ARG(0);
+  for (int i=envc-1; i>=0; i--)
+    PUSH_ARG(envp[i]);
+
+  // argvp[]
+  PUSH_ARG(0);
+  for (int i=argc-1; i>=0; i--)
+    PUSH_ARG(argv[i]);
+
+  // argc
+  PUSH_ARG(argc);
+
+  current.stack_top = stack_top;
+#endif
+  
   return current.stack_top;
 }
 

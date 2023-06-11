@@ -200,9 +200,10 @@ bool strand_t::single_step(bool show_trace)
   debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
  end_bb: // at this point pc=target basic block but i still points to last instruction.
   debug.addval(s.xrf[i->rd()]);
-  if (conf_show())
-    //    print_trace(oldpc, i);
+  if (conf_show()) {
+    print_trace(oldpc, i);
     printf("%lx\n", pc);
+  }
   hart_pointer->simulator(hart_pointer, 0);
   return false;
 }

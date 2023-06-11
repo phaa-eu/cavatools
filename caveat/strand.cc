@@ -197,9 +197,14 @@ const char* func_name(Addr_t pc) { return fname.count(pc)==1 ? fname.at(pc) : 0;
 int slabelpc(char* buf, Addr_t pc)
 {
   auto it = fname.upper_bound(pc);
-  it--;
-  long offset = pc - (it==fname.end() ? 0 : it->first);
-  return sprintf(buf, "%*.*s+%*ld %8lx: ", LABEL_WIDTH, LABEL_WIDTH, (it==fname.end() ? "UNKNOWN" : it->second), -(OFFSET_WIDTH-1), offset, pc);
+  if (it == fname.end()) {
+    return sprintf(buf, "%*.*s+%*ld %8lx: ", LABEL_WIDTH, LABEL_WIDTH, "NONE", -(OFFSET_WIDTH-1), 0L, pc);
+  }
+  else {
+    it--;
+    long offset = pc - (it==fname.end() ? 0 : it->first);
+    return sprintf(buf, "%*.*s+%*ld %8lx: ", LABEL_WIDTH, LABEL_WIDTH, (it==fname.end() ? "UNKNOWN" : it->second), -(OFFSET_WIDTH-1), offset, pc);
+  }
 }
 
 void labelpc(Addr_t pc, FILE* f)
