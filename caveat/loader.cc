@@ -25,19 +25,13 @@
 
 /*  Process information  */
 struct pinfo_t {
-  long phnum;
-  long phent;
-  long phdr;
-  long phdr_size;
   long entry;
-  long stack_top;
   long brk;
   long brk_min;
   long brk_max;
 };
 
-extern struct pinfo_t current;
-extern unsigned long low_bound, high_bound;
+struct pinfo_t current;
 
 long load_elf_binary(const char* file_name, int include_data);
 int elf_find_symbol(const char* name, long* begin, long* end);
@@ -46,8 +40,6 @@ const char* elf_find_pc(long pc, long* offset);
 long initialize_stack(int argc, const char** argv, const char** envp);
 long emulate_brk(long addr);
   
-
-//extern std::map<long, const char*> fname; // dictionary of pc->name
 extern std::map<long, std::string> fname; // dictionary of pc->name
 
 /*
@@ -61,9 +53,6 @@ extern std::map<long, std::string> fname; // dictionary of pc->name
 #define STACK_SIZE	0x01000000L
 #define BRK_SIZE	0x01000000L
 
-struct pinfo_t current;
-
-static long phdrs[128];
 
 static char* strtbl;
 static Elf64_Sym* symtbl;
@@ -183,31 +172,15 @@ long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
 	   eh.e_ident[2] == 'L'    && eh.e_ident[3] == 'F'),
 	 "Elf header not correct");
 
-  info->phdr = (uint64_t)phdrs;
-  info->phdr_size = sizeof(phdrs);
-  info->phnum = eh.e_phnum;
-  info->phent = sizeof(Elf64_Phdr);
-  info->entry = eh.e_entry + bias;
-  
   phdr_size = eh.e_phnum * sizeof(Elf64_Phdr);
-  quitif(phdr_size > info->phdr_size, "Phdr too big");
-  
-  info->phdr_size = sizeof(phdrs);
 
   dieif(lseek(file, eh.e_phoff, SEEK_SET) < 0, "lseek failed");
-  dieif(read(file, (void*)info->phdr, phdr_size) != (ssize_t)phdr_size, "read(phdr) failed");
-  Elf64_Phdr* ph = (Elf64_Phdr*)info->phdr;
-
-  // don't load dynamic linker at 0, else we can't catch NULL pointer derefs
-  //  uintptr_t bias = 0;
-  //  if (eh.e_type == ET_DYN)
-  //    bias = RISCV_PGSIZE;
+  Elf64_Phdr ph[eh.e_phnum];
+  dieif(read(file, (void*)ph, phdr_size) != (ssize_t)phdr_size, "read(phdr) failed");
   
   for (int i = eh.e_phnum - 1; i >= 0; i--) {
-    //fprintf(stderr, "section %d p_vaddr=0x%lx p_memsz=0x%lx\n", i, ph[i].p_vaddr, ph[i].p_memsz);
     quitif(ph[i].p_type==PT_INTERP, "Not a statically linked ELF program");
     if(ph[i].p_type == PT_LOAD && ph[i].p_memsz) {
-      //fprintf(stderr, "  loaded\n");
       uintptr_t prepad = ph[i].p_vaddr % RISCV_PGSIZE;
       uintptr_t vaddr = ph[i].p_vaddr + bias;
       if (vaddr + ph[i].p_memsz > info->brk_min)
@@ -217,11 +190,6 @@ long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
       void* rc = mmap((void*)(vaddr-prepad), ph[i].p_filesz + prepad, prot | PROT_WRITE, flags2, file, ph[i].p_offset - prepad);
       dieif(rc != (void*)(vaddr-prepad), "mmap(0x%ld) returned %p\n", (vaddr-prepad), rc);
       dbmsg("[%8lx, %8lx, %8lx) mapping from file", vaddr-prepad, vaddr, (vaddr-prepad)+(ph[i].p_filesz+prepad));
-      
-      //      memset((void*)(vaddr-prepad), 0, prepad);
-      
-      //      if (!(prot & PROT_WRITE))
-      //        dieif(mprotect((void*)(vaddr-prepad), ph[i].p_filesz + prepad, prot), "Could not mprotect()\n");
       size_t mapped = ROUNDUP(ph[i].p_filesz + prepad, RISCV_PGSIZE) - prepad;
       if (ph[i].p_memsz > mapped) {
         dieif(mmap((void*)(vaddr+mapped), ph[i].p_memsz - mapped, prot, flags|MAP_ANONYMOUS, 0, 0) != (void*)(vaddr+mapped), "Could not mmap()\n");
@@ -240,14 +208,10 @@ long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
   dieif(lseek(file, header.sh_offset, SEEK_SET) < 0, "lseek failed");
   shstrtbl = new char[header.sh_size];
   dieif(read(file, shstrtbl, header.sh_size) != (ssize_t)header.sh_size, "read shstrtbl failed");
-  
-  //  shstrtbl = (char*)load_elf_section(file, header.sh_offset, header.sh_size);
-  //  assert(shstrtbl);
 
   for (int i=eh.e_shnum-1; i>=0; i--) {
     assert(lseek(file, eh.e_shoff + i * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
     assert(read(file, &header, sizeof header) >= 0);
-    //    dbmsg("section[%2d] alloc=%d nobits=%d %s", i, (header.sh_flags&SHF_ALLOC)!=0, (header.sh_type&SHT_NOBITS)!=0, shstrtbl+header.sh_name);
     if (strcmp(shstrtbl+header.sh_name, ".bss") == 0 ||
 	//	strcmp(shstrtbl+header.sh_name, ".tbss") == 0 ||
 	strcmp(shstrtbl+header.sh_name, ".sbss") == 0) {
@@ -256,13 +220,11 @@ long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
   }
   close(file);
   delete shstrtbl;
-  return info->entry;
+  info->entry = eh.e_entry + bias;
+  return eh.e_entry + bias;
 }
 
 long load_elf_binary( const char* file_name, int include_data )
-/* file_name	- name of ELF binary, must be statically linked for now
-   include_data	- 1=load DATA and BSS segments, 0=load TEXT only
-   returns entry point address */
 {
   long entry = load_elf_file(file_name, 0, &current);
   read_elf_symbols(file_name, 0);
@@ -283,9 +245,18 @@ long initialize_stack(int argc, const char** argv, const char** envp)
   uintptr_t stack_top = MEM_END;
 
   // first comes copy of program header
-  stack_top -= current.phdr_size;
-  memcpy((void*)stack_top, (void*)current.phdr, current.phdr_size);
-
+  int fd = open(argv[0], O_RDONLY, 0);
+  quitif(fd<0, "Unable to open ELF binary file \"%s\"\n", argv[0]);
+  Elf64_Ehdr eh;
+  dieif(read(fd, &eh, sizeof(eh))!=sizeof(eh), "read elf header failed");
+  {
+    size_t phdr_size = eh.e_phnum * sizeof(Elf64_Phdr);
+    stack_top -= eh.e_phnum * sizeof(Elf64_Phdr);
+    dieif(lseek(fd, eh.e_phoff, SEEK_SET) < 0, "lseek failed");
+    dieif(read(fd, (void*)stack_top, phdr_size)!=phdr_size, "read(phdr) failed");
+  }
+  uintptr_t phdrs = stack_top;
+  
 #define PUSH_STR(x) do {					\
     stack_top -= strlen(x) + 1;					\
     memcpy((void*)stack_top, (x), strlen(x)+1);			\
@@ -304,7 +275,8 @@ long initialize_stack(int argc, const char** argv, const char** envp)
 
   // align stack
   stack_top &= -16;
-  current.stack_top = stack_top;
+  //  current.stack_top = stack_top;
+  uintptr_t at_random = stack_top;
 
 #define PUSH_ARG(value) do {				\
     stack_top -= sizeof(uintptr_t);			\
@@ -321,14 +293,14 @@ long initialize_stack(int argc, const char** argv, const char** envp)
       //case AT_SYSINFO_EHDR:  continue; /* No vDSO */
       //    case AT_HWCAP:	value = 0; break;
     case AT_PAGESZ:	value = RISCV_PGSIZE; break;
-    case AT_PHDR:	value = current.phdr; break;
-    case AT_PHENT:	value = (size_t)current.phent; break;
-    case AT_PHNUM:	value = (size_t)current.phnum; break;
+    case AT_PHDR:	value = phdrs; break;
+    case AT_PHENT:	value = sizeof(Elf64_Phdr); break;
+    case AT_PHNUM:	value = (size_t)eh.e_phnum; break;
       //    case AT_BASE:	value = 0XdeadbeefcafebabeL; break; /* usually the dynamic linker */
       //case AT_BASE:	continue;
-    case AT_ENTRY:	value = current.entry; break;
+    case AT_ENTRY:	value = eh.e_entry; break;
     case AT_SECURE:	value = 0; break;
-    case AT_RANDOM:	value = current.stack_top; break;
+    case AT_RANDOM:	value = at_random; break;
       //    case AT_HWCAP2:	value = 0; break;
       //    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
       //    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
@@ -353,8 +325,7 @@ long initialize_stack(int argc, const char** argv, const char** envp)
   // argc
   PUSH_ARG(argc);
 
-  current.stack_top = stack_top;
-  return current.stack_top;
+  return stack_top;
 }
 
 
