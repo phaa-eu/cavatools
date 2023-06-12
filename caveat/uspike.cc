@@ -20,7 +20,7 @@ option<long> conf_tcache("tcache", 64*1024, "Binary translation cache size");
 
 extern option<bool> conf_show;
 
-extern std::map<long, const char*> fname; // dictionary of pc->name
+//extern std::map<long, const char*> fname; // dictionary of pc->name
 
 class hart_t : public hart_base_t {
   long _executed;
@@ -170,11 +170,12 @@ int main(int argc, const char* argv[], const char* envp[])
 #if 1
       if (op==Op_jal || op==Op_c_jalr || op==Op_jalr) {
 	indent++;
-	long pc = mycpu->pc();
-	auto it = fname.find(pc);
+	//	long pc = mycpu->pc();
+	//	auto it = fname.find(pc);
 	//	fprintf(stderr, "\r%*s%s 0x%lx ", indent*4, "", op_name[op], pc);
 	//	fprintf(stderr, " %s from 0x%lx\n", it==fname.end() ? "NOT FOUND" : it->second, oldpc);
-	fprintf(stderr, "\r%*s%s\n", indent*4, "", it==fname.end() ? "NOT FOUND" : it->second);
+	//	fprintf(stderr, "\r%*s%s\n", indent*4, "", it==fname.end() ? "NOT FOUND" : it->second);
+	fprintf(stderr, "\r%*s%s\n", indent*4, "", func_name(mycpu->pc()));
       }
 #endif
     }      
