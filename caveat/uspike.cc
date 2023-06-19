@@ -185,6 +185,7 @@ int main(int argc, const char* argv[], const char* envp[])
       pthread_t tnum;
       dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
     }
+    dbmsg("Begin executing at 0x%lx", mycpu->pc());
     int retval = mycpu->interpreter();
     //terminate_threads();
     fprintf(stderr, "\n");

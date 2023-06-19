@@ -22,7 +22,8 @@ bins := uspike.o gdblink.o $(libfiles)
 CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include
 CFLAGS := -I$(RVTOOLS)/riscv-gnu-toolchain/ -g -O0
 LIBS := ~/lib/libsoftfloat.a
-LDFLAGS := -Wl,-Ttext=70000000
+#LDFLAGS := -Wl,-Ttext=70000000
+LDFLAGS := -Wl,-Ttext=70000000 -static
 
 uspike: $(bins)
 	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) $(LIBS)
@@ -37,8 +38,10 @@ proxy_syscall.o: ecall_nums.h
 gdblink.o:  caveat.h strand.h
 
 # Python scripts to create various files
-ecall_nums.h: Makefile syscall_mapping
-	./syscall_mapping < syscalls-riscv64 > $@
+#ecall_nums.h: Makefile syscall_mapping
+ecall_nums.h: Makefile munge_syscalls.py
+	python munge_syscalls.py > ecall_nums.h
+#	./syscall_mapping < syscalls-riscv64 > $@
 
 # Create riscv opcodes
 opcodes.h:

@@ -18,11 +18,13 @@ std::map<long, std::string> fname; // dictionary of pc->name
 
 const char* func_name(Addr_t pc) { return fname.count(pc)==1 ? const_cast<const char*>(fname.at(pc).c_str()) : "NOT FOUND"; }
 
-long load_elf_binary(const char*, int);
-long initialize_stack(int argc, const char** argv, const char** envp);
+long emulate_execve(const char* filename, int argc, const char* argv[], const char* envp[], uintptr_t& pc);
+		    
+//long load_elf_binary(const char*, int);
+//long initialize_stack(int argc, const char** argv, const char** envp);
 
-int elf_find_symbol(const char* name, long* begin, long* end);
-const char* elf_find_pc(long pc, long* offset);
+//int elf_find_symbol(const char* name, long* begin, long* end);
+//const char* elf_find_pc(long pc, long* offset);
 
 volatile strand_t* strand_t::_list =0;
 volatile int strand_t::num_strands =0;
@@ -53,8 +55,10 @@ strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const cha
   memset(&s, 0, sizeof(processor_state_t));
   //  if (pc > s.xrf[2])
   //    s.xrf[10] = s.xrf[2];
-  pc = load_elf_binary(argv[0], 1);
-  s.xrf[2] = initialize_stack(argc, argv, envp);
+  long stack_pointer;
+  s.xrf[2] = emulate_execve(argv[0], argc, argv, envp, pc);
+  //  pc = load_elf_binary(argv[0], 1);
+  //  s.xrf[2] = initialize_stack(argc, argv, envp);
   tid = gettid();
   ptnum = pthread_self();
   initialize(h); // do at end because there are atomic stuff in initialize()
@@ -240,23 +244,23 @@ void disasm(Addr_t pc, const Insn_t* i, const char* end, FILE* f)
   fprintf(f, "%s%s", buffer, end);
 }
 
-void strand_t::print_trace(Addr_t pc, Insn_t* i)
+void strand_t::print_trace(Addr_t pc, Insn_t* i, FILE* out)
 {
-  fprintf(stderr, "[%d] ", gettid());
+  fprintf(out, "[%d] ", gettid());
   if (i->rd() == NOREG) {
     if (attributes[i->opcode()] & ATTR_st)
-      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs2()], s.xrf[i->rs2()]); 
+      fprintf(out, "%4s[%016lx] ", reg_name[i->rs2()], s.xrf[i->rs2()]); 
     else if ((attributes[i->opcode()] & (ATTR_cj|ATTR_uj)) && (i->rs1() != NOREG))
-      fprintf(stderr, "%4s[%016lx] ", reg_name[i->rs1()], s.xrf[i->rs1()]); 
+      fprintf(out, "%4s[%016lx] ", reg_name[i->rs1()], s.xrf[i->rs1()]); 
     else if (attributes[i->opcode()] & ATTR_ex)
-      fprintf(stderr, "%4s[%016lx] ", reg_name[10], s.xrf[10]);
+      fprintf(out, "%4s[%016lx] ", reg_name[10], s.xrf[10]);
     else
-      fprintf(stderr, "%4s[%16s] ", "", "");
+      fprintf(out, "%4s[%16s] ", "", "");
   }
   else
-    fprintf(stderr, "%4s[%016lx] ", reg_name[i->rd()], s.xrf[i->rd()]);
-  labelpc(pc);
-  disasm(pc, i, "\n");
+    fprintf(out, "%4s[%016lx] ", reg_name[i->rd()], s.xrf[i->rd()]);
+  labelpc(pc, stdout);
+  disasm(pc, i, "\n", stdout);
 }
 
 #ifdef DEBUG

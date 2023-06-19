@@ -23,7 +23,8 @@ struct pctrace_t {
   Insn_t i;
 };
 
-#define PCTRACEBUFSZ  (1<<7)
+//#define PCTRACEBUFSZ  (1<<7)
+#define PCTRACEBUFSZ  32
 struct Debug_t {
   pctrace_t trace[PCTRACEBUFSZ];
   int cursor;
@@ -92,7 +93,7 @@ public:
   
   int interpreter();
   bool single_step(bool show_trace =false);
-  void print_trace(Addr_t pc, Insn_t* i);
+  void print_trace(Addr_t pc, Insn_t* i, FILE* out =stderr);
   void debug_print() { debug.print(); }
   
   static strand_t* find(int tid);

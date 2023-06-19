@@ -26,7 +26,8 @@ extern const uint64_t stop_after[];
 #define VMREG	(VPREG+32)
 #define NOREG	-1
 
-typedef unsigned long Addr_t;
+//typedef unsigned long Addr_t;
+#define Addr_t  uintptr_t
 
 class alignas(8) Insn_t {
   Opcode_t op_code;

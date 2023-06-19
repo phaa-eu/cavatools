@@ -108,17 +108,33 @@ void strand_t::riscv_syscall()
   //fprintf(stderr, "ecall %ld --> x86 syscall %ld %s\n", rvnum, sysnum, name);
   if (conf_ecall()) {
     int tid = gettid();
-    fprintf(stderr, "[%d] Ecall %s(0x%lx, 0x%lx, 0x%lx, 0x%lx)", tid, name, a0, a1, a2, a3);
+    fprintf(stderr, "[%d] Ecall %s( %ld(0x%lx), %ld(0x%lx), %ld(0x%lx), %ld(0x%lx) )", tid, name, a0, a0, a1, a1, a2, a2, a3, a3);
   }
   if (sysnum == SYS_clone)
     s.xrf[10] = hart_pointer->clone(hart_pointer, (long*)s.xrf+10);
   else
     s.xrf[10] = hart_pointer->syscall(hart_pointer, sysnum, (long*)s.xrf+10);
   if (conf_ecall())
-    fprintf(stderr, " -> 0x%lx\n", s.xrf[10]);
+    fprintf(stderr, " -> %ld(0x%lx)\n", s.xrf[10], s.xrf[10]);
 }
 
-long host_syscall(int sysnum, long* a) {
+#define prefix(x) (strncmp(path, x, strlen(x))==0)
+static char riscv_file[5000];
+char* riscv_remap(char* path)
+{
+  if (prefix("/lib") || prefix("/etc")) {
+    const char* sysroot = "/opt/riscv/sysroot";
+    strcpy(riscv_file, sysroot);
+    strcpy(riscv_file+strlen(sysroot), path);
+    dbmsg("mapping %s to %s", path, riscv_file);
+    return riscv_file;
+  }
+  else
+    return path;
+}
+
+long host_syscall(int sysnum, long* a)
+{
   long retval=0;
   switch (sysnum) {
     
@@ -134,22 +150,37 @@ long host_syscall(int sysnum, long* a) {
 	sleep(1000);
     }
     
-#if 1
+#if 0
   case SYS_brk:
     //fprintf(stderr, "SYS_brk(%lx)\n", a0);
     //    retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
     //fprintf(stderr, "current.brk = 0x%lx\n", current.brk);
     retval = emulate_brk(a[0]);
-    break;
+    return retval;
 #endif
     
   case SYS_clone:
     fprintf(stderr, "Simulator must handle clones!\n");
     abort();
+
+  case SYS_mmap:
+    fprintf(stderr, "mmap flag MAP_FIXED=%d\n", (a[3]&MAP_FIXED)!=0);
+    break;
+
+#if 1
+  case SYS_open:
+    a[0] = (long)riscv_remap((char*)a[0]);
+    break;
+  case SYS_openat:
+  case SYS_openat2:
+    a[1] = (long)riscv_remap((char*)a[1]);
+    break;
+#endif
     
   default:
-    retval = asm_syscall(sysnum, a[0], a[1], a[2], a[3], a[4], a[5]);
+    ;
   }
+  retval = asm_syscall(sysnum, a[0], a[1], a[2], a[3], a[4], a[5]);
   return retval;
 }
  

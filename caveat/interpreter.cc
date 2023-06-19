@@ -86,7 +86,7 @@ int strand_t::interpreter()
 	    //	  wbb->length = dpc - pc;
 	    //	  wbb->count = j - (Insn_t*)wbb;
 	    //	  wbb->conditional = (attributes[j->opcode()] & ATTR_cj) != 0;
-	  dieif(wbb->addr >= 0x10000000L, "wbb->addr = %lx\n", wbb->addr);
+	  //	  dieif(wbb->addr >= 0x10000000L, "wbb->addr = %lx\n", wbb->addr);
 	  //
 	  // Always end with one pointer to next basic block
 	  // Conditional branches have second fall-thru pointer
@@ -201,8 +201,8 @@ bool strand_t::single_step(bool show_trace)
  end_bb: // at this point pc=target basic block but i still points to last instruction.
   debug.addval(s.xrf[i->rd()]);
   if (conf_show()) {
-    print_trace(oldpc, i);
-    printf("%lx\n", pc);
+    print_trace(oldpc, i, stdout);
+    //printf("%lx\n", pc);
   }
   hart_pointer->simulator(hart_pointer, 0);
   return false;
