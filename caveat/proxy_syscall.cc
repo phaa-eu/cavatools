@@ -150,7 +150,7 @@ long host_syscall(int sysnum, long* a)
 	sleep(1000);
     }
     
-#if 0
+#if 1
   case SYS_brk:
     //fprintf(stderr, "SYS_brk(%lx)\n", a0);
     //    retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);

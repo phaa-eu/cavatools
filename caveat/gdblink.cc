@@ -467,7 +467,8 @@ ProcessGdbCommand() {
 	  Reply("E01");
       }
       break;
-
+      
+#if 0
     case 'q':
       msg("gdb command: q");
       if (RcvWord("Offsets")) {
@@ -494,6 +495,7 @@ ProcessGdbCommand() {
       }
 #endif
       break;
+#endif
 
     } /* switch */
     SendPacket();		// Resets outPtr to beginning of outBuffer.
@@ -529,6 +531,7 @@ void controlled_by_gdb(const char* host_port, hart_base_t* cpu)
   gdb_cpu = cpu;
   gdb_pc = &cpu->strand->pc;
   gdb_reg = (long*)cpu->strand->s.xrf;
+  conf_show.setval("toggle");
   msg("Opening TCP link to GDB\n");
   OpenTcpLink(host_port);
   //  signal(SIGABRT, signal_handler);

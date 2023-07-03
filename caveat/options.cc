@@ -16,7 +16,8 @@ template <> void option<int>  ::printval() { fprintf(stderr, "%d", value); }
 template <> void option<long> ::setval(const char* v) { if (!v) value=none; else value=atoi(v); }
 template <> void option<long> ::printval() { fprintf(stderr, "%ld", value); }
 
-template <> void option<bool> ::setval(const char* v) { if (!v) value=none; else help_exit(); }
+//template <> void option<bool> ::setval(const char* v) { if (!v) value=none; else help_exit(); }
+template <> void option<bool> ::setval(const char* v) { if (!v) value=none; else value=!value; }
 template <> void option<bool> ::printval() { fprintf(stderr, "%s", value?"true":"false"); }
 
 options_t* options_t::list = 0;

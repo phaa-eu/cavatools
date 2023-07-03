@@ -4,6 +4,7 @@
 
 #include <unistd.h>
 #include <stdint.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -25,8 +26,6 @@
 
 /*  Process information  */
 struct pinfo_t {
-  uintptr_t base;
-  uintptr_t phdr;
   uintptr_t phnum;
   uintptr_t entry;
   char* path;
@@ -37,6 +36,7 @@ struct pinfo_t {
 
 struct pinfo_t current;
 struct pinfo_t interp;
+uintptr_t phdrs = 0xdeadbeef;
 
 //long load_elf_binary(const char* file_name, int include_data);
 //int elf_find_symbol(const char* name, long* begin, long* end);
@@ -168,15 +168,15 @@ static void read_elf_symbols(const char* filename, uintptr_t bias)
       break;
     }
   }
-  {
-    if (symaddr.count("_rtld_global_ro")) {
-      //  fprintf(stderr, "_dl_inhibit_cache %lx\n", symaddr["_dl_inhibit_cache"]);
-      fprintf(stderr, "_rtld_global_ro %lx\n", symaddr["_rtld_global_ro"]);
-      int* p = (int*)(symaddr["_rtld_global_ro"] + 32);
-      fprintf(stderr, "  _dl_inhibit_cache=%d\n", *p);
-      *p = 1;
-    }
+  
+  // hack to inhibit ld.so.cache
+  if (symaddr.count("_rtld_global_ro")) {
+    dbmsg("_rtld_global_ro 0x%lx setting to 1", symaddr["_rtld_global_ro"]);
+    int* p = (int*)(symaddr["_rtld_global_ro"] + 32);
+    *p = 1;
   }
+  else
+    dbmsg("_rtld_global_ro not found");
 	  
   //  for (auto it=fname.begin(); it!=fname.end(); it++)
   //    fprintf(stderr, "%16lx  %s\n", it->first, const_cast<const char*>(it->second.c_str()));
@@ -185,7 +185,7 @@ static void read_elf_symbols(const char* filename, uintptr_t bias)
   close(fd);
 }
 
-static ssize_t at_base = 0;
+static uintptr_t at_base = 0;
 static uintptr_t hack_bias;
 
 static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
@@ -211,13 +211,14 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
 
   phdr_size = eh.e_phnum * sizeof(Elf64_Phdr);
 
-  if (eh.e_type == ET_DYN)
+  if (eh.e_type == ET_DYN && bias == 0) {
     bias = INTERP_BASE;
-
-  hack_bias = bias;
+    hack_bias = bias;
+  }
   
   info->phnum = eh.e_phnum;
   info->entry = eh.e_entry + bias;
+  uintptr_t entry = info->entry; // may be overwritten if PT_INTERP
   info->path = new char[strlen(file_name)+1];
   strcpy(info->path, file_name);
 
@@ -225,75 +226,58 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
   Elf64_Phdr ph[eh.e_phnum];
   dieif(read(file, (void*)ph, phdr_size) != (ssize_t)phdr_size, "read(phdr) failed");
 
-  // first load dynamic loader
-  
+  // load dynamic loader if necessary (recursion)
   for (int i = eh.e_phnum - 1; i >= 0; i--) {
-    //    quitif(ph[i].p_type==PT_INTERP, "Not a statically linked ELF program");
     if (ph[i].p_type == PT_INTERP) {
-#if 1
       const char* sysroot = "/opt/riscv/sysroot";
       char lib_name[strlen(sysroot) + ph[i].p_filesz + 1];
       strcpy(lib_name, sysroot);
       dieif(lseek(file, ph[i].p_offset, SEEK_SET) < 0, "PT_INTERP lseek failed");
       dieif(read(file, lib_name+strlen(sysroot), ph[i].p_filesz) != ph[i].p_filesz, "PT_INTERP read failed");
-#else
-      const char* lib_name = "/home/peterhsu/rvlib/ld-linux-riscv64-lp64d.so.1";
-#endif
-
-      info->entry = load_elf_file(lib_name, INTERP_BASE, &interp);
-      
-      fname[info->entry      ] = "dynamic_linker_start";
-      fname[info->entry+0x7c8] = "_dl_start";
+      entry = load_elf_file(lib_name, INTERP_BASE, &interp);
       read_elf_symbols(lib_name, INTERP_BASE);
-      
-      //      close(file);
-      //      return info->entry;
+      break;
     }
   }
   
-  for (int i = eh.e_phnum - 1; i >= 0; i--) {
-    //    quitif(ph[i].p_type==PT_INTERP, "Not a statically linked ELF program");
-#if 0
-    if (ph[i].p_type == PT_INTERP) {
-#if 0
-      const char* sysroot = "/opt/riscv/sysroot";
-      char lib_name[strlen(sysroot) + ph[i].p_filesz + 1];
-      strcpy(lib_name, sysroot);
-      dieif(lseek(file, ph[i].p_offset, SEEK_SET) < 0, "PT_INTERP lseek failed");
-      dieif(read(file, lib_name+strlen(sysroot), ph[i].p_filesz) != ph[i].p_filesz, "PT_INTERP read failed");
-#else
-      const char* lib_name = "/home/peterhsu/rvlib/ld-linux-riscv64-lp64d.so.1";
-#endif
-      info->entry = load_elf_file(lib_name, INTERP_BASE, &interp);
-      //      fname[info->entry      ] = "dynamic_linker_start";
-      //      fname[info->entry+0x7c8] = "_dl_start";
-      read_elf_symbols(lib_name, INTERP_BASE);
-    }
-#endif
-    
-    if(ph[i].p_type == PT_LOAD && ph[i].p_memsz) {
-      uintptr_t prepad = ph[i].p_vaddr % RISCV_PGSIZE;
-      uintptr_t vaddr = ph[i].p_vaddr + bias;
-      if (vaddr + ph[i].p_memsz > info->brk_min)
-        info->brk_min = vaddr + ph[i].p_memsz;
-      int flags2 = flags | (prepad ? MAP_POPULATE : 0);
-      int prot = get_prot(ph[i].p_flags);
-      void* rc = mmap((void*)(vaddr-prepad), ph[i].p_filesz + prepad, prot | PROT_WRITE, flags2, file, ph[i].p_offset - prepad);
-      dieif(rc != (void*)(vaddr-prepad), "mmap(0x%ld) returned %p\n", (vaddr-prepad), rc);
-      dbmsg("[%8lx, %8lx, %8lx) mapping from file", vaddr-prepad, vaddr, (vaddr-prepad)+(ph[i].p_filesz+prepad));
-      
-      info->base = vaddr-prepad;
-      info->phdr = info->base + eh.e_phoff;
-      
-      size_t mapped = ROUNDUP(ph[i].p_filesz + prepad, RISCV_PGSIZE) - prepad;
-      if (ph[i].p_memsz > mapped) {
-        dieif(mmap((void*)(vaddr+mapped), ph[i].p_memsz - mapped, prot, flags|MAP_ANONYMOUS, 0, 0) != (void*)(vaddr+mapped), "Could not mmap()\n");
-	
-	dbmsg("[%8lx, %8s, %8lx) zero mapped", vaddr+mapped, "", (vaddr+mapped)+ph[i].p_memsz);
-      }
-    }
-    info->brk_max = info->brk_min + BRK_SIZE;
+  // find address range of loaded sections
+  uintptr_t first = -1L;
+  uintptr_t last = 0L;
+  for (int i=eh.e_phnum-1; i>=0; i--) {
+    if (ph[i].p_type != PT_LOAD)
+      continue;
+    uintptr_t begin = ph[i].p_vaddr + bias;
+    uintptr_t end = begin + ph[i].p_memsz;
+    if (begin < first)
+      first = begin;
+    if (end > last)
+      last = end;
   }
+  // set brk to end of initialized area
+  info->brk_min = last;
+  info->brk_max = last + BRK_SIZE;
+  // round down to page boundry to get mmap region
+  uintptr_t prepad = first % RISCV_PGSIZE;
+  void* base = (void*)(first - prepad);
+  size_t len = last - first + prepad;
+  dieif(mmap(base, len, PROT_READ|PROT_WRITE, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0)!=base, "mmap() failed");
+  // first read file header into prepad
+  dieif(lseek(file, 0, SEEK_SET) < 0, "lseek failed");
+  dieif(read(file, base, prepad)!=prepad, "read failed");
+  for (int i=0; i<eh.e_phnum; i++) {
+    if (ph[i].p_type != PT_LOAD)
+      continue;
+    dieif(lseek(file, ph[i].p_offset, SEEK_SET) < 0, "lseek failed");
+    dieif(read(file, (void*)(ph[i].p_vaddr+bias), ph[i].p_filesz)!=ph[i].p_filesz, "read failed");
+    // check for .bss and friends
+    size_t zeros = ph[i].p_memsz - ph[i].p_filesz;
+    if (zeros > 0) {
+      uintptr_t begin = ph[i].p_vaddr + bias + ph[i].p_filesz;
+      memset((void*)begin, 0, zeros);
+    }
+  }
+  // record program header address for aux vector
+  phdrs = (uintptr_t)base + eh.e_phoff;
 
   /* Read section header string table. */
   Elf64_Shdr header;
@@ -316,14 +300,14 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
 
   close(file);
   delete shstrtbl;
-  return info->entry;
+  return entry;
 }
 
 static long load_elf_binary(const char* file_name)
 {
   long entry = load_elf_file(file_name, 0, &current);
-  //  read_elf_symbols(file_name, hack_bias);
-  read_elf_symbols(file_name, 0);
+  read_elf_symbols(file_name, hack_bias);
+  //read_elf_symbols(file_name, 0);
   return entry;
 }
 
@@ -346,13 +330,17 @@ static long initialize_stack(int argc, const char** argv, const char** envp, pin
   Elf64_Ehdr eh;
   dieif(read(fd, &eh, sizeof(eh))!=sizeof(eh), "read elf header failed");
   {
-    size_t phdr_size = eh.e_phnum * sizeof(Elf64_Phdr);
-    stack_top -= eh.e_phnum * sizeof(Elf64_Phdr);
-    dieif(lseek(fd, eh.e_phoff, SEEK_SET) < 0, "lseek failed");
+    //    size_t phdr_size = eh.e_phnum * sizeof(Elf64_Phdr);
+    size_t phdr_size = eh.e_phoff + eh.e_phnum * sizeof(Elf64_Phdr);
+    //    size_t phdr_size = 4096;
+    stack_top -= phdr_size;
+    //    dieif(lseek(fd, eh.e_phoff, SEEK_SET) < 0, "lseek failed");
+    dieif(lseek(fd, 0, SEEK_SET) < 0, "lseek failed");
     dieif(read(fd, (void*)stack_top, phdr_size)!=phdr_size, "read(phdr) failed");
   }
   close(fd);
-  uintptr_t phdrs = stack_top;
+  //  uintptr_t phdrs = stack_top;
+  //  uintptr_t phdrs = stack_top + eh.e_phoff;
 
   // copy string onto stack
 #define PUSH_STR(x)  ( stack_top-=strlen(x)+1, memcpy((void*)stack_top, (x), strlen(x)+1), (const char*)x )
@@ -361,11 +349,11 @@ static long initialize_stack(int argc, const char** argv, const char** envp, pin
   //  for (int i=0; i<argc; i++)
   for (int i=0; argv[i]; i++)
     argv[i] = PUSH_STR(argv[i]);
-    
+
   // envp strings
   int envc = 0;
   while (envp[envc]) {
-    envp[envc] = PUSH_STR(envp[envc]);
+    PUSH_STR(envp[envc]);
     envc++;
   }
 
@@ -381,32 +369,39 @@ static long initialize_stack(int argc, const char** argv, const char** envp, pin
   // auxv terminated with NULL entry
   PUSH_ARG(0);
   PUSH_ARG(AT_NULL);
-  
+
   for (struct aux_t* auxv=(struct aux_t*)(&envp[envc+1]); auxv->key != AT_NULL; auxv++) {
     size_t value = auxv->value;
     switch (auxv->key) {
       
     case AT_PAGESZ:	value = RISCV_PGSIZE; break;
-    case AT_PHDR:	value = info->phdr; break;
+    case AT_PHDR:	value = phdrs; break;
     case AT_PHENT:	value = sizeof(Elf64_Phdr); break;
     case AT_PHNUM:	value = info->phnum; break;
     case AT_ENTRY:	value = info->entry; break;
       
     case AT_SECURE:	value = 0; break;
     case AT_RANDOM:	value = at_random; break;
-    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
+    case AT_EXECFN:	value = (size_t)argv[0]; break;
     case AT_PLATFORM:	value = (size_t)"riscv64"; break;
-    case AT_HWCAP:	value = 0; break;
-
+      
+    case AT_HWCAP:	  continue;
     case AT_HWCAP2:	  continue;
-      //    case AT_SYSINFO_EHDR: continue; /* No vDSO */
+    case AT_SYSINFO_EHDR: continue; /* No vDSO */
+      
     case AT_BASE:
-      if (!at_base)
-	continue;
+      if (at_base == 0)  continue;
       value = at_base;
       break;
-    default:
+
+    case AT_UID:
+    case AT_EUID:
+    case AT_GID:
+    case AT_EGID:
       break;
+      
+    default:
+      continue;
     }
     PUSH_ARG(value);
     PUSH_ARG(auxv->key);
@@ -414,185 +409,13 @@ static long initialize_stack(int argc, const char** argv, const char** envp, pin
   
   // envp[]
   PUSH_ARG(0);
-  for (int i=envc-1; i>=0; i--)
+
+  for (int i=envc-1; i>=0; i--) {
+    if (envp[i] == 0)
+      continue;
+    fprintf(stderr, "%s\n", envp[i]);
     PUSH_ARG(envp[i]);
-
-  // argvp[]
-  PUSH_ARG(0);
-  for (int i=argc-1; i>=0; i--)
-    PUSH_ARG(argv[i]);
-
-  // argc
-  //  PUSH_ARG(argc);
-  stack_top -= 4;
-  *((int*)stack_top) = argc;
-
-
-
-
-#if 0  
-  
-#define PUSH_STR(x) do {					\
-    stack_top -= strlen(x) + 1;					\
-    memcpy((void*)stack_top, (x), strlen(x)+1);			\
-    *ap++ = (const char*)stack_top;				\
-  } while (0)
-
-  // construct argument arrays
-  const char* argptrs[1000];
-  const char** ap = argptrs;
-
-#if 0
-  if (interp.base) {
-    // extra arguments before argv[0]
-    //argc += 2;
-    argc += 1;
-    *ap++ = (const char*)(long)argc; // first argument
-    PUSH_STR(interp.path);
-    //PUSH_STR("--inhibit-cache");
   }
-  else {
-    *ap++ = (const char*)(long)argc; // first argument
-  }
-#endif
-  
-  *ap++ = (const char*)(long)argc; // first argument
-  
-  // argv strings
-  //  for (int i=0; i<argc; i++)
-  for (int i=0; argv[i]; i++)
-    PUSH_STR(argv[i]);
-  *ap++ = 0;
-    
-  // envp strings
-  int envc = 0;
-  while (envp[envc]) {
-    PUSH_STR(envp[envc]);
-    envc++;
-  }
-
-#if 1
-  // extra env strings -- don't increment envc!
-  PUSH_STR("LD_DEBUG=libs");
-#endif
-  
-  *ap++ = 0;
-
-  // align stack
-  stack_top &= -16;
-  //  current.stack_top = stack_top;
-  uintptr_t at_random = stack_top;
-
-#define PUSH_ARG(value) do {				\
-    stack_top -= sizeof(uintptr_t);			\
-    *((uintptr_t*)stack_top) = (uintptr_t)value;	\
-  } while (0)
-
-  // auxv terminated with this entry
-  PUSH_ARG(0);
-  PUSH_ARG(AT_NULL);
-  // auxv is after envp
-#if 1
-  
-  for (struct aux_t* auxv=(struct aux_t*)(&envp[envc+1]); auxv->key != AT_NULL; auxv++) {
-    size_t value = auxv->value;
-    switch (auxv->key) {
-      
-    case AT_PAGESZ:	value = RISCV_PGSIZE; break;
-    case AT_PHDR:	value = info->phdr; break;
-    case AT_PHENT:	value = sizeof(Elf64_Phdr); break;
-    case AT_PHNUM:	value = info->phnum; break;
-    case AT_ENTRY:	value = info->entry; break;
-      
-    case AT_SECURE:	value = 0; break;
-    case AT_RANDOM:	value = at_random; break;
-    case AT_EXECFN:	fprintf(stderr, "AT_EXECFN=%s, become %s\n", (char*)value, argv[0]); value = (size_t)argv[0]; break;
-    case AT_PLATFORM:	value = (size_t)"riscv64"; break;
-    case AT_HWCAP:	value = 0; break;
-
-    case AT_HWCAP2:	  continue;
-      //    case AT_SYSINFO_EHDR: continue; /* No vDSO */
-    case AT_BASE:
-      if (!at_base)
-	continue;
-      value = at_base;
-      break;
-    default:
-      break;
-    }
-    PUSH_ARG(value);
-    PUSH_ARG(auxv->key);
-  }
-  
-#else
-  
-#define AT(key, val)  PUSH_ARG((long)(val)); PUSH_ARG(key);
-
-#if 0
-  AT(AT_SYSINFO_EHDR, 0x3fbbfde000);
-  AT(AT_L1I_CACHESIZE, 32768);
-  AT(AT_L1I_CACHEGEOMETRY, 0x80040);
-  AT(AT_L1D_CACHESIZE, 32768);
-  AT(AT_L1D_CACHEGEOMETRY, 0x80040);
-  AT(AT_L2_CACHESIZE, 2097152);
-  AT(AT_L2_CACHEGEOMETRY, 0x100040);
-  AT(AT_HWCAP, 0x112d);
-  AT(AT_PAGESZ, 4096);
-  AT(AT_CLKTCK, 100);
-  AT(AT_PHDR, 0x10040);
-  AT(AT_PHENT, 56);
-  AT(AT_PHNUM, 10);
-  AT(AT_BASE, 0x3fbbfdf000);
-  AT(AT_FLAGS, 0x0);
-  AT(AT_ENTRY, 0x10450);
-  AT(AT_UID, 1001);
-  AT(AT_EUID, 1001);
-  AT(AT_GID, 1001);
-  AT(AT_EGID, 1001);
-  AT(AT_SECURE, 0);
-  AT(AT_RANDOM, 0x3fd77bad03);
-  AT(AT_EXECFN, "./Hello.dyn");
-  
-#else
-  
-  AT(AT_EXECFN, "./Hello.dyn");
-  AT(AT_RANDOM, 0x3fd77bad03);
-  AT(AT_SECURE, 0);
-  AT(AT_EGID, 1001);
-  AT(AT_GID, 1001);
-  AT(AT_EUID, 1001);
-  AT(AT_UID, 1001);
-  AT(AT_ENTRY, 0x10450);
-  AT(AT_FLAGS, 0x0);
-  AT(AT_BASE, 0x3fbbfdf000);
-  AT(AT_PHNUM, 10);
-  AT(AT_PHENT, 56);
-  AT(AT_PHDR, 0x10040);
-  AT(AT_CLKTCK, 100);
-  AT(AT_PAGESZ, 4096);
-  AT(AT_HWCAP, 0x112d);
-  AT(AT_L2_CACHEGEOMETRY, 0x100040);
-  AT(AT_L2_CACHESIZE, 2097152);
-  AT(AT_L1D_CACHEGEOMETRY, 0x80040);
-  AT(AT_L1D_CACHESIZE, 32768);
-  AT(AT_L1I_CACHEGEOMETRY, 0x80040);
-  AT(AT_L1I_CACHESIZE, 32768);
-  AT(AT_SYSINFO_EHDR, 0x3fbbfde000);
-
-#endif
-
-#endif  
-
-  // copy argument vector onto stack
-  size_t argsize = (ap - argptrs) * sizeof(const char*);
-  stack_top -= argsize;
-  memcpy((void*)stack_top, argptrs, argsize);
-
-#if 0
-  // envp[]
-  PUSH_ARG(0);
-  for (int i=envc-1; i>=0; i--)
-    PUSH_ARG(envp[i]);
 
   // argvp[]
   PUSH_ARG(0);
@@ -601,21 +424,15 @@ static long initialize_stack(int argc, const char** argv, const char** envp, pin
 
   // argc
   PUSH_ARG(argc);
-#endif
-
-#endif
-
+  
   return stack_top;
 }
 
 long emulate_execve(const char* filename, int argc, const char* argv[], const char* envp[], uintptr_t& pc)
 {
   pc = load_elf_binary(argv[0]);
-  dbmsg("interp.base=%lx", interp.base);
-  if (interp.base == 0)
-    return initialize_stack(argc, argv, envp, &current);
-  else
-    return initialize_stack(argc, argv, envp, &interp);
+  dbmsg("interp.base=%lx", at_base);
+  return initialize_stack(argc, argv, envp, &current);
 }
 
 

@@ -181,6 +181,10 @@ bool strand_t::single_step(bool show_trace)
    
   s.xrf[0] = 0;
   debug.insert(pc, *i);
+#if 0
+	labelpc(pc);
+	disasm(pc, i);
+#endif 
 
 #undef branch
 #undef jump
@@ -189,6 +193,9 @@ bool strand_t::single_step(bool show_trace)
 #define branch(test, taken, fall)  { if (test) pc=(taken); else pc=(fall); goto end_bb; }
 #define jump(npc)  { pc=(npc); goto end_bb; }
 #define stop       { pc+=4;    goto end_bb; }
+
+#undef ebreak
+#define ebreak() return true;
 
   switch (i->opcode()) {
   case Op_ZERO:	die("Should never see Op_ZERO at pc=%lx", pc);
