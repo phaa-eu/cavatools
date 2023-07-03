@@ -126,6 +126,10 @@ char* riscv_remap(char* path)
     const char* sysroot = "/opt/riscv/sysroot";
     strcpy(riscv_file, sysroot);
     strcpy(riscv_file+strlen(sysroot), path);
+    // hack!
+    if (riscv_file[strlen(riscv_file)-1] != '6')
+      strcpy(riscv_file+strlen(riscv_file), ".6");
+    //
     dbmsg("mapping %s to %s", path, riscv_file);
     return riscv_file;
   }
@@ -163,9 +167,9 @@ long host_syscall(int sysnum, long* a)
     fprintf(stderr, "Simulator must handle clones!\n");
     abort();
 
-  case SYS_mmap:
-    fprintf(stderr, "mmap flag MAP_FIXED=%d\n", (a[3]&MAP_FIXED)!=0);
-    break;
+    //  case SYS_mmap:
+    //    fprintf(stderr, "mmap flag MAP_FIXED=%d\n", (a[3]&MAP_FIXED)!=0);
+    //    break;
 
 #if 1
   case SYS_open:

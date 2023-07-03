@@ -55,7 +55,8 @@ std::map<std::string, long> symaddr;
 */
 #define quitif(bad, fmt, ...) if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n"); exit(0); }
 #define dieif(bad, fmt, ...)  if (bad) { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n\n");  abort(); }
-#define dbmsg(fmt, ...)		       { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n"); }
+//#define dbmsg(fmt, ...)		       { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n"); }
+#define dbmsg(fmt, ...)
 
 #define MEM_END		0x60000000L
 #define STACK_SIZE	0x01000000L
@@ -413,7 +414,6 @@ static long initialize_stack(int argc, const char** argv, const char** envp, pin
   for (int i=envc-1; i>=0; i--) {
     if (envp[i] == 0)
       continue;
-    fprintf(stderr, "%s\n", envp[i]);
     PUSH_ARG(envp[i]);
   }
 
