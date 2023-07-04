@@ -126,10 +126,12 @@ char* riscv_remap(char* path)
     const char* sysroot = "/opt/riscv/sysroot";
     strcpy(riscv_file, sysroot);
     strcpy(riscv_file+strlen(sysroot), path);
+#if 0
     // hack!
     if (riscv_file[strlen(riscv_file)-1] != '6')
       strcpy(riscv_file+strlen(riscv_file), ".6");
     //
+#endif
     dbmsg("mapping %s to %s", path, riscv_file);
     return riscv_file;
   }

@@ -235,6 +235,7 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
       strcpy(lib_name, sysroot);
       dieif(lseek(file, ph[i].p_offset, SEEK_SET) < 0, "PT_INTERP lseek failed");
       dieif(read(file, lib_name+strlen(sysroot), ph[i].p_filesz) != ph[i].p_filesz, "PT_INTERP read failed");
+      fprintf(stderr, "loading dynamic %s\n", lib_name);
       entry = load_elf_file(lib_name, INTERP_BASE, &interp);
       read_elf_symbols(lib_name, INTERP_BASE);
       break;

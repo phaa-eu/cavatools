@@ -8,9 +8,9 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-#MINUS_O := -Ofast -Wswitch
+MINUS_O := -Ofast -Wswitch
 #MINUS_O := -O0 -DDEBUG -Wswitch
-MINUS_O := -O -DDEBUG -Wswitch
+#MINUS_O := -O -DDEBUG -Wswitch
 #MINUS_O := -O -Wswitch
 
 # Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
