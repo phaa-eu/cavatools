@@ -21,9 +21,7 @@ extern option<bool> conf_show;
 //#define msg(fmt, ...)                  { fprintf(stderr, fmt, ##__VA_ARGS__); fprintf(stderr, "\n"); }
 #define msg(fmt, ...)
 
-extern Insn_t* tcache;
-
-Addr_t gdb_text, gdb_data, gdb_bss;
+uintptr_t gdb_text, gdb_data, gdb_bss;
 
 //	E01 - Command syntax error.
 //	E02 - Error in hex data.
@@ -33,7 +31,7 @@ Addr_t gdb_text, gdb_data, gdb_bss;
 
 static int lastGdbSignal = 0;
 static hart_base_t* gdb_cpu;
-static Addr_t *gdb_pc;
+static uintptr_t *gdb_pc;
 static long *gdb_reg;
 //long gdbNumContinue = -1;	/* program started by 'c' */
 long gdbNumContinue = 0;	/* program started by 'c' */

@@ -11,9 +11,6 @@
 #include <sys/mman.h>
 #include <signal.h>
 
-//#include <pthread.h>
-#include <unordered_map>
-
 #include "options.h"
 #include "caveat.h"
 #include "strand.h"
@@ -28,9 +25,13 @@ extern "C" {
 #include "arithmetic.h"
 
 option<bool> conf_show("show",	false, true,			"Show instruction trace");
-extern option<long> conf_tcache;
 
-void substitute_cas(Addr_t pc, Insn_t* i3);
+extern option<size_t> conf_tcache;
+extern option<size_t> conf_hash;
+
+Tcache_t tcache;
+
+void substitute_cas(uintptr_t pc, Insn_t* i3);
 
 inline float  m32(freg_t x) { union { freg_t r; float  f; } cv; cv.r=x; return cv.f; }
 inline double m64(freg_t x) { union { freg_t r; double f; } cv; cv.r=x; return cv.f; }
@@ -41,52 +42,48 @@ inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; r
 
 int strand_t::interpreter()
 {
-  Tcache_t* tc = &hart_pointer->tcache;
-  Tcache_t* counters = &hart_pointer->counters;
+  uintptr_t addresses[1000];	// address list is one per strand
   try {
-    static Header_t mismatch_header = { 0, 0, 0, false };
-    Header_t* mismatch = &mismatch_header;
+    static Header_t mismatch_header = { 0, 0, 0, false, 0 };
+    static Header_t* mismatch = &mismatch_header;
     Header_t** target = &mismatch;
     for (;;) {			// once per basic block
-      const Header_t* bb;	// current basic block
+      dieif(*target==0, "zero *target");
+      Header_t* bb;		// current basic block
       if ((*target)->addr == pc) {
 	bb = *target;		// valid link from last basic block
+	//dbmsg("%8lx linked", pc);
       }
       else { // no linkage or incorrect target (eg. jump register)
-	auto pair = bbmap.find(pc);
-	if (pair != bbmap.end()) {
-	    bb = pair->second;
-	}
-	else {			// never seen target
-	  //	  pthread_mutex_lock(&tc->lock);
+	bb = tcache.find(pc);
+	// if (bb) dbmsg("%8lx hit", pc);
+	if (!bb) {	     // never seen target
+	  //	  pthread_mutex_lock(&tcache.lock);
 	  //
 	  // Pre-decode entire basic block temporarily into address array
 	  //
-	  Addr_t dpc = pc;	// decode pc
+	  uintptr_t dpc = pc;	// decode pc
 	  Header_t* wbb = (Header_t*)addresses;
-	  Insn_t* j = (Insn_t*)wbb; // note pre-incremented in loop
+	  Insn_t* j = (Insn_t*)wbb + 1; // note pre-incremented in loop
 	  do {
 	    *++j = decoder(dpc);
 	    // instructions with attribute '<' must be first in basic block
 	    //	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (Tpointer(j) > wbb+1)) {
-	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb+1))) {
+	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb)+2)) {
 	      --j;		// remove ourself for next time
 	      break;
 	    }
 	    dpc += j->compressed() ? 2 : 4;
 	    if (stop_after[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L)
 	      break;
-	  } while (dpc-pc < 256 && j-(Insn_t*)wbb < 128);
+	  } while (dpc-pc < 256 && j-insnp(wbb) < 128);
 	  // pattern match store conditional if necessary
 	  if (j->opcode()==Op_sc_w || j->opcode()==Op_sc_d)
 	    substitute_cas(dpc-4, j);
-	  // fill in basic block header
-	  *wbb = { pc, unsigned(dpc-pc), unsigned(j-(Insn_t*)wbb), (attributes[j->opcode()] & ATTR_cj)!=0 };
-	    //	  wbb->addr = pc;
-	    //	  wbb->length = dpc - pc;
-	    //	  wbb->count = j - (Insn_t*)wbb;
-	    //	  wbb->conditional = (attributes[j->opcode()] & ATTR_cj) != 0;
-	  //	  dieif(wbb->addr >= 0x10000000L, "wbb->addr = %lx\n", wbb->addr);
+	  wbb->addr = pc;
+	  wbb->length = dpc - pc;
+	  wbb->count = j - insnp(wbb) - 1; // header is 2 words
+	  wbb->conditional = (attributes[j->opcode()] & ATTR_cj) != 0;
 	  //
 	  // Always end with one pointer to next basic block
 	  // Conditional branches have second fall-thru pointer
@@ -96,29 +93,32 @@ int strand_t::interpreter()
 	    *(Header_t**)(++j) = &mismatch_header; // space for fall-thru pointer
 	  // Add basic block to tcache.
 	  long n = j - insnp(wbb) + 1;
-	  if (tc->size()+n > tc->extent()) {
-	    dieif(n>tc->extent(), "basic block size %ld bigger than cache %u", n, tc->extent());
+	  if (tcache.size()+n > tcache.extent()) {
+	    dieif(n>tcache.extent(), "basic block size %ld bigger than cache %u", n, tcache.extent());
 
-	    pthread_mutex_lock(&tc->lock);
+	    pthread_mutex_lock(&tcache.lock);
 	    
-	    tc->clear();
-	    counters->clear();
-	    bbmap.clear();
+	    tcache.clear();
+	    
 	    mismatch = &mismatch_header;
 	    target = &mismatch;
 	    
-	    pthread_mutex_unlock(&tc->lock);
+	    pthread_mutex_unlock(&tcache.lock);
 	  }
-	  bb = tc->add(wbb, n); // points into tcache
-	  bbmap[bb->addr] = bb;
+	  bb = tcache.add(wbb, n); // points into tcache
+	  //dbmsg("%8lx add block, len=%d, n=%ld", bb->addr, bb->count, n);
+	  tcache.insert(bb);	   // add block to hash table
 	  
-	  //	  pthread_mutex_unlock(&tc->lock);
+	  //	  pthread_mutex_unlock(&tcache.lock);
 	}
-	*target = const_cast<Header_t*>(bb);
+	*target = bb;
       }
-      Addr_t* ap = addresses;
+      uintptr_t* ap = addresses;
 
-      for (const Insn_t* i=insnp(bb+1); i<insnp(bb+1+bb->count); i++) {
+      //
+      // execute basic block
+      //
+      for (const Insn_t* i=insnp(bb)+2; i<insnp(bb)+2+bb->count; i++) {
 	s.xrf[0] = 0;
 	debug.insert(pc, *i);
 #if 0
@@ -158,9 +158,10 @@ int strand_t::interpreter()
 	}
 	debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
       } // if loop exits there was no branch
-      target = (Header_t**)(bb + 1 + bb->count);
+      // note header is 2 words
+      target = (Header_t**)(insnp(bb)+2 + bb->count);
     end_bb:
-      hart_pointer->simulator(hart_pointer, tc->index(bb));
+      hart_pointer->simulator(hart_pointer, tcache.index(bb));
     }
   } catch (int retval) {
     return retval;
@@ -169,13 +170,14 @@ int strand_t::interpreter()
 
 bool strand_t::single_step(bool show_trace)
 {
-  Header_t* bb = const_cast<Header_t*>(hart_pointer->tcache.bbptr(0));
+  uintptr_t addresses[10];	// address list is one per strand
+  Header_t* bb = const_cast<Header_t*>(tcache.bbptr(0));
   bb->addr = pc;
   bb->count = 1;
-  Insn_t* i = (Insn_t*)(bb+1);
-  Addr_t oldpc = pc;
+  Insn_t* i = (Insn_t*)bb + 2;	// skip over header
+  uintptr_t oldpc = pc;
   *i = decoder(pc);
-  Addr_t* ap = addresses;
+  uintptr_t* ap = addresses;
   if (i->opcode()==Op_sc_w || i->opcode()==Op_sc_d)
     substitute_cas(pc, i);
    
@@ -216,7 +218,7 @@ bool strand_t::single_step(bool show_trace)
 }
 
   
-void substitute_cas(Addr_t pc, Insn_t* i3)
+void substitute_cas(uintptr_t pc, Insn_t* i3)
 {
   dieif(i3->opcode()!=Op_sc_w && i3->opcode()!=Op_sc_d, "0x%lx no SC found in substitute_cas()", pc);
   Insn_t i2 = decoder(pc-4);

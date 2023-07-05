@@ -156,7 +156,7 @@ long host_syscall(int sysnum, long* a)
 	sleep(1000);
     }
     
-#if 1
+#if 0
   case SYS_brk:
     //fprintf(stderr, "SYS_brk(%lx)\n", a0);
     //    retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
@@ -224,6 +224,7 @@ void thread_interpreter(strand_t* me)
 
 int clone_thread(hart_base_t* h)
 {
+  //  fprintf(stderr, "clone_thread()\n");
   strand_t* child = h->strand;
   child->tid = 0;		// acts as futex lock
   std::thread t(thread_interpreter, child);

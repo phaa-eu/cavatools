@@ -38,16 +38,9 @@ struct pinfo_t current;
 struct pinfo_t interp;
 uintptr_t phdrs = 0xdeadbeef;
 
-//long load_elf_binary(const char* file_name, int include_data);
-//int elf_find_symbol(const char* name, long* begin, long* end);
-//const char* elf_find_pc(long pc, long* offset);
-
-//long initialize_stack(int argc, const char** argv, const char** envp, struct pinfo_t*);
-
 long emulate_brk(long addr);
   
 extern std::map<long, std::string> fname; // dictionary of pc->name
-
 std::map<std::string, long> symaddr;
 
 /*
@@ -122,7 +115,7 @@ static void read_elf_symbols(const char* filename, uintptr_t bias)
   dieif(lseek(fd, eh.e_shoff + eh.e_shstrndx * sizeof(Elf64_Shdr), SEEK_SET)<0, "seek string section header failed");
   Elf64_Shdr shdr;
   dieif(read(fd, &shdr, sizeof shdr)<0, "read string section header failed");
-  char shstrtbl[shdr.sh_size];
+  char* shstrtbl = new char[shdr.sh_size];
   dieif(lseek(fd, shdr.sh_offset, SEEK_SET)<0, "lseek shstrtbl failed");
   dieif(read(fd, shstrtbl, shdr.sh_size)!=shdr.sh_size, "read shstrtbl failed");
 
@@ -165,11 +158,13 @@ static void read_elf_symbols(const char* filename, uintptr_t bias)
 	if (ELF64_ST_TYPE(sb.st_info) == STT_OBJECT)
 	  symaddr[strtbl + sb.st_name] = sb.st_value + bias;
 	  //	  objsym][strtbl + sb.st_name = { .addr=sb.st_value+bias, .size=sb.st_size };
+
       }
       break;
     }
   }
-  
+
+#if 0
   // hack to inhibit ld.so.cache
   if (symaddr.count("_rtld_global_ro")) {
     dbmsg("_rtld_global_ro 0x%lx setting to 1", symaddr["_rtld_global_ro"]);
@@ -178,7 +173,7 @@ static void read_elf_symbols(const char* filename, uintptr_t bias)
   }
   else
     dbmsg("_rtld_global_ro not found");
-	  
+#endif	  
   //  for (auto it=fname.begin(); it!=fname.end(); it++)
   //    fprintf(stderr, "%16lx  %s\n", it->first, const_cast<const char*>(it->second.c_str()));
   
@@ -301,7 +296,7 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
   }
 
   close(file);
-  delete shstrtbl;
+  //  delete shstrtbl;
   return entry;
 }
 

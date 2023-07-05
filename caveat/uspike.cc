@@ -7,7 +7,7 @@
 #include <setjmp.h>
 #include <pthread.h>
 
-#include <map>
+//#include <map>
 
 #include "options.h"
 #include "caveat.h"
@@ -17,6 +17,7 @@ option<>     conf_gdb("gdb",	0, "localhost:1234", "Remote GDB connection");
 option<bool> conf_calls("calls",	false, true,			"Show function calls and returns");
 
 option<long> conf_tcache("tcache", 64*1024, "Binary translation cache size");
+option<long> conf_hash("hash", 20011, "Hash table size, best if prime number");
 
 extern option<bool> conf_show;
 
@@ -49,6 +50,10 @@ long hart_t::total_count()
 
 void status_report()
 {
+  //  static long n = 1;
+  //  fprintf(stderr, "\r%12ld", n++);
+  //  return;
+  
   double realtime = elapse_time();
   long total = hart_t::total_count();
   static double last_time;
@@ -73,7 +78,7 @@ void status_report()
 void simulator(hart_base_t* h, long index)
 {
   hart_t* c = (hart_t*)h;
-  const Header_t* bb = c->tcache.bbptr(index);
+  const Header_t* bb = tcache.bbptr(index);
   c->more_insn(bb->count);
 }
 
@@ -83,7 +88,10 @@ long clone_proxy(class hart_base_t* h, long* args)
   return clone_thread(child);
 }
 
-
+long syscall_proxy(class hart_base_t* h, long num, long* args)
+{
+  return host_syscall(num, args);
+}
 
 
 static jmp_buf return_to_top_level;
@@ -123,9 +131,13 @@ int main(int argc, const char* argv[], const char* envp[])
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
   if (argc == 0)
     help_exit();
+  // create translation cache
+  tcache.initialize(conf_tcache(), conf_hash());
+  // before creating harts
   mycpu = new hart_t(argc, argv, envp);
   mycpu->simulator = simulator;
   mycpu->clone = clone_proxy;
+  mycpu->syscall = syscall_proxy;
   start_time();
 
 #ifdef DEBUG
@@ -175,7 +187,8 @@ int main(int argc, const char* argv[], const char* envp[])
 	//	fprintf(stderr, "\r%*s%s 0x%lx ", indent*4, "", op_name[op], pc);
 	//	fprintf(stderr, " %s from 0x%lx\n", it==fname.end() ? "NOT FOUND" : it->second, oldpc);
 	//	fprintf(stderr, "\r%*s%s\n", indent*4, "", it==fname.end() ? "NOT FOUND" : it->second);
-	fprintf(stderr, "\r%*s%s\n", indent*4, "", func_name(mycpu->pc()));
+	
+	//fprintf(stderr, "\r%*s%s\n", indent*4, "", func_name(mycpu->pc()));
       }
 #endif
     }      

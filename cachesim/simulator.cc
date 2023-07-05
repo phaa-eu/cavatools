@@ -54,7 +54,7 @@ void status_report()
 void dumb_simulator(hart_base_t* h, long index)
 {
   hart_t* p = (hart_t*)h;
-  Addr_t* ap = p->addresses();
+  uintptr_t* ap = p->addresses();
   const Header_t* bb = p->tcache.bbptr(index);
   const Insn_t* i = insnp(bb);
   p->addtime(bb->count);
@@ -72,7 +72,7 @@ void dumb_simulator(hart_base_t* h, long index)
 void view_simulator(hart_base_t* h, long index)
 {
   hart_t* p = (hart_t*)h;
-  Addr_t* ap = p->addresses();
+  uintptr_t* ap = p->addresses();
   const Header_t* bb = p->tcache.bbptr(index);
   const Insn_t* i = insnp(bb);
   uint64_t* c = p->counters.wptr(index);

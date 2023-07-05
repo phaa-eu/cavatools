@@ -17,12 +17,12 @@ extern option<long>conf_view;
 
 hart_t* showing;
 
-extern std::map<Addr_t, const char*> fname; // dictionary of pc->name
+extern std::map<uintptr_t, const char*> fname; // dictionary of pc->name
 
 struct bbfreq_t {
   uint64_t count;		// from counters
-  Addr_t addr;			// in case cache was flushed
-  bbfreq_t(uint64_t c, Addr_t a) { count=c; addr=a; }
+  uintptr_t addr;			// in case cache was flushed
+  bbfreq_t(uint64_t c, uintptr_t a) { count=c; addr=a; }
 };
 
 static bool cmpfunc(bbfreq_t& a, bbfreq_t& b) {
@@ -43,9 +43,9 @@ static void resize_windows(int verdiv =VERDIV, int hordiv =HORDIV)
 
 void* viewer_thread(void* arg)
 {
-  std::map<Addr_t, const Header_t*> blocks;	  // pc->bb
+  std::map<uintptr_t, const Header_t*> blocks;	  // pc->bb
   std::vector<bbfreq_t> topK;
-  Addr_t visible_pc = 0;
+  uintptr_t visible_pc = 0;
   
   char buf[1024];
 
@@ -152,7 +152,7 @@ void* viewer_thread(void* arg)
 	visible_pc = 0;
       if (visible_pc) {
 	const Header_t* bb = p->second;
-	Addr_t pc = bb->addr;
+	uintptr_t pc = bb->addr;
 	const uint64_t* c = showing->counters.ptr(showing->tcache.index(bb));
 	for (;;) {
 	  const Insn_t* i = insnp(bb+1);

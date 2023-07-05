@@ -26,9 +26,6 @@ extern const uint64_t stop_after[];
 #define VMREG	(VPREG+32)
 #define NOREG	-1
 
-//typedef unsigned long Addr_t;
-#define Addr_t  uintptr_t
-
 class alignas(8) Insn_t {
   Opcode_t op_code;
   int8_t op_rd;
@@ -53,16 +50,16 @@ public:
   int rs3() const { return op.rs3; }
   bool compressed() const { return op_code <= Last_Compressed_Opcode; }
 
-  friend Insn_t decoder(Addr_t pc);
-  friend void substitute_cas(Addr_t pc, Insn_t* i3);
+  friend Insn_t decoder(uintptr_t pc);
+  friend void substitute_cas(uintptr_t pc, Insn_t* i3);
 };
 static_assert(sizeof(Insn_t) == 8);
 
-Insn_t decoder(Addr_t pc);
+Insn_t decoder(uintptr_t pc);
 
 /*
   The Translation Cache is an array of 64-bit slots.  A slot can be a translated
-  instruction, a basic block header, or a branch target pointer.  Translated
+  instruction, a basic block header (2 words), or a branch target pointer.  Translated
   instructions are described above.  Each basic block begins with a header
   (defind below) followed by one or more translated instructions.  Each basic block
   is terminated by a link pointer to the next basic block's header.
@@ -76,43 +73,51 @@ struct alignas(8) Header_t {
   bool conditional	:  1;	// end in conditional branch
   unsigned count	:  7;	// number of instructions
   unsigned length	:  8;	// number of 16-bit parcels
-  Addr_t addr		: 48;	// beginning address
-  Header_t(Addr_t a, unsigned l, unsigned c, bool p) { addr=a; length=l; count=c; conditional=p; }
+  uintptr_t addr	: 48;	// beginning address
+  Header_t* next;		// in hash table bucket
+  //  Header_t(uintptr_t a, unsigned l, unsigned c, bool p, Header_t* n) { addr=a; length=l; count=c; conditional=p; next=n; }
 };
-static_assert(sizeof(Header_t) == 8);
+static_assert(sizeof(Header_t) == 16);
 
 class Tcache_t {
-  uint64_t* cache;
-  volatile unsigned _size;
-  unsigned _extent;
+  uint64_t* array;		// array of headers, instructions, link pointers
+  size_t _extent;		// maximum number of entries in cache
+  volatile size_t _size;	// current number of entries
   class Counters_t* list;	// of counter arrays
+
+  Header_t** table;		// hash table for finding basic blocks by address
+  uint64_t _hashsize;		// hash table size
+  size_t hashfunction(uint64_t pc) { return pc % _hashsize; }
   
   friend class Counters_t;
-  
 public:
   pthread_mutex_t lock;
+
+  void initialize(size_t cachesize, size_t hashtablesize);
   
-  Tcache_t(Addr_t l) { cache=new uint64_t[l]; _extent=l; _size=0; list=0; pthread_mutex_init(&lock, NULL); }
   unsigned extent() { return _extent; }
   volatile unsigned size() { return _size; }
   
-  unsigned index(const Header_t* bb) { return (uint64_t*)bb - cache; }
-  const Header_t* bbptr(unsigned k) { dieif(k>_size, "cache index %u out of bounds %u", k, _size); return (const Header_t*)&cache[k]; }
-  
+  unsigned index(const Header_t* bb) { return (uint64_t*)bb - array; }
+  const Header_t* bbptr(size_t k) { dieif(k>_size, "cache index %lu out of bounds %lu", k, _size); return (const Header_t*)&array[k]; }
+
+  Header_t* find(uintptr_t pc);
+  void insert(Header_t* bb);
   void clear();
-  const Header_t* add(Header_t* begin, unsigned entries);
+  Header_t* add(Header_t* begin, size_t entries);
 };
+
+extern Tcache_t tcache;		// global to all threads
 
 class Counters_t {
   uint64_t* array;		// counters parallel tcache
-  Tcache_t* tcache;		// who we are associated with
   Counters_t* next;		// so tcache can find us
   friend class Tcache_t;
 public:
-  const uint64_t* ptr(unsigned k) { dieif(k>tcache->size(), "cache index %u out of bounds", k); return &array[k]; }
-  uint64_t* wptr(unsigned k) { dieif(k>tcache->size(), "cache index %u out of bounds", k); return &array[k]; }
-  uint64_t operator[](unsigned k) const { dieif(k>tcache->size(), "cache index %u out of bounds", k); return array[k]; }
-  void attach(Tcache_t &tc);
+  Counters_t() { array=new uint64_t[tcache.extent()]; next=tcache.list; tcache.list=this; }
+  const uint64_t* ptr(unsigned k) { dieif(k>tcache.size(), "cache index %u out of bounds", k); return &array[k]; }
+  uint64_t* wptr(unsigned k) { dieif(k>tcache.size(), "cache index %u out of bounds", k); return &array[k]; }
+  uint64_t operator[](unsigned k) const { dieif(k>tcache.size(), "cache index %u out of bounds", k); return array[k]; }
 };
 
 static inline const Insn_t* insnp(uint64_t p) { return (const Insn_t*)p; }
@@ -130,14 +135,13 @@ class hart_base_t {
   
   friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu);
   friend int clone_thread(hart_base_t* s);
+  
 public:
-  Tcache_t tcache;		// translated instruction cache
-  Tcache_t counters;		// counting array (1:1 with tcache)
+  Counters_t counters;		// counting array (1:1 with tcache)
   
   simfunc_t simulator;		// function pointer for simulation
   clonefunc_t clone;		// function pointer just for clone system call
   syscallfunc_t syscall;	// function pointer for other system calls
-  long host_syscall(int sysnum, long* args);
   
   hart_base_t(int argc, const char* argv[], const char* envp[]);
   hart_base_t(hart_base_t* from);
@@ -145,8 +149,8 @@ public:
   
   bool interpreter();
   bool single_step(bool show_trace =false);
-  Addr_t* addresses();
-  Addr_t pc();
+  uintptr_t* addresses();
+  uintptr_t pc();
 
   static hart_base_t* list();
   hart_base_t* next();
@@ -165,13 +169,13 @@ void start_time();
 double elapse_time();
 void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator);
 
-const char* func_name(Addr_t pc);
+//const char* func_name(uintptr_t pc);
 
 
-int slabelpc(char* buf, Addr_t pc);
-void labelpc(Addr_t pc, FILE* f =stderr);
-int sdisasm(char* buf, Addr_t pc, const Insn_t* i);
-void disasm(Addr_t pc, const Insn_t* i, const char* end ="\n", FILE* f =stderr);
+int slabelpc(char* buf, uintptr_t pc);
+void labelpc(uintptr_t pc, FILE* f =stderr);
+int sdisasm(char* buf, uintptr_t pc, const Insn_t* i);
+void disasm(uintptr_t pc, const Insn_t* i, const char* end ="\n", FILE* f =stderr);
 
 int clone_thread(hart_base_t* s);
 long host_syscall(int sysnum, long* a);
