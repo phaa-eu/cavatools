@@ -224,7 +224,7 @@ void thread_interpreter(strand_t* me)
 
 int clone_thread(hart_base_t* h)
 {
-  //  fprintf(stderr, "clone_thread()\n");
+  fprintf(stderr, "clone_thread()\n");
   strand_t* child = h->strand;
   child->tid = 0;		// acts as futex lock
   std::thread t(thread_interpreter, child);

@@ -16,8 +16,8 @@ option<long> conf_report("report", 1, "Status report per second");
 option<>     conf_gdb("gdb",	0, "localhost:1234", "Remote GDB connection");
 option<bool> conf_calls("calls",	false, true,			"Show function calls and returns");
 
-option<long> conf_tcache("tcache", 64*1024, "Binary translation cache size");
-option<long> conf_hash("hash", 20011, "Hash table size, best if prime number");
+option<long> conf_tcache("tcache", 10000000L, "Binary translation cache size");
+option<long> conf_hash("hash", 999983L, "Hash table size, best if prime number");
 
 extern option<bool> conf_show;
 

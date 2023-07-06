@@ -1,6 +1,7 @@
 /*
   Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
+#include <limits.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -24,6 +25,9 @@ extern "C" {
 
 #include "arithmetic.h"
 
+const struct timespec timeout = { 0, 1000 };
+#define futex(a, b, c)  syscall(SYS_futex, a, b, c, &timeout, 0, 0)
+
 option<bool> conf_show("show",	false, true,			"Show instruction trace");
 
 extern option<size_t> conf_tcache;
@@ -39,16 +43,31 @@ inline float32_t n32(float  x)  { union { float32_t t; float  f; } cv; cv.f=x; r
 inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; return cv.t; }
 #define w32(e)	s.frf[i->rd()-FPREG] = freg(n32(e)) 
 #define w64(e)	s.frf[i->rd()-FPREG] = freg(n64(e)) 
+    
+static Header_t mismatch_header = { 0, 0, 0, false, 0 };
+static Header_t* mismatch = &mismatch_header;
 
 int strand_t::interpreter()
 {
   uintptr_t addresses[1000];	// address list is one per strand
   try {
-    static Header_t mismatch_header = { 0, 0, 0, false, 0 };
-    static Header_t* mismatch = &mismatch_header;
+    //__sync_fetch_and_add(&tcache.running, 1);
+    
     Header_t** target = &mismatch;
     for (;;) {			// once per basic block
+#if 0
+    try_again:
+      if (tcache.pause) {
+	dieif(__sync_fetch_and_add(&tcache.running, -1)<0, "negative running count!");
+	futex(&tcache.running, FUTEX_WAKE, INT_MAX);
+
+	while (tcache.pause)
+	  futex(&tcache.pause, FUTEX_WAIT, 0);
+	__sync_fetch_and_add(&tcache.running, 1);
+      }
       dieif(*target==0, "zero *target");
+#endif
+      
       Header_t* bb;		// current basic block
       if ((*target)->addr == pc) {
 	bb = *target;		// valid link from last basic block
@@ -56,9 +75,11 @@ int strand_t::interpreter()
       }
       else { // no linkage or incorrect target (eg. jump register)
 	bb = tcache.find(pc);
-	// if (bb) dbmsg("%8lx hit", pc);
+	//if (bb) dbmsg("%8lx hit", pc);
 	if (!bb) {	     // never seen target
-	  //	  pthread_mutex_lock(&tcache.lock);
+	  
+	  //pthread_mutex_lock(&tcache.lock);
+	  
 	  //
 	  // Pre-decode entire basic block temporarily into address array
 	  //
@@ -67,6 +88,8 @@ int strand_t::interpreter()
 	  Insn_t* j = (Insn_t*)wbb + 1; // note pre-incremented in loop
 	  do {
 	    *++j = decoder(dpc);
+	    //labelpc(dpc);
+	    //disasm(dpc, j);
 	    // instructions with attribute '<' must be first in basic block
 	    //	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (Tpointer(j) > wbb+1)) {
 	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb)+2)) {
@@ -84,6 +107,8 @@ int strand_t::interpreter()
 	  wbb->length = dpc - pc;
 	  wbb->count = j - insnp(wbb) - 1; // header is 2 words
 	  wbb->conditional = (attributes[j->opcode()] & ATTR_cj) != 0;
+	  wbb->next = 0;
+	  //dbmsg("want to added bb %8lx count=%d", wbb->addr, wbb->count);
 	  //
 	  // Always end with one pointer to next basic block
 	  // Conditional branches have second fall-thru pointer
@@ -91,25 +116,58 @@ int strand_t::interpreter()
 	  *(Header_t**)(++j) = &mismatch_header; // space for branch taken pointer
 	  if (wbb->conditional)
 	    *(Header_t**)(++j) = &mismatch_header; // space for fall-thru pointer
-	  // Add basic block to tcache.
+	  
 	  long n = j - insnp(wbb) + 1;
-	  if (tcache.size()+n > tcache.extent()) {
-	    dieif(n>tcache.extent(), "basic block size %ld bigger than cache %u", n, tcache.extent());
+	  dieif(n>tcache.extent(), "basic block size %ld bigger than cache %u", n, tcache.extent());
 
-	    pthread_mutex_lock(&tcache.lock);
+#if 0
+	  size_t before;
+	  
+	  // Atomically allocate space in cache and check for cache overflow
+	  while ((before=__sync_fetch_and_add(&tcache._size, n))+n > tcache.extent()) {
+	    if (tcache.pause)	// someone else already wants to flush cache
+	      goto try_again;
 	    
+	    // stop all threads before flushing cache
+	    while (!__sync_bool_compare_and_swap(&tcache.pause, false, true))
+	      futex(&tcache.pause, FUTEX_WAIT, false);
+	    while (tcache.running > 1)
+	      futex(&tcache.running, FUTEX_WAIT, 1);
+	    
+	    // flush cache, we are only thread running now
+	    fprintf(stderr, "clear()\n");
 	    tcache.clear();
-	    
-	    mismatch = &mismatch_header;
+	    //	    mismatch = &mismatch_header;
 	    target = &mismatch;
 	    
-	    pthread_mutex_unlock(&tcache.lock);
+	    // resume other threads
+	    tcache.pause = false;
+	    futex(&tcache.pause, FUTEX_WAKE, INT_MAX);
 	  }
-	  bb = tcache.add(wbb, n); // points into tcache
-	  //dbmsg("%8lx add block, len=%d, n=%ld", bb->addr, bb->count, n);
-	  tcache.insert(bb);	   // add block to hash table
-	  
-	  //	  pthread_mutex_unlock(&tcache.lock);
+	    
+#endif
+	  {
+	    // atomically add block into tcache
+	    size_t before = __sync_fetch_and_add(&tcache._size, n);
+	    bb = (Header_t*)(tcache.array + before);
+	    memcpy(bb, wbb, n*sizeof(uint64_t));
+	    //dbmsg("added bb %8lx count=%d", bb->addr, bb->count);
+#if 0
+	    // atomically insert block address into hash table
+	    Header_t** p;
+	    do {
+	      p = &tcache.table[tcache.hashfunction(bb->addr)];
+	      while (*p)		// chase to end of list
+		p = &(*p)->next;
+	    } while (!__sync_bool_compare_and_swap(p, 0, bb));
+#else
+	    size_t h;
+	    do {
+	      h = tcache.hashfunction(bb->addr);
+	      bb->next = tcache.table[h];
+	    } while (!__sync_bool_compare_and_swap(&tcache.table[h], bb->next, bb));
+#endif
+	  }
 	}
 	*target = bb;
       }
@@ -147,8 +205,10 @@ int strand_t::interpreter()
 #define ebreak() kill(tid, SIGTRAP)
 
 #define stop debug.addval(s.xrf[i->rd()]); goto end_bb
-#define jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
 #define branch(test, taken, fall)  { if (test) { pc=(taken); target=(Header_t**)(i+1); } else { pc=(fall); target=(Header_t**)(i+2); } stop; }
+#define jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
+#define reg_jump(npc)  { pc=(npc); target=&mismatch; stop; }
+	//#define reg_jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
 	
 	switch (i->opcode()) {
 	case Op_ZERO:	die("Should never see Op_ZERO at pc=%lx", pc);
@@ -164,6 +224,7 @@ int strand_t::interpreter()
       hart_pointer->simulator(hart_pointer, tcache.index(bb));
     }
   } catch (int retval) {
+    //dieif(__sync_fetch_and_add(&tcache.running, -1)<0, "negative running count!");
     return retval;
   }
 }
@@ -190,10 +251,12 @@ bool strand_t::single_step(bool show_trace)
 
 #undef branch
 #undef jump
+#undef reg_jump
 #undef stop
   
 #define branch(test, taken, fall)  { if (test) pc=(taken); else pc=(fall); goto end_bb; }
 #define jump(npc)  { pc=(npc); goto end_bb; }
+#define reg_jump(npc)  { pc=(npc); goto end_bb; }
 #define stop       { pc+=4;    goto end_bb; }
 
 #undef ebreak

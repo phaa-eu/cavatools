@@ -113,6 +113,9 @@ void Tcache_t::initialize(size_t cachesize, size_t hashtablesize)
 #endif
   list = 0;
   clear();
+  
+  //running = 0;
+  //pause = false;
 }
 
 Header_t* Tcache_t::find(uintptr_t pc)
@@ -143,6 +146,9 @@ void Tcache_t::clear()
 Header_t* Tcache_t::add(Header_t* begin, size_t entries)
 {
   dieif(_size+entries>_extent, "Tcache::add() _size=%ld + %ld _extent=%ld", _size, entries, _extent);
+
+  __sync_fetch_and_add(&_size, entries);
+  
   uintptr_t* before = array + _size;
   memcpy(before, begin, entries*sizeof(uint64_t));
   _size += entries;

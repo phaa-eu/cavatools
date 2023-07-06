@@ -80,9 +80,11 @@ struct alignas(8) Header_t {
 static_assert(sizeof(Header_t) == 16);
 
 class Tcache_t {
+public:
   uint64_t* array;		// array of headers, instructions, link pointers
-  size_t _extent;		// maximum number of entries in cache
   volatile size_t _size;	// current number of entries
+  
+  size_t _extent;		// maximum number of entries in cache
   class Counters_t* list;	// of counter arrays
 
   Header_t** table;		// hash table for finding basic blocks by address
@@ -91,7 +93,11 @@ class Tcache_t {
   
   friend class Counters_t;
 public:
-  pthread_mutex_t lock;
+#if 0
+  //  pthread_mutex_t lock;
+  volatile int running;	// how many threads currently running
+  volatile int pause;	// tell threads to pause for synchronous event
+#endif
 
   void initialize(size_t cachesize, size_t hashtablesize);
   
