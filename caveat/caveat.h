@@ -58,6 +58,20 @@ static_assert(sizeof(Insn_t) == 8);
 Insn_t decoder(uintptr_t pc);
 
 /*
+  Processor status register
+*/
+union fcsr_t {
+  struct {
+    unsigned flags : 5;
+    unsigned rm :3;
+  } f;
+  uint32_t ui;
+};
+
+long get_csr(fcsr_t& fcsr, int what);
+void set_csr(fcsr_t& fcsr, int what, long value);
+
+/*
   The Translation Cache is an array of 64-bit slots.  A slot can be a translated
   instruction, a basic block header (2 words), or a branch target pointer.  Translated
   instructions are described above.  Each basic block begins with a header
@@ -70,12 +84,13 @@ Insn_t decoder(uintptr_t pc);
 */
 
 struct alignas(8) Header_t {
+  uintptr_t addr;		// basic block beginning address
   bool conditional	:  1;	// end in conditional branch
   unsigned count	:  7;	// number of instructions
   unsigned length	:  8;	// number of 16-bit parcels
-  uintptr_t addr	: 48;	// beginning address
-  Header_t* next;		// in hash table bucket
-  //  Header_t(uintptr_t a, unsigned l, unsigned c, bool p, Header_t* n) { addr=a; length=l; count=c; conditional=p; next=n; }
+  size_t link		: 48;	// offset to next hash table entry
+  //  Header_t* next;		// in hash table bucket
+  Header_t(uintptr_t a, unsigned l, unsigned c, bool p) { addr=a; length=l; count=c; conditional=p; link=0; }
 };
 static_assert(sizeof(Header_t) == 16);
 
@@ -87,7 +102,10 @@ public:
   size_t _extent;		// maximum number of entries in cache
   class Counters_t* list;	// of counter arrays
 
-  Header_t** table;		// hash table for finding basic blocks by address
+  //  Header_t** table;		// hash table for finding basic blocks by address
+  size_t* table;		// hash table for finding basic blocks by address
+
+  // hash table links are integers relative to array
   uint64_t _hashsize;		// hash table size
   size_t hashfunction(uint64_t pc) { return pc % _hashsize; }
   
@@ -108,9 +126,8 @@ public:
   const Header_t* bbptr(size_t k) { dieif(k>_size, "cache index %lu out of bounds %lu", k, _size); return (const Header_t*)&array[k]; }
 
   Header_t* find(uintptr_t pc);
-  void insert(Header_t* bb);
+  Header_t* add(Header_t* wbb, size_t n);
   void clear();
-  Header_t* add(Header_t* begin, size_t entries);
 };
 
 extern Tcache_t tcache;		// global to all threads

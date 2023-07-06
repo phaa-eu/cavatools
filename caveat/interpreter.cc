@@ -25,9 +25,6 @@ extern "C" {
 
 #include "arithmetic.h"
 
-const struct timespec timeout = { 0, 1000 };
-#define futex(a, b, c)  syscall(SYS_futex, a, b, c, &timeout, 0, 0)
-
 option<bool> conf_show("show",	false, true,			"Show instruction trace");
 
 extern option<size_t> conf_tcache;
@@ -44,30 +41,16 @@ inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; r
 #define w32(e)	s.frf[i->rd()-FPREG] = freg(n32(e)) 
 #define w64(e)	s.frf[i->rd()-FPREG] = freg(n64(e)) 
     
-static Header_t mismatch_header = { 0, 0, 0, false, 0 };
+//static Header_t mismatch_header = { 0, 0, 0, false, 0 };
+static Header_t mismatch_header = Header_t(0, 0, 0, false);
 static Header_t* mismatch = &mismatch_header;
 
 int strand_t::interpreter()
 {
   uintptr_t addresses[1000];	// address list is one per strand
   try {
-    //__sync_fetch_and_add(&tcache.running, 1);
-    
     Header_t** target = &mismatch;
     for (;;) {			// once per basic block
-#if 0
-    try_again:
-      if (tcache.pause) {
-	dieif(__sync_fetch_and_add(&tcache.running, -1)<0, "negative running count!");
-	futex(&tcache.running, FUTEX_WAKE, INT_MAX);
-
-	while (tcache.pause)
-	  futex(&tcache.pause, FUTEX_WAIT, 0);
-	__sync_fetch_and_add(&tcache.running, 1);
-      }
-      dieif(*target==0, "zero *target");
-#endif
-      
       Header_t* bb;		// current basic block
       if ((*target)->addr == pc) {
 	bb = *target;		// valid link from last basic block
@@ -85,14 +68,15 @@ int strand_t::interpreter()
 	  //
 	  uintptr_t dpc = pc;	// decode pc
 	  Header_t* wbb = (Header_t*)addresses;
-	  Insn_t* j = (Insn_t*)wbb + 1; // note pre-incremented in loop
+	  Insn_t* j = (Insn_t*)(wbb+1) - 1; // note pre-incremented in loop
 	  do {
 	    *++j = decoder(dpc);
 	    //labelpc(dpc);
 	    //disasm(dpc, j);
 	    // instructions with attribute '<' must be first in basic block
-	    //	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (Tpointer(j) > wbb+1)) {
-	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb)+2)) {
+	    
+	    //if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb)+2)) {
+	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb+1))) {
 	      --j;		// remove ourself for next time
 	      break;
 	    }
@@ -103,12 +87,8 @@ int strand_t::interpreter()
 	  // pattern match store conditional if necessary
 	  if (j->opcode()==Op_sc_w || j->opcode()==Op_sc_d)
 	    substitute_cas(dpc-4, j);
-	  wbb->addr = pc;
-	  wbb->length = dpc - pc;
-	  wbb->count = j - insnp(wbb) - 1; // header is 2 words
-	  wbb->conditional = (attributes[j->opcode()] & ATTR_cj) != 0;
-	  wbb->next = 0;
 	  //dbmsg("want to added bb %8lx count=%d", wbb->addr, wbb->count);
+	  *wbb = Header_t(pc, dpc-pc, j+1-insnp(wbb+1), (attributes[j->opcode()] & ATTR_cj)!=0);
 	  //
 	  // Always end with one pointer to next basic block
 	  // Conditional branches have second fall-thru pointer
@@ -117,57 +97,9 @@ int strand_t::interpreter()
 	  if (wbb->conditional)
 	    *(Header_t**)(++j) = &mismatch_header; // space for fall-thru pointer
 	  
+	  // atomically add block into tcache
 	  long n = j - insnp(wbb) + 1;
-	  dieif(n>tcache.extent(), "basic block size %ld bigger than cache %u", n, tcache.extent());
-
-#if 0
-	  size_t before;
-	  
-	  // Atomically allocate space in cache and check for cache overflow
-	  while ((before=__sync_fetch_and_add(&tcache._size, n))+n > tcache.extent()) {
-	    if (tcache.pause)	// someone else already wants to flush cache
-	      goto try_again;
-	    
-	    // stop all threads before flushing cache
-	    while (!__sync_bool_compare_and_swap(&tcache.pause, false, true))
-	      futex(&tcache.pause, FUTEX_WAIT, false);
-	    while (tcache.running > 1)
-	      futex(&tcache.running, FUTEX_WAIT, 1);
-	    
-	    // flush cache, we are only thread running now
-	    fprintf(stderr, "clear()\n");
-	    tcache.clear();
-	    //	    mismatch = &mismatch_header;
-	    target = &mismatch;
-	    
-	    // resume other threads
-	    tcache.pause = false;
-	    futex(&tcache.pause, FUTEX_WAKE, INT_MAX);
-	  }
-	    
-#endif
-	  {
-	    // atomically add block into tcache
-	    size_t before = __sync_fetch_and_add(&tcache._size, n);
-	    bb = (Header_t*)(tcache.array + before);
-	    memcpy(bb, wbb, n*sizeof(uint64_t));
-	    //dbmsg("added bb %8lx count=%d", bb->addr, bb->count);
-#if 0
-	    // atomically insert block address into hash table
-	    Header_t** p;
-	    do {
-	      p = &tcache.table[tcache.hashfunction(bb->addr)];
-	      while (*p)		// chase to end of list
-		p = &(*p)->next;
-	    } while (!__sync_bool_compare_and_swap(p, 0, bb));
-#else
-	    size_t h;
-	    do {
-	      h = tcache.hashfunction(bb->addr);
-	      bb->next = tcache.table[h];
-	    } while (!__sync_bool_compare_and_swap(&tcache.table[h], bb->next, bb));
-#endif
-	  }
+	  bb = tcache.add(wbb, n);
 	}
 	*target = bb;
       }
@@ -176,7 +108,7 @@ int strand_t::interpreter()
       //
       // execute basic block
       //
-      for (const Insn_t* i=insnp(bb)+2; i<insnp(bb)+2+bb->count; i++) {
+      for (const Insn_t* i=insnp(bb+1); i<insnp(bb+1)+bb->count; i++) {
 	s.xrf[0] = 0;
 	debug.insert(pc, *i);
 #if 0
@@ -218,66 +150,13 @@ int strand_t::interpreter()
 	}
 	debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
       } // if loop exits there was no branch
-      // note header is 2 words
-      target = (Header_t**)(insnp(bb)+2 + bb->count);
+      target = (Header_t**)(insnp(bb+1) + bb->count);
     end_bb:
       hart_pointer->simulator(hart_pointer, tcache.index(bb));
     }
   } catch (int retval) {
-    //dieif(__sync_fetch_and_add(&tcache.running, -1)<0, "negative running count!");
     return retval;
   }
-}
-
-bool strand_t::single_step(bool show_trace)
-{
-  uintptr_t addresses[10];	// address list is one per strand
-  Header_t* bb = const_cast<Header_t*>(tcache.bbptr(0));
-  bb->addr = pc;
-  bb->count = 1;
-  Insn_t* i = (Insn_t*)bb + 2;	// skip over header
-  uintptr_t oldpc = pc;
-  *i = decoder(pc);
-  uintptr_t* ap = addresses;
-  if (i->opcode()==Op_sc_w || i->opcode()==Op_sc_d)
-    substitute_cas(pc, i);
-   
-  s.xrf[0] = 0;
-  debug.insert(pc, *i);
-#if 0
-	labelpc(pc);
-	disasm(pc, i);
-#endif 
-
-#undef branch
-#undef jump
-#undef reg_jump
-#undef stop
-  
-#define branch(test, taken, fall)  { if (test) pc=(taken); else pc=(fall); goto end_bb; }
-#define jump(npc)  { pc=(npc); goto end_bb; }
-#define reg_jump(npc)  { pc=(npc); goto end_bb; }
-#define stop       { pc+=4;    goto end_bb; }
-
-#undef ebreak
-#define ebreak() return true;
-
-  switch (i->opcode()) {
-  case Op_ZERO:	die("Should never see Op_ZERO at pc=%lx", pc);
-#include "semantics.h"
-  case Op_ILLEGAL:  die("Op_ILLEGAL opcode");
-  case Op_UNKNOWN:  die("Op_UNKNOWN opcode");
-  }
-    
-  debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
- end_bb: // at this point pc=target basic block but i still points to last instruction.
-  debug.addval(s.xrf[i->rd()]);
-  if (conf_show()) {
-    print_trace(oldpc, i, stdout);
-    //printf("%lx\n", pc);
-  }
-  hart_pointer->simulator(hart_pointer, 0);
-  return false;
 }
 
   

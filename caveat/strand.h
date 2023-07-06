@@ -46,14 +46,7 @@ struct Debug_t {
 struct processor_state_t {
   reg_t  xrf[32];
   freg_t frf[32];
-  
-  union {
-    struct {
-      unsigned flags : 5;
-      unsigned rm :3;
-    } f;
-    uint32_t ui;
-  } fcsr;
+  fcsr_t fcsr;
 };
 
 class strand_t {
@@ -94,12 +87,9 @@ public:
   
   static strand_t* find(int tid);
 
-  long get_csr(int what);
-  void set_csr(int what, long value);
-
   template<typename op>	uint64_t csr_func(uint64_t what, op f) {
-    uint64_t old = get_csr(what);
-    set_csr(what, f(old));
+    uint64_t old = get_csr(s.fcsr, what);
+    set_csr(s.fcsr, what, f(old));
     return old;
   }
 
