@@ -40,7 +40,7 @@ inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; r
 #define w32(e)	s.frf[i->rd()-FPREG] = freg(n32(e)) 
 #define w64(e)	s.frf[i->rd()-FPREG] = freg(n64(e)) 
     
-static Header_t mismatch_header = { 0, 0, 0, false, 0 };
+static Header_t mismatch_header = { 0, 0, 0, false };
 static Header_t* mismatch = &mismatch_header;
 
 	/*
