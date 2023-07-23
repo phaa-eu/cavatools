@@ -3,14 +3,18 @@
 */
 
 extern "C" {
-#include "softfloat/softfloat.h"
-#include "softfloat/softfloat_types.h"
+#include "softfloat.h"
+#include "softfloat_types.h"
 };
-//#include <unordered_map>
 
+#ifdef SPIKE
+#include "../spike/spike_link.h"
+#include "../spike/processor.h"
+#else
 typedef int64_t		sreg_t;
 typedef uint64_t	reg_t;
 typedef float128_t	freg_t;
+#endif
 
 
 
@@ -43,16 +47,42 @@ struct Debug_t {
 #endif
 };
 
+#ifdef SPIKE
+
+extern option<> conf_isa;
+extern option<> conf_vec;
+
+struct processor_state_t {
+  processor_t spike_cpu;
+  mmu_t spike_mmu;
+  
+#define xrf spike_cpu.get_state()->XPR
+#define frf spike_cpu.get_state()->FPR
+  
+  //  fcsr_t fcsr;
+  processor_state_t() :spike_cpu(conf_isa(), "mu", conf_vec(), 0, 0, false, stdout, &spike_mmu) {  }
+  ~processor_state_t() { }
+};
+
+#else
+
 struct processor_state_t {
   reg_t  xrf[32];
   freg_t frf[32];
   fcsr_t fcsr;
 };
 
+#endif
+
 class strand_t {
   class hart_base_t* hart_pointer;	// simulation object
   processor_state_t s;
+  processor_t* p;
+#ifdef SPIKE
+  reg_t& pc = s.spike_cpu.get_state()->pc;
+#else
   uintptr_t pc;
+#endif
   
   static volatile strand_t* _list;	// for find() using thread id
   volatile strand_t* _next;		// list of strand_t
@@ -77,6 +107,7 @@ class strand_t {
 public:
   strand_t(class hart_base_t* h, int argc, const char* argv[], const char* envp[]);
   strand_t(class hart_base_t* h, strand_t* p);
+  ~strand_t();
 
   void riscv_syscall();
   
@@ -88,8 +119,8 @@ public:
   static strand_t* find(int tid);
 
   template<typename op>	uint64_t csr_func(uint64_t what, op f) {
-    uint64_t old = get_csr(s.fcsr, what);
-    set_csr(s.fcsr, what, f(old));
+    uint64_t old = get_csr(what);
+    set_csr(what, f(old));
     return old;
   }
 
@@ -116,6 +147,14 @@ public:
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
     *ap++ = (long)ptr;
     return lhs;
+  }
+
+  reg_t get_csr(int which, insn_t insn, bool write, bool peek =0) {
+    return s.spike_cpu.get_csr(which, insn, write, peek);
+  }
+  reg_t get_csr(int which) { return get_csr(which, insn_t(0), false, true); }
+  void set_csr(int which, reg_t val) {
+    s.spike_cpu.set_csr(which, val);
   }
 };
 

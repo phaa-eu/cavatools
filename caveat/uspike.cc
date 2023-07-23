@@ -19,6 +19,10 @@ option<bool> conf_calls("calls",	false, true,			"Show function calls and returns
 option<long> conf_tcache("tcache", 10000000L, "Binary translation cache size");
 option<long> conf_hash("hash", 999983L, "Hash table size, best if prime number");
 
+option<>     conf_isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
+option<>     conf_vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
+
+
 extern option<bool> conf_show;
 
 //extern std::map<long, const char*> fname; // dictionary of pc->name
@@ -82,15 +86,16 @@ void simulator(hart_base_t* h, long index)
   c->more_insn(bb->count);
 }
 
-long clone_proxy(class hart_base_t* h, long* args)
+uintptr_t clone_proxy(class hart_base_t* h)
 {
   hart_t* child = new hart_t(h);
   return clone_thread(child);
 }
 
-long syscall_proxy(class hart_base_t* h, long num, long* args)
+uintptr_t syscall_proxy(class hart_base_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5)
+  
 {
-  return host_syscall(num, args);
+  return host_syscall(num, a0, a1, a2, a3, a4, a5);
 }
 
 
@@ -169,7 +174,7 @@ int main(int argc, const char* argv[], const char* envp[])
   else if (conf_calls()) {
     int indent = 0;
     while (1) {
-#if 1
+#if 0
       long oldpc = mycpu->pc();
       Insn_t insn = decoder(oldpc);
       Opcode_t op = insn.opcode();
@@ -179,7 +184,7 @@ int main(int argc, const char* argv[], const char* envp[])
       }
 #endif 
       mycpu->single_step(true);
-#if 1
+#if 0
       if (op==Op_jal || op==Op_c_jalr || op==Op_jalr) {
 	indent++;
 	//	long pc = mycpu->pc();

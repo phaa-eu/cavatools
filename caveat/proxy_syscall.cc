@@ -87,6 +87,8 @@ int maintid;
 
 void strand_t::riscv_syscall()
 {
+  processor_t* p = &s.spike_cpu;
+  
   long a0=s.xrf[10], a1=s.xrf[11], a2=s.xrf[12], a3=s.xrf[13], a4=s.xrf[14], a5=s.xrf[15];
   long rvnum = s.xrf[17];
   if (rvnum<0 || rvnum>HIGHEST_ECALL_NUM || !rv_to_host[rvnum].name) {
@@ -110,12 +112,15 @@ void strand_t::riscv_syscall()
     int tid = gettid();
     fprintf(stderr, "[%d] Ecall %s( %ld(0x%lx), %ld(0x%lx), %ld(0x%lx), %ld(0x%lx) )", tid, name, a0, a0, a1, a1, a2, a2, a3, a3);
   }
+  long rv;
   if (sysnum == SYS_clone)
-    s.xrf[10] = hart_pointer->clone(hart_pointer, (long*)s.xrf+10);
+    //    s.xrf[10] = hart_pointer->clone(hart_pointer, (long*)s.xrf+10);
+    rv = hart_pointer->clone(hart_pointer);
   else
-    s.xrf[10] = hart_pointer->syscall(hart_pointer, sysnum, (long*)s.xrf+10);
+    rv = hart_pointer->syscall(hart_pointer, sysnum, a0, a1, a2, a3, a4, a5);
   if (conf_ecall())
-    fprintf(stderr, " -> %ld(0x%lx)\n", s.xrf[10], s.xrf[10]);
+    fprintf(stderr, " -> %ld(0x%lx)\n", rv, rv);
+  WRITE_REG(10, rv);
 }
 
 #define prefix(x) (strncmp(path, x, strlen(x))==0)
@@ -139,7 +144,7 @@ char* riscv_remap(char* path)
     return path;
 }
 
-long host_syscall(int sysnum, long* a)
+uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5)
 {
   long retval=0;
   switch (sysnum) {
@@ -149,7 +154,7 @@ long host_syscall(int sysnum, long* a)
     if (gettid() == maintid) {
       for (hart_base_t* p=hart_base_t::list()->next(); p; p=p->next())
 	kill(p->tid(), SIGQUIT);
-      throw((int)a[0]);
+      throw((int)a0);
     }
     else {
       while (1)
@@ -161,7 +166,7 @@ long host_syscall(int sysnum, long* a)
     //fprintf(stderr, "SYS_brk(%lx)\n", a0);
     //    retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
     //fprintf(stderr, "current.brk = 0x%lx\n", current.brk);
-    retval = emulate_brk(a[0]);
+    retval = emulate_brk(a0);
     return retval;
 #endif
     
@@ -175,24 +180,24 @@ long host_syscall(int sysnum, long* a)
 
 #if 1
   case SYS_open:
-    a[0] = (long)riscv_remap((char*)a[0]);
+    a0 = (long)riscv_remap((char*)a0);
     break;
   case SYS_openat:
   case SYS_openat2:
-    a[1] = (long)riscv_remap((char*)a[1]);
+    a1 = (long)riscv_remap((char*)a1);
     break;
 #endif
     
   default:
     ;
   }
-  retval = asm_syscall(sysnum, a[0], a[1], a[2], a[3], a[4], a[5]);
+  retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
   return retval;
 }
  
-long default_syscall_func(class hart_base_t* h, long num, long* args)
+uintptr_t default_syscall_func(class hart_base_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5)
 {
-  return host_syscall(num, args);
+  return host_syscall(num,  a0, a1, a2, a3, a4, a5);
 }
 
 
@@ -212,12 +217,14 @@ long default_syscall_func(class hart_base_t* h, long num, long* args)
 
 void thread_interpreter(strand_t* me)
 {
+  processor_t* p = &me->s.spike_cpu;
+  
   me->tid = gettid();
   futex(&me->tid, FUTEX_WAKE, 1);
-  
-  me->s.xrf[2] = me->s.xrf[11];	// a1 = child_stack
-  me->s.xrf[4] = me->s.xrf[13];	// a3 = tls
-  me->s.xrf[10] = 0;		// indicate child thread
+
+  WRITE_REG(2, me->s.xrf[11]);	// a1 = child_stack
+  WRITE_REG(4, me->s.xrf[13]);	// a3 = tls
+  WRITE_REG(10, 0);		// indicate child thread
   me->pc += 4;			// skip over ecall
   me->interpreter();
 }

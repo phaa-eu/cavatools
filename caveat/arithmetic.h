@@ -2,6 +2,17 @@
   Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
+
+#undef RM
+#define RM ({ int rm = i->immed(); \
+              if(rm == 7) rm = s.fcsr.f.rm; \
+              if(rm > 4) die("Illegal instruction"); \
+              rm; })
+
+#define srm  softfloat_roundingMode = RM
+#define sfx  STATE.fflags |= softfloat_exceptionFlags
+
+
 /* Convenience wrappers to simplify softfloat code sequences */
 
 #define isBoxedF32(r) (isBoxedF64(r) && ((uint32_t)((r.v[0] >> 32) + 1) == 0))
@@ -9,6 +20,7 @@
 #define isBoxedF64(r) ((r.v[1] + 1) == 0)
 #define unboxF64(r) (isBoxedF64(r) ? r.v[0] : defaultNaNF64UI)
 
+#if 0
 inline float32_t f32(uint32_t v) { return { v }; }
 inline float64_t f64(uint64_t v) { return { v }; }
 inline float32_t f32(freg_t r) { return f32(unboxF32(r)); }
@@ -18,16 +30,9 @@ inline float128_t f128(freg_t r) { return r; }
 inline freg_t freg(float32_t f) { return { ((uint64_t)-1 << 32) | f.v, (uint64_t)-1 }; }
 inline freg_t freg(float64_t f) { return { f.v, (uint64_t)-1 }; }
 inline freg_t freg(float128_t f) { return f; }
+#endif
 
 // RISC-V things
-
-#undef RM
-#define RM ({ int rm = i->immed(); \
-              if(rm == 7) rm = s.fcsr.f.rm; \
-              if(rm > 4) die("Illegal instruction"); \
-              rm; })
-#define srm  softfloat_roundingMode = RM
-#define sfx  s.fcsr.f.flags |= softfloat_exceptionFlags
 
 #define F32_SIGN ((uint32_t)1 << 31)
 #define F64_SIGN ((uint64_t)1 << 63)
@@ -83,6 +88,7 @@ static inline float64_t fmax_d(float64_t f1, float64_t f2)
 
 // RISCV-V classify (disappeared from SoftFloat-3e
 
+#if 0
 static inline uint_fast16_t f32_classify( float32_t a )
 {
   union ui32_f32 { uint32_t ui; float32_t f; } uA;
@@ -138,9 +144,9 @@ static inline uint_fast16_t f64_classify( float64_t a )
         ( isNaN &&  isSNaN )                       << 8 |
         ( isNaN && !isSNaN )                       << 9;
 }
+#endif
 
-
-
+#ifndef SPIKE
 
 // Integer multiplication routines
 
@@ -178,3 +184,5 @@ static inline int64_t mulhsu(int64_t a, uint64_t b)
   uint64_t res = mulhu(a < 0 ? -a : a, b);
   return negate ? ~res + (a * b == 0) : res;
 }
+
+#endif

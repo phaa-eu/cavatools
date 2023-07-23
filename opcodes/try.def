@@ -1,0 +1,19 @@
+#  Opcode	Assembler	Attributes		     Instruction Format				Register Fields				C++ Semantics
+
+# RVC Compressed Instruction Set, Quadrant 0
+
+# RVC Compressed Instruction Set, Quadrant 1
+#   c.beqz	rs1		C,cj,>			     "110 {-8|4:3} ... {7:6|2:1|5} 01"		-,l[9:7]+8,-,-				"branch(r1==0, pc+imm, pc+2)"
+#   c.bnez	rs1		C,cj,>			     "111 {-8|4:3} ... {7:6|2:1|5} 01"		-,l[9:7]+8,-,-				"branch(r1!=0, pc+imm, pc+2)"
+
+# RVC Compressed Instruction Set, Quadrant 1
+   c.jalr	rs1		C,uj,>			     "100 1      .....       00000 10"		1,l[11:7],-,-				"{ long npc=r1; wrd(pc+2); jump(npc); }"
+
+# RV32I Base Instruction Set
+
+   beq		s,t,p		I,cj,>		"{-12|10:5}  ..... ..... 000 {4:1|11} 1100011"		-,l[19:15],l[24:20],-			"branch( int64_t(r1)== int64_t(r2), pc+imm, pc+4)"
+   bne		s,t,p		I,cj,>		"{-12|10:5}  ..... ..... 001 {4:1|11} 1100011"		-,l[19:15],l[24:20],-			"branch( int64_t(r1)!= int64_t(r2), pc+imm, pc+4)"
+   blt		s,t,p		I,cj,>		"{-12|10:5}  ..... ..... 100 {4:1|11} 1100011"		-,l[19:15],l[24:20],-			"branch( int64_t(r1)<  int64_t(r2), pc+imm, pc+4)"
+   bge		s,t,p		I,cj,>		"{-12|10:5}  ..... ..... 101 {4:1|11} 1100011"		-,l[19:15],l[24:20],-			"branch( int64_t(r1)>= int64_t(r2), pc+imm, pc+4)"
+   bltu		s,t,p		I,cj,>		"{-12|10:5}  ..... ..... 110 {4:1|11} 1100011"		-,l[19:15],l[24:20],-			"branch(uint64_t(r1)< uint64_t(r2), pc+imm, pc+4)"
+   bgeu		s,t,p		I,cj,>		"{-12|10:5}  ..... ..... 111 {4:1|11} 1100011"		-,l[19:15],l[24:20],-			"branch(uint64_t(r1)>=uint64_t(r2), pc+imm, pc+4)"

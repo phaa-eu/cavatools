@@ -73,7 +73,7 @@ def ParseOpcode(bits):
         exit(-1)
     code = '0x' + hex(code)[2:].zfill(digits)
     mask = '0x' + hex(mask)[2:].zfill(digits)
-    return (code, mask, pos/8, immed, immtyp)
+    return (code, mask, pos//8, immed, immtyp)
 
 
 def ParseReglist(reglist):
@@ -100,17 +100,33 @@ def ParseReglist(reglist):
         rv.append('NOREG')
     return rv
 
+compressed = []
+standard = []
+for filename in sys.argv[1:]:
+    with open(filename) as f:
+        for line in f:
+            m = opcode_line.match(line)
+            if not m:
+                continue
+            tuple = m.groups()
+            if tuple[0][0] == '#':
+                continue
+            if tuple[1][0:2] == 'c.':
+                compressed.append(tuple)
+            else:
+                standard.append(tuple)
+
 instructions = {}
-for line in sys.stdin:
-    m = opcode_line.match(line)
-    if not m:
-        continue
-    (kind, opcode, asm, attr, bits, reglist, action) = m.groups()
-    if kind[0] == '#':
-        continue
+for tuple in compressed+standard:
+    (kind, opcode, asm, attr, bits, reglist, action) = tuple
     attr = attr.split(',')
     if '+' in kind:
         attr.append('custom')
+    if '!' in kind:
+        if opcode in instructions:
+            #print('ignoring spike opcode', opcode)
+            continue
+        attr.append('spike')
     opname = 'Op_' + opcode.replace('.', '_')
     (code, mask, bytes, immed, immtyp) = ParseOpcode(bits)
     instructions[opcode] = (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action)
@@ -118,7 +134,6 @@ for line in sys.stdin:
         last_compressed_opcode = opcode
 
 opcodes = ['ZERO'] + [key for key in instructions] + ['ILLEGAL', 'UNKNOWN']
-#numopcodes = len(opcodes)
 
 with open('newcode.tmp', 'w') as f:
     json.dump(instructions, f)
@@ -249,10 +264,12 @@ diffcp('../caveat/decoder.h')
 with open('newcode.tmp', 'w') as f:
     for opcode, t in instructions.items():
         (opname, asm, attr, code, mask, bytes, immed, immtyp, reglist, action) = t
-#        stop = 'pc+={:d}; break'.format(int(bytes))
-#        if '>' in attr:
-#            stop = 'stop'
-#        f.write('    case {:20s} {:s}; {:s};\n'.format(opname+':', action, stop))
-        f.write('    case {:20s} {:s}; pc+={:d}; break;\n'.format(opname+':', action, int(bytes)))
+        if 'spike' in attr:
+            fini = 'break'
+            if 'cj' in attr or 'uj' in attr:
+                fini = 'spike_stop'
+            f.write('    case {:20s} {:s}; {:s}; // len={:d}\n'.format(opname+':', action, fini, int(bytes)))
+        else:
+            f.write('    case {:20s} {:s}; pc+={:d}; break;\n'.format(opname+':', action, int(bytes)))
 diffcp('../caveat/semantics.h')
     

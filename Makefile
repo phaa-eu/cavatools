@@ -10,6 +10,8 @@ nothing:
 clean:
 	rm -f $(CAVA)/lib/libcava.a *~ ./#*#
 	rm -f $(CAVA)/include/cava/*
+	make -C softfloat clean
+	make -C spike     clean
 	make -C opcodes   clean
 	make -C caveat    clean
 	make -C cachesim  clean
@@ -18,6 +20,8 @@ tarball:  clean
 	( cd ..; tar -czvf cavatools.tgz cavatools )
 
 install:
+	make -C softfloat
+	make -C spike    install
 	make -C opcodes  install
 	make -C caveat   install
 	make -C cachesim install

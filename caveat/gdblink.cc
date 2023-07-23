@@ -528,7 +528,11 @@ void controlled_by_gdb(const char* host_port, hart_base_t* cpu)
 {
   gdb_cpu = cpu;
   gdb_pc = &cpu->strand->pc;
+#ifdef SPIKE
+#define gdb_reg cpu->strand->s.spike_cpu.get_state()->XPR
+#else
   gdb_reg = (long*)cpu->strand->s.xrf;
+#endif
   conf_show.setval("toggle");
   msg("Opening TCP link to GDB\n");
   OpenTcpLink(host_port);

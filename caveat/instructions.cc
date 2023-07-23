@@ -12,7 +12,7 @@
 
 #include "options.h"
 #include "caveat.h"
-
+#include "strand.h"
 
 extern option<long> conf_tcache;
 

@@ -1,6 +1,8 @@
 /*
   Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
+
+
 #include <limits.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -69,6 +71,14 @@ static Header_t* mismatch = &mismatch_header;
 
 bool strand_t::single_step(bool show_trace)
 {
+  abort();
+}
+
+
+#if 0
+
+bool strand_t::single_step(bool show_trace)
+{
   uintptr_t addresses[10];	// address list is one per strand
   Header_t* bb = const_cast<Header_t*>(tcache.bbptr(0));
   bb->addr = pc;
@@ -104,3 +114,6 @@ bool strand_t::single_step(bool show_trace)
   hart_pointer->simulator(hart_pointer, 0);
   return false;
 }
+
+
+#endif

@@ -150,8 +150,8 @@ static inline const Header_t* bbp(const Insn_t* p) { return (const Header_t*)p; 
 
 
 typedef void (*simfunc_t)(class hart_base_t* h, long index);
-typedef long (*syscallfunc_t)(class hart_base_t* h, long num, long* args);
-typedef long (*clonefunc_t)(class hart_base_t* h, long* args);
+typedef uintptr_t (*syscallfunc_t)(class hart_base_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
+typedef uintptr_t (*clonefunc_t)(class hart_base_t* h);
 
 class hart_base_t {
   class strand_t* strand;	// opaque pointer
@@ -201,8 +201,8 @@ int sdisasm(char* buf, uintptr_t pc, const Insn_t* i);
 void disasm(uintptr_t pc, const Insn_t* i, const char* end ="\n", FILE* f =stderr);
 
 int clone_thread(hart_base_t* s);
-long host_syscall(int sysnum, long* a);
-long default_syscall_func(class hart_base_t* h, long num, long* args);
+uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
+uintptr_t default_syscall_func(class hart_base_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
 
 void wait_until_zero(volatile int* vp);
 void release_waiter(volatile int* vp);

@@ -1,0 +1,11 @@
+
+src_files := $(wildcard *.c)
+obj_files := $(patsubst %.cc,%.o,$(src_files))
+
+libsoftfloat.a: $(obj_files)
+	ar r $@ $?
+
+$(obj_files):  ../spike_link.h ../mmu.h
+
+clean:
+	rm *.o
