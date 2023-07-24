@@ -8,8 +8,8 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-#ISA := RV64GC-nfp.def
-ISA := minimal.def try.def spike.def
+ISA := minimal.def RV64GC-nfp.def
+#ISA := minimal.def spike.def
 
 install: custom_asm_macros.h isa.json ../caveat/opcodes.h
 	cp custom_asm_macros.h $(CAVA)/include/

@@ -43,7 +43,9 @@ inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; r
 static Header_t mismatch_header = Header_t(0, 0, 0, false);
 static Header_t* mismatch = &mismatch_header;
 
+#ifdef SPIKE
 #include "spike_insns.h"
+#endif
 
 int strand_t::interpreter()
 {
@@ -112,8 +114,7 @@ int strand_t::interpreter()
       // execute basic block
       //
       for (const Insn_t* i=insnp(bb+1); i<insnp(bb+1)+bb->count; i++) {
-	s.spike_cpu.get_state()->XPR.write(0, 0);
-	//s.xrf[0] = 0;
+	WRITE_REG(0, 0);
 	debug.insert(pc, *i);
 #if 0
 	labelpc(pc);

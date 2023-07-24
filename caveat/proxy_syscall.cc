@@ -87,8 +87,6 @@ int maintid;
 
 void strand_t::riscv_syscall()
 {
-  processor_t* p = &s.spike_cpu;
-  
   long a0=s.xrf[10], a1=s.xrf[11], a2=s.xrf[12], a3=s.xrf[13], a4=s.xrf[14], a5=s.xrf[15];
   long rvnum = s.xrf[17];
   if (rvnum<0 || rvnum>HIGHEST_ECALL_NUM || !rv_to_host[rvnum].name) {
@@ -131,13 +129,7 @@ char* riscv_remap(char* path)
     const char* sysroot = "/opt/riscv/sysroot";
     strcpy(riscv_file, sysroot);
     strcpy(riscv_file+strlen(sysroot), path);
-#if 0
-    // hack!
-    if (riscv_file[strlen(riscv_file)-1] != '6')
-      strcpy(riscv_file+strlen(riscv_file), ".6");
-    //
-#endif
-    dbmsg("mapping %s to %s", path, riscv_file);
+    dbmsg("mapping '%s' to '%s'", path, riscv_file);
     return riscv_file;
   }
   else
@@ -217,14 +209,19 @@ uintptr_t default_syscall_func(class hart_base_t* h, int num, uintptr_t a0, uint
 
 void thread_interpreter(strand_t* me)
 {
-  processor_t* p = &me->s.spike_cpu;
-  
   me->tid = gettid();
   futex(&me->tid, FUTEX_WAKE, 1);
 
-  WRITE_REG(2, me->s.xrf[11]);	// a1 = child_stack
-  WRITE_REG(4, me->s.xrf[13]);	// a3 = tls
+#ifdef SPIKE
+  processor_t* p = &me->s.spike_cpu;
+  WRITE_REG(2, READ_REG(11));	// a1 = child_stack
+  WRITE_REG(4, READ_REG(13));	// a3 = tls
   WRITE_REG(10, 0);		// indicate child thread
+#else
+  me->s.xrf[2] = me->s.xrf[11]; // a1 = child_stack
+  me->s.xrf[4] = me->s.xrf[13]; // a3 = tls
+  me->s.xrf[20] = 0;		// indicate child thread
+#endif
   me->pc += 4;			// skip over ecall
   me->interpreter();
 }

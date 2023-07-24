@@ -82,45 +82,6 @@ void disasm(uintptr_t pc, const Insn_t* i, const char* end, FILE* f)
 }
 
 
-
-
-#define CSR_FFLAGS	0x1
-#define CSR_FRM		0x2
-#define CSR_FCSR	0x3
-
-long get_csr(fcsr_t& fcsr, int what)
-{
-  switch (what) {
-  case CSR_FFLAGS:
-    return fcsr.f.flags;
-  case CSR_FRM:
-    return fcsr.f.rm;
-  case CSR_FCSR:
-    return fcsr.ui;
-  default:
-    die("unsupported CSR number %d", what);
-  }
-}
-
-void set_csr(fcsr_t& fcsr, int what, long val)
-{
-  switch (what) {
-  case CSR_FFLAGS:
-    fcsr.f.flags = val;
-    break;
-  case CSR_FRM:
-    fcsr.f.rm = val;
-    break;
-  case CSR_FCSR:
-    fcsr.ui = val;
-    break;
-  default:
-    die("unsupported CSR number %d", what);
-  }
-}
-
-
-
 void Tcache_t::initialize(size_t cachesize, size_t hashtablesize)
 {
   _extent = cachesize;

@@ -3,9 +3,22 @@
 #
 #  Environment variables RVTOOLS and CAVA must be defined
 
+# Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
+ifndef CAVA
+CAVA := $(HOME)
+endif
+
 .PHONY:  nothing clean install
 nothing:
 	echo "clean, tarball, install?"
+
+install:
+	make -C softfloat
+	cp softfloat/libsoftfloat.a ~/lib/
+	make -C spike    install
+	make -C opcodes  install
+	make -C caveat   install
+	make -C cachesim install
 
 clean:
 	rm -f $(CAVA)/lib/libcava.a *~ ./#*#
@@ -18,13 +31,6 @@ clean:
 
 tarball:  clean
 	( cd ..; tar -czvf cavatools.tgz cavatools )
-
-install:
-	make -C softfloat
-	make -C spike    install
-	make -C opcodes  install
-	make -C caveat   install
-	make -C cachesim install
 
 
 

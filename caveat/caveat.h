@@ -58,20 +58,6 @@ static_assert(sizeof(Insn_t) == 8);
 Insn_t decoder(uintptr_t pc);
 
 /*
-  Processor status register
-*/
-union fcsr_t {
-  struct {
-    unsigned flags : 5;
-    unsigned rm :3;
-  } f;
-  uint32_t ui;
-};
-
-long get_csr(fcsr_t& fcsr, int what);
-void set_csr(fcsr_t& fcsr, int what, long value);
-
-/*
   The Translation Cache is an array of 64-bit slots.  A slot can be a translated
   instruction, a basic block header (2 words), or a branch target pointer.  Translated
   instructions are described above.  Each basic block begins with a header

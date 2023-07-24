@@ -5,12 +5,12 @@
 
 #undef RM
 #define RM ({ int rm = i->immed(); \
-              if(rm == 7) rm = s.fcsr.f.rm; \
+              if(rm == 7) rm = s.frm; \
               if(rm > 4) die("Illegal instruction"); \
               rm; })
 
 #define srm  softfloat_roundingMode = RM
-#define sfx  STATE.fflags |= softfloat_exceptionFlags
+#define sfx  s.fflags |= softfloat_exceptionFlags
 
 
 /* Convenience wrappers to simplify softfloat code sequences */
@@ -20,7 +20,7 @@
 #define isBoxedF64(r) ((r.v[1] + 1) == 0)
 #define unboxF64(r) (isBoxedF64(r) ? r.v[0] : defaultNaNF64UI)
 
-#if 0
+#ifndef SPIKE
 inline float32_t f32(uint32_t v) { return { v }; }
 inline float64_t f64(uint64_t v) { return { v }; }
 inline float32_t f32(freg_t r) { return f32(unboxF32(r)); }

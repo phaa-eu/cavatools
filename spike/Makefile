@@ -1,4 +1,10 @@
 
+# Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
+ifndef CAVA
+CAVA := $(HOME)
+endif
+
+
 include Makefile.insns
 
 riscv_insn_list = \
@@ -24,6 +30,7 @@ obj_files := $(patsubst build/%.cc,%.o,$(insn_files))
 CXXFLAGS := -g -O3 -I. -I../softfloat
 
 install: ../opcode/spike.def ../caveat/spike_insns.h build/libspike.a processor.o
+	cp build/libspike.a $(CAVA)/lib/.
 
 build/libspike.a ../opcode/spike.def ../caveat/spike_insns.h:
 	python make_insns.py $(riscv_insn_list)

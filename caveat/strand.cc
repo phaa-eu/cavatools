@@ -31,7 +31,9 @@ strand_t* strand_t::find(int tid)
 
 void strand_t::initialize(class hart_base_t* h)
 {
+#ifdef SPIKE
   p = &s.spike_cpu;
+#endif
   do {  // atomically attach to list of strands
     _next = _list;
   } while (!__sync_bool_compare_and_swap(&_list, _next, this));
@@ -46,12 +48,11 @@ void strand_t::initialize(class hart_base_t* h)
 strand_t::strand_t(class hart_base_t* h, int argc, const char* argv[], const char* envp[])
 {
   memset(&s, 0, sizeof(processor_state_t));
-  long stack_pointer;
-  processor_t* p = &s.spike_cpu;
-  WRITE_REG(2, emulate_execve(argv[0], argc, argv, envp, pc));
+  uintptr_t stack_pointer = emulate_execve(argv[0], argc, argv, envp, pc);
   tid = gettid();
   ptnum = pthread_self();
   initialize(h); // do at end because there are atomic stuff in initialize()
+  WRITE_REG(2, stack_pointer);
   extern int maintid;
   maintid = tid;
 }
@@ -126,22 +127,25 @@ void strand_t::print_trace(uintptr_t pc, Insn_t* i, FILE* out)
 
 
 
+#ifdef SPIKE
+#define state (*s.spike_cpu.get_state())
+#else
+#define state s
+#endif
 
 reg_t strand_t::get_csr(int which, insn_t insn, bool write, bool peek)
 {
-  state_t& state = *s.spike_cpu.get_state();
-
-#define ret(v)  return (v)
-  
   switch (which) {
   case CSR_FFLAGS:
-    ret(state.fflags);
+    return state.fflags;
   case CSR_FRM:
-    ret(state.frm);
+    return state.frm;
   case CSR_FCSR:
-    ret((state.fflags << FSR_AEXC_SHIFT) | (state.frm << FSR_RD_SHIFT));
+    return (state.fflags << FSR_AEXC_SHIFT) | (state.frm << FSR_RD_SHIFT);
+#ifdef SPIKE
   case CSR_VCSR:
-    ret((p->VU.vxsat << VCSR_VXSAT_SHIFT) | (p->VU.vxrm << VCSR_VXRM_SHIFT));
+    return (p->VU.vxsat << VCSR_VXSAT_SHIFT) | (p->VU.vxrm << VCSR_VXRM_SHIFT);
+#endif
   default:
     break;
   }
@@ -150,29 +154,31 @@ reg_t strand_t::get_csr(int which, insn_t insn, bool write, bool peek)
 
 void strand_t::set_csr(int which, reg_t val)
 {
-  state_t& state = *s.spike_cpu.get_state();
-
+#ifdef SPIKE
+  dirty_fp_state;
+#endif
+  
   switch (which) {
   case CSR_FFLAGS:
-    dirty_fp_state;
     state.fflags = val & (FSR_AEXC >> FSR_AEXC_SHIFT);
     break;
   case CSR_FRM:
-    dirty_fp_state;
     state.frm = val & (FSR_RD >> FSR_RD_SHIFT);
     break;
   case CSR_FCSR:
-    dirty_fp_state;
     state.fflags = (val & FSR_AEXC) >> FSR_AEXC_SHIFT;
     state.frm = (val & FSR_RD) >> FSR_RD_SHIFT;
     break;
+#ifdef SPIKE
   case CSR_VCSR:
-    dirty_vs_state;
     p->VU.vxsat = (val & VCSR_VXSAT) >> VCSR_VXSAT_SHIFT;
     p->VU.vxrm = (val & VCSR_VXRM) >> VCSR_VXRM_SHIFT;
     break;
+#endif
   default:
     die("set_csr bad number");
   }
 }
+
+#undef state
 
