@@ -126,35 +126,21 @@ void strand_t::print_trace(uintptr_t pc, Insn_t* i, FILE* out)
 
 
 
-#if 0
 
-reg_t strand_t::get_csr(int which, Insn_t insn, bool write, bool peek)
+reg_t strand_t::get_csr(int which, insn_t insn, bool write, bool peek)
 {
   state_t& state = *s.spike_cpu.get_state();
-  const int xlen = 64;
 
 #define ret(v)  return (v)
   
   switch (which) {
   case CSR_FFLAGS:
-    require_fp;
-    if (!p->supports_extension('F'))
-      break;
     ret(state.fflags);
   case CSR_FRM:
-    require_fp;
-    if (!p->supports_extension('F'))
-      break;
     ret(state.frm);
   case CSR_FCSR:
-    require_fp;
-    if (!p->supports_extension('F'))
-      break;
     ret((state.fflags << FSR_AEXC_SHIFT) | (state.frm << FSR_RD_SHIFT));
   case CSR_VCSR:
-    require_vector_vs;
-    if (!p->supports_extension('V'))
-      break;
     ret((p->VU.vxsat << VCSR_VXSAT_SHIFT) | (p->VU.vxrm << VCSR_VXRM_SHIFT));
   default:
     break;
@@ -165,7 +151,6 @@ reg_t strand_t::get_csr(int which, Insn_t insn, bool write, bool peek)
 void strand_t::set_csr(int which, reg_t val)
 {
   state_t& state = *s.spike_cpu.get_state();
-  const int xlen = 64;
 
   switch (which) {
   case CSR_FFLAGS:
@@ -191,4 +176,3 @@ void strand_t::set_csr(int which, reg_t val)
   }
 }
 
-#endif

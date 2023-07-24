@@ -149,13 +149,9 @@ public:
     return lhs;
   }
 
-  reg_t get_csr(int which, insn_t insn, bool write, bool peek =0) {
-    return s.spike_cpu.get_csr(which, insn, write, peek);
-  }
+  reg_t get_csr(int which, insn_t insn, bool write, bool peek =0);
   reg_t get_csr(int which) { return get_csr(which, insn_t(0), false, true); }
-  void set_csr(int which, reg_t val) {
-    s.spike_cpu.set_csr(which, val);
-  }
+  void set_csr(int which, reg_t val);
 };
 
 class strand_t* find_cpu(int tid);
