@@ -155,49 +155,15 @@ public:
 };
 
 
-typedef void (*simfunc_t)(class hart_base_t* h, Header_t* bb);
-typedef uintptr_t (*syscallfunc_t)(class hart_base_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
-typedef uintptr_t (*clonefunc_t)(class hart_base_t* h);
-
-class hart_base_t {
-  class strand_t* strand;	// opaque pointer
-  
-  friend void controlled_by_gdb(const char* host_port, hart_base_t* cpu);
-  friend int clone_thread(hart_base_t* s);
-  
-public:
-  Tcache_t tcache;
-  
-  simfunc_t simulator;		// function pointer for simulation
-  clonefunc_t clone;		// function pointer just for clone system call
-  syscallfunc_t syscall;	// function pointer for other system calls
-  
-  hart_base_t(int argc, const char* argv[], const char* envp[]);
-  hart_base_t(hart_base_t* from);
-  static void join_all();
-  
-  bool interpreter();
-  bool single_step(bool show_trace =false);
-  uintptr_t* addresses();
-  uintptr_t pc();
-
-  static hart_base_t* list();
-  hart_base_t* next();
-  int number();
-  int tid();
-  void set_tid();
-  long flushed();
-  static hart_base_t* find(int tid);
-  static int num_harts();
-  void debug_print();
-  
-  void print_debug_trace();  
-};
+typedef void (*simfunc_t)(class hart_t* h, Header_t* bb);
+typedef uintptr_t (*syscallfunc_t)(class hart_t* h, int num,
+				   uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
+typedef uintptr_t (*clonefunc_t)(class hart_t* h);
 
 
 void start_time();
 double elapse_time();
-void controlled_by_gdb(const char* host_port, hart_base_t* cpu, simfunc_t simulator);
+void controlled_by_gdb(const char* host_port, hart_t* cpu, simfunc_t simulator);
 
 //const char* func_name(uintptr_t pc);
 
@@ -207,10 +173,7 @@ void labelpc(uintptr_t pc, FILE* f =stderr);
 int sdisasm(char* buf, uintptr_t pc, const Insn_t* i);
 void disasm(uintptr_t pc, const Insn_t* i, const char* end ="\n", FILE* f =stderr);
 
-int clone_thread(hart_base_t* s);
+int clone_thread(hart_t* s);
 uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
-uintptr_t default_syscall_func(class hart_base_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
-
-void wait_until_zero(volatile int* vp);
-void release_waiter(volatile int* vp);
+uintptr_t default_syscall_func(hart_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
 

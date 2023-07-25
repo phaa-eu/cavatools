@@ -11,12 +11,14 @@
 #include <map>
 
 #include "caveat.h"
-#include "strand.h"
+#include "hart.h"
 
 std::map<long, std::string> fname; // dictionary of pc->name
 
-const char* func_name(uintptr_t pc) { return fname.count(pc)==1 ? const_cast<const char*>(fname.at(pc).c_str()) : "NOT FOUND"; }
-
+const char* func_name(uintptr_t pc)
+{
+  return fname.count(pc)==1 ? const_cast<const char*>(fname.at(pc).c_str()) : "NOT FOUND";
+}
 
 #define LABEL_WIDTH  16
 #define OFFSET_WIDTH  8
@@ -78,10 +80,6 @@ void disasm(uintptr_t pc, const Insn_t* i, const char* end, FILE* f)
   fprintf(f, "%s%s", buffer, end);
 }
 
-
-
-
-
 #ifdef DEBUG
 
 pctrace_t Debug_t::get()
@@ -104,7 +102,7 @@ void Debug_t::insert(long pc, Insn_t i)
   trace[cursor].val   = ~0l;
 }
 
-void Debug_t::addval(reg_t val)
+void Debug_t::addval(long val)
 {
   trace[cursor].val = val;
 }

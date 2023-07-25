@@ -13,7 +13,7 @@
 #include <signal.h>
 
 #include "caveat.h"
-#include "strand.h"
+#include "hart.h"
 
 extern "C" {
 #include "softfloat/softfloat.h"
@@ -39,7 +39,7 @@ static Header_t* mismatch = &mismatch_header;
 #include "spike_insns.h"
 #endif
 
-int strand_t::interpreter()
+int hart_t::interpreter()
 {
   uintptr_t addresses[1000];	// address list is one per strand
   try {
@@ -106,6 +106,7 @@ int strand_t::interpreter()
       // execute basic block
       //
       for (const Insn_t* i=insnp(bb+1); i<insnp(bb+1)+bb->count; i++) {
+	_executed++;
 	WRITE_REG(0, 0);
 	debug.insert(pc, *i);
 #if 0
@@ -162,7 +163,7 @@ int strand_t::interpreter()
 #define fence_i(x)
       
 	//#define ebreak() return true
-#define ebreak() kill(tid, SIGTRAP)
+#define ebreak() kill(tid(), SIGTRAP)
 
 #define stop debug.addval(s.xrf[i->rd()]); goto end_bb
 #define spike_stop  target=&mismatch; stop
@@ -182,7 +183,7 @@ int strand_t::interpreter()
       } // if loop exits there was no branch
       target = (Header_t**)(insnp(bb+1) + bb->count);
     end_bb:
-      hart_pointer->simulator(hart_pointer, bb);
+      simulator(this, bb);
     }
   } catch (int retval) {
     return retval;

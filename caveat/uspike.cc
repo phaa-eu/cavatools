@@ -8,37 +8,9 @@
 #include <pthread.h>
 
 #include "caveat.h"
+#include "hart.h"
 
 option<long> conf_report("report", 1, "Status report per second");
-option<>     conf_gdb("gdb",	0, "localhost:1234", "Remote GDB connection");
-option<bool> conf_calls("calls",	false, true,			"Show function calls and returns");
-
-option<size_t> conf_tcache("tcache", 1000000L, "Binary translation cache size");
-option<size_t> conf_hash("hash", 997L, "Hash table size, best if prime number");
-
-option<>     conf_isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
-option<>     conf_vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
-
-
-extern option<bool> conf_show;
-
-//extern std::map<long, const char*> fname; // dictionary of pc->name
-
-class hart_t : public hart_base_t {
-  long _executed;
-public:
-  hart_t(int argc, const char* argv[], const char* envp[])
-    :hart_base_t(argc, argv, envp) { _executed=0; }
-  hart_t(hart_base_t* from) :hart_base_t(from) { _executed=0; }
-
-  long executed() { return _executed; }
-  void more_insn(long n) { _executed+=n; }
-  static hart_t* list() { return (hart_t*)hart_base_t::list(); }
-  hart_t* next() { return (hart_t*)hart_base_t::next(); }
-  static hart_t* find(int tid) { return (hart_t*)hart_base_t::find(tid); }
-  friend void simulator(hart_base_t* h, Header_t* bb, uint64_t* counters);
-  friend void status_report();
-};
 
 void status_report()
 {
@@ -72,19 +44,17 @@ void status_report()
     fprintf(stderr, "(%d cores)", hart_t::num_harts());
 }
 
-void simulator(hart_base_t* h, Header_t* bb)
+void simulator(hart_t* h, Header_t* bb)
 {
-  hart_t* c = (hart_t*)h;
-  c->more_insn(bb->count);
 }
 
-uintptr_t clone_proxy(class hart_base_t* h)
+uintptr_t clone_proxy(class hart_t* parent)
 {
-  hart_t* child = new hart_t(h);
+  hart_t* child = new hart_t(parent);
   return clone_thread(child);
 }
 
-uintptr_t syscall_proxy(class hart_base_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5)
+uintptr_t syscall_proxy(class hart_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5)
   
 {
   return host_syscall(num, a0, a1, a2, a3, a4, a5);
@@ -149,7 +119,7 @@ int main(int argc, const char* argv[], const char* envp[])
     sigaction(SIGINT,  &action, NULL);
     if (setjmp(return_to_top_level) != 0) {
       fprintf(stderr, "SIGSEGV signal was caught\n");
-      mycpu->print_debug_trace();
+      mycpu->debug_print();
       exit(-1);
     }
   }
@@ -159,41 +129,13 @@ int main(int argc, const char* argv[], const char* envp[])
     controlled_by_gdb(conf_gdb(), mycpu);
   else if (conf_show()) {
     while (1)
-      mycpu->single_step(true);
-  }
-  else if (conf_calls()) {
-    int indent = 0;
-    while (1) {
-#if 0
-      long oldpc = mycpu->pc();
-      Insn_t insn = decoder(oldpc);
-      Opcode_t op = insn.opcode();
-      
-      if (op==Op_c_ret || op==Op_ret) {
-	indent--;
-      }
-#endif 
-      mycpu->single_step(true);
-#if 0
-      if (op==Op_jal || op==Op_c_jalr || op==Op_jalr) {
-	indent++;
-	//	long pc = mycpu->pc();
-	//	auto it = fname.find(pc);
-	//	fprintf(stderr, "\r%*s%s 0x%lx ", indent*4, "", op_name[op], pc);
-	//	fprintf(stderr, " %s from 0x%lx\n", it==fname.end() ? "NOT FOUND" : it->second, oldpc);
-	//	fprintf(stderr, "\r%*s%s\n", indent*4, "", it==fname.end() ? "NOT FOUND" : it->second);
-	
-	//fprintf(stderr, "\r%*s%s\n", indent*4, "", func_name(mycpu->pc()));
-      }
-#endif
-    }      
+      mycpu->single_step();
   }
   else {
     if (conf_report() > 0) {
       pthread_t tnum;
       dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
     }
-    dbmsg("Begin executing at 0x%lx", mycpu->pc());
     int retval = mycpu->interpreter();
     //terminate_threads();
     fprintf(stderr, "\n");

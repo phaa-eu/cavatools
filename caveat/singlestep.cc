@@ -15,7 +15,7 @@
 #include <signal.h>
 
 #include "caveat.h"
-#include "strand.h"
+#include "hart.h"
 
 extern "C" {
 #include "softfloat/softfloat.h"
@@ -62,18 +62,11 @@ static Header_t* mismatch = &mismatch_header;
 #define stop       { pc+=4;    goto end_bb; }
 #define ebreak() return true;
 
-bool strand_t::single_step(bool show_trace)
+
+bool hart_t::single_step()
 {
-  abort();
-}
-
-
-#if 0
-
-bool strand_t::single_step(bool show_trace)
-{
-  uintptr_t addresses[10];	// address list is one per strand
-  Header_t* bb = const_cast<Header_t*>(tcache.bbptr(0));
+  uintptr_t addresses[10];	// address list is one per hart
+  Header_t* bb = bbptr(&tcache.array[0]);
   bb->addr = pc;
   bb->count = 1;
   Insn_t* i = (Insn_t*)bb + 2;	// skip over header
@@ -101,12 +94,8 @@ bool strand_t::single_step(bool show_trace)
  end_bb: // at this point pc=target basic block but i still points to last instruction.
   debug.addval(s.xrf[i->rd()]);
   if (conf_show()) {
-    print_trace(oldpc, i, stdout);
-    //printf("%lx\n", pc);
+    print(oldpc, i, stdout);
   }
-  hart_pointer->simulator(hart_pointer, 0);
+  simulator(this, bb);
   return false;
 }
-
-
-#endif

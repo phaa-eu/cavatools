@@ -13,7 +13,7 @@
 #include <setjmp.h>
 
 #include "caveat.h"
-#include "strand.h"
+#include "hart.h"
 
 extern option<bool> conf_show;
 
@@ -29,9 +29,13 @@ uintptr_t gdb_text, gdb_data, gdb_bss;
 #define NUMREGS   32		/* General purpose registers per context */
 
 static int lastGdbSignal = 0;
-static hart_base_t* gdb_cpu;
-static uintptr_t *gdb_pc;
-static long *gdb_reg;
+static hart_t* gdb_cpu;
+#ifdef SPIKE
+static reg_t& gdb_pc;
+#else
+static uintptr_t* gdb_pc;
+static long* gdb_reg;
+#endif
 //long gdbNumContinue = -1;	/* program started by 'c' */
 long gdbNumContinue = 0;	/* program started by 'c' */
 
@@ -523,14 +527,18 @@ static void ProcessGdbException()
 }
 
 
-void controlled_by_gdb(const char* host_port, hart_base_t* cpu)
+void controlled_by_gdb(const char* host_port, hart_t* cpu)
 {
+  abort();
+
+#if 0
   gdb_cpu = cpu;
-  gdb_pc = &cpu->strand->pc;
 #ifdef SPIKE
+#define gdb_pc (&cpu->pc)
 #define gdb_reg cpu->strand->s.spike_cpu.get_state()->XPR
 #else
-  gdb_reg = (long*)cpu->strand->s.xrf;
+  gdb_pc = ?
+  gdb_reg = (long*)cpu->s.xrf;
 #endif
 
   msg("Opening TCP link to GDB\n");
@@ -563,7 +571,7 @@ void controlled_by_gdb(const char* host_port, hart_base_t* cpu)
       //	labelpc(*gdb_pc);
       //	disasm(*gdb_pc, &i);
       //      }
-    } while (!cpu->strand->single_step());
+    } while (!cpu->single_step());
     lastGdbSignal = SIGTRAP;
     ProcessGdbException();
   cleanup:
@@ -571,5 +579,6 @@ void controlled_by_gdb(const char* host_port, hart_base_t* cpu)
     //    sigaction(SIGBUS,  &sigbus_buf,  0);
     ;
   }
+#endif
 }
   
