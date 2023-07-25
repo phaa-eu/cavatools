@@ -12,7 +12,6 @@
 #include <signal.h>
 #include <setjmp.h>
 
-#include "options.h"
 #include "caveat.h"
 #include "strand.h"
 
@@ -533,7 +532,7 @@ void controlled_by_gdb(const char* host_port, hart_base_t* cpu)
 #else
   gdb_reg = (long*)cpu->strand->s.xrf;
 #endif
-  conf_show.setval("toggle");
+
   msg("Opening TCP link to GDB\n");
   OpenTcpLink(host_port);
   //  signal(SIGABRT, signal_handler);

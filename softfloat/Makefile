@@ -7,5 +7,5 @@ libsoftfloat.a: $(obj_files)
 	ar r $@ $?
 
 clean:
-	rm *.o
+	rm -f *.o
 

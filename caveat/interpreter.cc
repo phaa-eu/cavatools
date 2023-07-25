@@ -12,7 +12,6 @@
 #include <sys/mman.h>
 #include <signal.h>
 
-#include "options.h"
 #include "caveat.h"
 #include "strand.h"
 
@@ -24,13 +23,6 @@ extern "C" {
 };
 
 #include "arithmetic.h"
-
-option<bool> conf_show("show",	false, true,			"Show instruction trace");
-
-extern option<size_t> conf_tcache;
-extern option<size_t> conf_hash;
-
-Tcache_t tcache;
 
 void substitute_cas(uintptr_t pc, Insn_t* i3);
 
@@ -190,7 +182,7 @@ int strand_t::interpreter()
       } // if loop exits there was no branch
       target = (Header_t**)(insnp(bb+1) + bb->count);
     end_bb:
-      hart_pointer->simulator(hart_pointer, tcache.index(bb));
+      hart_pointer->simulator(hart_pointer, bb);
     }
   } catch (int retval) {
     return retval;

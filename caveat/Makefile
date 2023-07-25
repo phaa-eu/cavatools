@@ -10,9 +10,9 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-MINUS_O := -Ofast -Wswitch
+#MINUS_O := -Ofast -Wswitch
 #MINUS_O := -O0 -DDEBUG -Wswitch
-#MINUS_O := -O -DDEBUG -Wswitch
+MINUS_O := -O -DDEBUG -Wswitch
 #MINUS_O := -O -Wswitch
 
 HEADERS := options.h opcodes.h caveat.h

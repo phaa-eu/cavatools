@@ -24,7 +24,6 @@
 
 #include <thread>
 
-#include "options.h"
 #include "caveat.h"
 #include "strand.h"
 

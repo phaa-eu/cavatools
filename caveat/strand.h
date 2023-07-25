@@ -121,9 +121,12 @@ struct insn_t {
 
 class strand_t {
   class hart_base_t* hart_pointer;	// simulation object
+
+  Tcache_t tcache;
+  
   processor_state_t s;
 #ifdef SPIKE
-  processor_t* p;
+  const processor_t*& p = s.state;
   reg_t& pc = s.spike_cpu.get_state()->pc;
 #else
   uintptr_t pc;

@@ -14,7 +14,6 @@
 #include <sys/mman.h>
 #include <signal.h>
 
-#include "options.h"
 #include "caveat.h"
 #include "strand.h"
 
@@ -26,12 +25,6 @@ extern "C" {
 };
 
 #include "arithmetic.h"
-
-extern option<size_t> conf_tcache;
-extern option<size_t> conf_hash;
-extern option<bool> conf_show;
-
-extern Tcache_t tcache;
 
 void substitute_cas(uintptr_t pc, Insn_t* i3);
 

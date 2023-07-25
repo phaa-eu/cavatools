@@ -7,17 +7,14 @@
 #include <setjmp.h>
 #include <pthread.h>
 
-//#include <map>
-
-#include "options.h"
 #include "caveat.h"
 
 option<long> conf_report("report", 1, "Status report per second");
 option<>     conf_gdb("gdb",	0, "localhost:1234", "Remote GDB connection");
 option<bool> conf_calls("calls",	false, true,			"Show function calls and returns");
 
-option<long> conf_tcache("tcache", 10000000L, "Binary translation cache size");
-option<long> conf_hash("hash", 999983L, "Hash table size, best if prime number");
+option<size_t> conf_tcache("tcache", 1000000L, "Binary translation cache size");
+option<size_t> conf_hash("hash", 997L, "Hash table size, best if prime number");
 
 option<>     conf_isa("isa",		"rv64imafdcv",			"RISC-V ISA string");
 option<>     conf_vec("vec",		"vlen:128,elen:64,slen:128",	"Vector unit parameters");
@@ -36,21 +33,12 @@ public:
 
   long executed() { return _executed; }
   void more_insn(long n) { _executed+=n; }
-  static long total_count();
   static hart_t* list() { return (hart_t*)hart_base_t::list(); }
   hart_t* next() { return (hart_t*)hart_base_t::next(); }
   static hart_t* find(int tid) { return (hart_t*)hart_base_t::find(tid); }
   friend void simulator(hart_base_t* h, Header_t* bb, uint64_t* counters);
   friend void status_report();
 };
-
-long hart_t::total_count()
-{
-  long total = 0;
-  for (hart_t* p=hart_t::list(); p; p=p->next())
-    total += p->executed();
-  return total;
-}
 
 void status_report()
 {
@@ -59,10 +47,15 @@ void status_report()
   //  return;
   
   double realtime = elapse_time();
-  long total = hart_t::total_count();
+  long total = 0;
+  long flushed = 0;
+  for (hart_t* p=hart_t::list(); p; p=p->next()) {
+    total += p->executed();
+    flushed += p->flushed();
+  }
   static double last_time;
   static long last_total;
-  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs MIPS(%3.1f,%3.1f) ", total, realtime,
+  fprintf(stderr, "\r\33[2K%12ld insns %3.1fs(%ld) MIPS(%3.1f,%3.1f) ", total, realtime, flushed,
 	  (total-last_total)/1e6/(realtime-last_time), total/1e6/realtime);
   last_time = realtime;
   last_total = total;
@@ -79,10 +72,9 @@ void status_report()
     fprintf(stderr, "(%d cores)", hart_t::num_harts());
 }
 
-void simulator(hart_base_t* h, long index)
+void simulator(hart_base_t* h, Header_t* bb)
 {
   hart_t* c = (hart_t*)h;
-  const Header_t* bb = tcache.bbptr(index);
   c->more_insn(bb->count);
 }
 
@@ -136,8 +128,6 @@ int main(int argc, const char* argv[], const char* envp[])
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
   if (argc == 0)
     help_exit();
-  // create translation cache
-  tcache.initialize(conf_tcache(), conf_hash());
   // before creating harts
   mycpu = new hart_t(argc, argv, envp);
   mycpu->simulator = simulator;

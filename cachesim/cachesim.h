@@ -1,6 +1,17 @@
 
 #include "cache.h"
 
+class Counters_t {
+  uint64_t* array;		// counters parallel tcache
+  Counters_t* next;		// so tcache can find us
+  friend class Tcache_t;
+public:
+  Counters_t() { array=new uint64_t[tcache.extent()]; next=tcache.list; tcache.list=this; }
+  const uint64_t* ptr(unsigned k) { dieif(k>tcache.size(), "cache index %u out of bounds", k); return &array[k]; }
+  uint64_t* wptr(unsigned k) { dieif(k>tcache.size(), "cache index %u out of bounds", k); return &array[k]; }
+  uint64_t operator[](unsigned k) const { dieif(k>tcache.size(), "cache index %u out of bounds", k); return array[k]; }
+};
+
 
 /*
   The performance counter array matches the translation cache array.

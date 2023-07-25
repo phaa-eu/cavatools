@@ -5,7 +5,6 @@
 #include <sys/mman.h>
 #include <pthread.h>
 
-#include "options.h"
 #include "caveat.h"
 #include "strand.h"
 
@@ -15,6 +14,12 @@ extern "C" {
 #include "softfloat/specialize.h"
 #include "softfloat/internals.h"
 };
+
+
+option<bool> conf_show("show",	false, true,			"Show instruction trace");
+
+
+
 
 long emulate_execve(const char* filename, int argc, const char* argv[], const char* envp[], uintptr_t& pc);
 
@@ -31,9 +36,9 @@ strand_t* strand_t::find(int tid)
 
 void strand_t::initialize(class hart_base_t* h)
 {
-#ifdef SPIKE
-  p = &s.spike_cpu;
-#endif
+  //#ifdef SPIKE
+  //  p = &s.spike_cpu;
+  //#endif
   do {  // atomically attach to list of strands
     _next = _list;
   } while (!__sync_bool_compare_and_swap(&_list, _next, this));
@@ -89,6 +94,7 @@ hart_base_t* hart_base_t::next() { return (hart_base_t*)(strand->_next ? strand-
 int hart_base_t::number() { return strand->sid; }
 int hart_base_t::tid() { return strand->tid; }
 uintptr_t hart_base_t::pc() { return strand->pc; }
+long hart_base_t::flushed() { return strand->tcache.flushed(); }
 
 hart_base_t* hart_base_t::find(int tid) { return strand_t::find(tid) ? strand_t::find(tid)->hart_pointer : 0; }
 int hart_base_t::num_harts() { return strand_t::num_strands; }
