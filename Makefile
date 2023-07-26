@@ -13,8 +13,7 @@ nothing:
 	echo "clean, tarball, install?"
 
 install:
-	make -j 16 -C softfloat
-	cp softfloat/libsoftfloat.a ~/lib/
+	make -j 16 -C softfloat install
 	make -C spike    install
 	make -C opcodes  install
 	make -C caveat   install

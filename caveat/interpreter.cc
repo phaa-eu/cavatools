@@ -14,14 +14,6 @@
 
 #include "caveat.h"
 #include "hart.h"
-
-extern "C" {
-#include "softfloat/softfloat.h"
-#include "softfloat/softfloat_types.h"
-#include "softfloat/specialize.h"
-#include "softfloat/internals.h"
-};
-
 #include "arithmetic.h"
 
 void substitute_cas(uintptr_t pc, Insn_t* i3);
@@ -183,7 +175,7 @@ void hart_t::interpreter()
     } // if loop exits there was no branch
     target = (Header_t**)(insnp(bb+1) + bb->count);
   end_bb:
-    simulator(this, bb);
+    simulator(this, bb, addresses);
   }
 }
 
@@ -259,6 +251,6 @@ bool hart_t::single_step()
   if (conf_show()) {
     print(oldpc, i, stdout);
   }
-  simulator(this, bb);
+  simulator(this, bb, addresses);
   return false;
 }

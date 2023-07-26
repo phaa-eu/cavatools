@@ -44,11 +44,11 @@ void status_report()
     fprintf(stderr, "(%d cores)", hart_t::num_harts());
 }
 
-void simulator(hart_t* h, Header_t* bb)
+void simulator(hart_t* h, Header_t* bb, uintptr_t* ap)
 {
 }
 
-uintptr_t clone_proxy(class hart_t* parent)
+int clone_proxy(class hart_t* parent)
 {
   hart_t* child = new hart_t(parent);
   return clone_thread(child);

@@ -2,6 +2,11 @@
   Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
+extern "C" {
+#include "specialize.h"
+#include "internals.h"
+};
+
 
 #undef RM
 #define RM ({ int rm = i->immed(); \

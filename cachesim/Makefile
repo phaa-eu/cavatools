@@ -9,19 +9,16 @@ CAVA := $(HOME)
 endif
 
 B := $(RVTOOLS)/riscv-isa-sim
-#L := $B/build/libriscv.a $B/build/libsoftfloat.a $B/build/libdisasm.a
 
 
-CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -Ofast
-#CXXFLAGS := -I$(CAVA)/include/ -I$(CAVA)/include/cava -g -O0 -DDEBUG
+CXXFLAGS := -I$(CAVA)/include/cava -I$(CAVA)/include/softfloat -g -Ofast
 
-BINS := cachesim.o simulator.o cache.o erised.o
-LIBS := $(CAVA)/lib/libcava.a ~/lib/libsoftfloat.a -lncurses
+BINS := cachesim.o cache.o
+LIBS := $(CAVA)/lib/libcava.a ~/lib/libsoftfloat.a
 LDFLAGS := -Wl,-Ttext=70000000
 
 install:  cachesim
 	cp cachesim $(CAVA)/bin/.
-#	cp perf.h $(CAVA)/include/cava/.
 
 clean:
 	rm -f *.o *~ ./#*# *.tmp
@@ -33,12 +30,9 @@ cachesim:  $(BINS) $(LIBS)
 	g++ -o cachesim $(BINS) $(LDFLAGS) $(LIBS)
 #	g++ -o cachesim $(BINS) $(LDFLAGS) $(LIBS) -ldl -lrt
 
-cachesim.o simulator.o erised.o: ~/include/cava/caveat.h
-cachesim.o simulator.o: cachesim.h
-cache.o simulator.o:  cache.h
-erised.o: cachesim.h
+cachesim.o: ~/include/cava/caveat.h ~/include/cava/hart.h
 
-simulator.o: lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h lru_fsm_5way.h lru_fsm_6way.h
+cache.o: lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h lru_fsm_5way.h lru_fsm_6way.h
 
 lru_fsm_1way.h: make_cache
 	./make_cache 1

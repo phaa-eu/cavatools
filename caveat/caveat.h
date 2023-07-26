@@ -155,10 +155,10 @@ public:
 };
 
 
-typedef void (*simfunc_t)(class hart_t* h, Header_t* bb);
+typedef void (*simfunc_t)(class hart_t* h, Header_t* bb, uintptr_t* ap);
 typedef uintptr_t (*syscallfunc_t)(class hart_t* h, int num,
 				   uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
-typedef uintptr_t (*clonefunc_t)(class hart_t* h);
+typedef int (*clonefunc_t)(class hart_t* h);
 
 
 void start_time();
