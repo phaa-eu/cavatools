@@ -117,7 +117,13 @@ void hart_t::riscv_syscall()
     rv = syscall(this, sysnum, a0, a1, a2, a3, a4, a5);
   if (conf_ecall())
     fprintf(stderr, " -> %ld(0x%lx)\n", rv, rv);
+  
+#ifdef SPIKE
+  //  (*p->get_state()).XPR.write(10, rv);
   WRITE_REG(10, rv);
+#else
+  s.xrf[10] = rv;
+#endif
 }
 
 #define prefix(x) (strncmp(path, x, strlen(x))==0)
@@ -139,18 +145,10 @@ uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uin
 {
   long retval=0;
   switch (sysnum) {
-    
+
   case SYS_exit:
   case SYS_exit_group:
-    if (gettid() == hart_t::list()->tid()) {
-      for (hart_t* p=hart_t::list()->next(); p; p=p->next())
-	kill(p->tid(), SIGQUIT);
-      throw((int)a0);
-    }
-    else {
-      while (1)
-	sleep(1000);
-    }
+    goto stop;
     
 #if 0
   case SYS_brk:
@@ -184,6 +182,17 @@ uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uin
   }
   retval = asm_syscall(sysnum, a0, a1, a2, a3, a4, a5);
   return retval;
+
+ stop:
+  // main process tid is last on list
+  int main_tid = 0;
+  for (hart_t* p=hart_t::list(); p; p=p->next())
+    main_tid = p->tid();
+  if (gettid() != main_tid) {
+    while (1)
+      sleep(1000);
+  }
+  exit(a0);
 }
  
 uintptr_t default_syscall_func(class hart_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5)
@@ -219,7 +228,7 @@ void thread_interpreter(hart_t* me)
 #else
   me->s.xrf[2] = me->s.xrf[11]; // a1 = child_stack
   me->s.xrf[4] = me->s.xrf[13]; // a3 = tls
-  me->s.xrf[20] = 0;		// indicate child thread
+  me->s.xrf[10] = 0;		// indicate child thread
 #endif
   me->pc += 4;			// skip over ecall
   me->interpreter();
@@ -227,24 +236,10 @@ void thread_interpreter(hart_t* me)
 
 int clone_thread(hart_t* child)
 {
-  fprintf(stderr, "clone_thread()\n");
   child->_tid = 0;		// acts as futex lock
   std::thread t(thread_interpreter, child);
   while (child->_tid == 0)
     futex(&child->_tid, FUTEX_WAIT, 0);
   t.detach();
   return child->_tid;
-}
-
-
-void wait_until_zero(volatile int* vp)
-{
-  while (*vp != 0)
-    futex(vp, FUTEX_WAIT, 0);
-}
-
-void release_waiter(volatile int* vp)
-{
-  *vp = 0;
-  futex(vp, FUTEX_WAKE, 1);
 }

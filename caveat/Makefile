@@ -17,7 +17,7 @@ MINUS_O := -Ofast -Wswitch
 
 HEADERS := options.h opcodes.h caveat.h
 
-libfiles := options.o instructions.o loader.o decoder.o proxy_syscall.o interpreter.o singlestep.o hart.o ../spike/processor.o 
+libfiles := options.o instructions.o loader.o decoder.o proxy_syscall.o interpreter.o hart.o ../spike/processor.o 
 bins := uspike.o gdblink.o $(libfiles)
 
 # Compiling options

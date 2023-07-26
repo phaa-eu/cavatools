@@ -39,87 +39,84 @@ static Header_t* mismatch = &mismatch_header;
 #include "spike_insns.h"
 #endif
 
-int hart_t::interpreter()
+void hart_t::interpreter()
 {
   uintptr_t addresses[1000];	// address list is one per strand
-  try {
-    Header_t** target = &mismatch;
-    for (;;) {			// once per basic block
-      Header_t* bb;		// current basic block
-      if ((*target)->addr == pc) {
-	bb = *target;		// valid link from last basic block
-	//dbmsg("%8lx linked", pc);
-      }
-      else { // no linkage or incorrect target (eg. jump register)
-	bb = tcache.find(pc);
-	//if (bb) dbmsg("%8lx hit", pc);
-	if (!bb) {	     // never seen target
+  Header_t** target = &mismatch;
+  for (;;) {			// once per basic block
+    Header_t* bb;		// current basic block
+    if ((*target)->addr == pc) {
+      bb = *target;		// valid link from last basic block
+      //dbmsg("%8lx linked", pc);
+    }
+    else { // no linkage or incorrect target (eg. jump register)
+      bb = tcache.find(pc);
+      //if (bb) dbmsg("%8lx hit", pc);
+      if (!bb) {	     // never seen target
 	  
-	  //pthread_mutex_lock(&tcache.lock);
+	//pthread_mutex_lock(&tcache.lock);
 	  
-	  //
-	  // Pre-decode entire basic block temporarily into address array
-	  //
-	  uintptr_t dpc = pc;	// decode pc
-	  Header_t* wbb = (Header_t*)addresses;
-	  Insn_t* j = (Insn_t*)(wbb+1) - 1; // note pre-incremented in loop
-	  //dbmsg("Decoding");
-	  do {
-	    *++j = decoder(dpc);
+	//
+	// Pre-decode entire basic block temporarily into address array
+	//
+	uintptr_t dpc = pc;	// decode pc
+	Header_t* wbb = (Header_t*)addresses;
+	Insn_t* j = (Insn_t*)(wbb+1) - 1; // note pre-incremented in loop
+	//dbmsg("Decoding");
+	do {
+	  *++j = decoder(dpc);
 	    
-	    //labelpc(dpc);
-	    //disasm(dpc, j);
+	  //labelpc(dpc);
+	  //disasm(dpc, j);
 	    
-	    // instructions with attribute '<' must be first in basic block
-	    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb+1))) {
-	      --j;		// remove ourself for next time
-	      break;
-	    }
-	    dpc += j->compressed() ? 2 : 4;
-	    // instructions with attribute '>' ends block
-	    if (stop_after[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L)
-	      break;
-	  } while (dpc-pc < 256 && j-insnp(wbb) < 128);
-	  // pattern match store conditional if necessary
-	  if (j->opcode()==Op_sc_w || j->opcode()==Op_sc_d)
-	    substitute_cas(dpc-4, j);
-	  //dbmsg("want to added bb %8lx count=%d", wbb->addr, wbb->count);
-	  *wbb = Header_t(pc, dpc-pc, j+1-insnp(wbb+1), (attributes[j->opcode()] & ATTR_cj)!=0);
-	  //
-	  // Always end with one pointer to next basic block
-	  // Conditional branches have second fall-thru pointer
-	  //
-	  *(Header_t**)(++j) = &mismatch_header; // space for branch taken pointer
-	  if (wbb->conditional)
-	    *(Header_t**)(++j) = &mismatch_header; // space for fall-thru pointer
+	  // instructions with attribute '<' must be first in basic block
+	  if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb+1))) {
+	    --j;		// remove ourself for next time
+	    break;
+	  }
+	  dpc += j->compressed() ? 2 : 4;
+	  // instructions with attribute '>' ends block
+	  if (stop_after[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L)
+	    break;
+	} while (dpc-pc < 256 && j-insnp(wbb) < 128);
+	// pattern match store conditional if necessary
+	if (j->opcode()==Op_sc_w || j->opcode()==Op_sc_d)
+	  substitute_cas(dpc-4, j);
+	//dbmsg("want to added bb %8lx count=%d", wbb->addr, wbb->count);
+	*wbb = Header_t(pc, dpc-pc, j+1-insnp(wbb+1), (attributes[j->opcode()] & ATTR_cj)!=0);
+	//
+	// Always end with one pointer to next basic block
+	// Conditional branches have second fall-thru pointer
+	//
+	*(Header_t**)(++j) = &mismatch_header; // space for branch taken pointer
+	if (wbb->conditional)
+	  *(Header_t**)(++j) = &mismatch_header; // space for fall-thru pointer
 	  
-	  // atomically add block into tcache
-	  long n = j - insnp(wbb) + 1;
-	  bb = tcache.add(wbb, n);
-	}
-	*target = bb;
-	//dbmsg("End decoding");
+	// atomically add block into tcache
+	long n = j - insnp(wbb) + 1;
+	bb = tcache.add(wbb, n);
       }
-      uintptr_t* ap = addresses;
+      *target = bb;
+      //dbmsg("End decoding");
+    }
+    uintptr_t* ap = addresses;
 
-      //
-      // execute basic block
-      //
-      for (const Insn_t* i=insnp(bb+1); i<insnp(bb+1)+bb->count; i++) {
-	_executed++;
-	WRITE_REG(0, 0);
-	debug.insert(pc, *i);
+    //
+    // execute basic block
+    //
+    for (const Insn_t* i=insnp(bb+1); i<insnp(bb+1)+bb->count; i++) {
+      _executed++;
+      WRITE_REG(0, 0);
+      debug.insert(pc, *i);
 #if 0
-	labelpc(pc);
-	disasm(pc, i);
+      labelpc(pc);
+      disasm(pc, i);
 #endif
-	/*
-	  Abbreviations to keep isa.def semantics short
-	*/
+      /*
+	Abbreviations to keep isa.def semantics short
+      */
 	
 #ifdef SPIKE
-	
-	processor_t* p = &s.spike_cpu;
 
 #undef STATE
 #define STATE  (*s.spike_cpu.get_state())
@@ -156,13 +153,16 @@ int hart_t::interpreter()
 	
 #endif
 
+
+
+	
 #define LOAD(T, a)     *(T*)(*ap++=a)
 #define STORE(T, a, v) *(T*)(*ap++=a)=(v)
       
 #define fence(x)
 #define fence_i(x)
       
-	//#define ebreak() return true
+      //#define ebreak() return true
 #define ebreak() kill(tid(), SIGTRAP)
 
 #define stop debug.addval(s.xrf[i->rd()]); goto end_bb
@@ -171,22 +171,19 @@ int hart_t::interpreter()
 #define branch(test, taken, fall)  { if (test) { pc=(taken); target=(Header_t**)(i+1); } else { pc=(fall); target=(Header_t**)(i+2); } stop; }
 #define jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
 #define reg_jump(npc)  { pc=(npc); target=&mismatch; stop; }
-	//#define reg_jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
+      //#define reg_jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
 	
-	switch (i->opcode()) {
-	case Op_ZERO:	die("Should never see Op_ZERO at pc=%lx", pc);
+      switch (i->opcode()) {
+      case Op_ZERO:	die("Should never see Op_ZERO at pc=%lx", pc);
 #include "semantics.h"
-	case Op_ILLEGAL:  die("Op_ILLEGAL opcode, i=%08x, pc=%lx", *(unsigned*)pc, pc);
-	case Op_UNKNOWN:  die("Op_UNKNOWN opcode, i=%08x, pc=%lx", *(unsigned*)pc, pc);
-	}
-	debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
-      } // if loop exits there was no branch
-      target = (Header_t**)(insnp(bb+1) + bb->count);
-    end_bb:
-      simulator(this, bb);
-    }
-  } catch (int retval) {
-    return retval;
+      case Op_ILLEGAL:  die("Op_ILLEGAL opcode, i=%08x, pc=%lx", *(unsigned*)pc, pc);
+      case Op_UNKNOWN:  die("Op_UNKNOWN opcode, i=%08x, pc=%lx", *(unsigned*)pc, pc);
+      }
+      debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
+    } // if loop exits there was no branch
+    target = (Header_t**)(insnp(bb+1) + bb->count);
+  end_bb:
+    simulator(this, bb);
   }
 }
 
@@ -217,3 +214,51 @@ void substitute_cas(uintptr_t pc, Insn_t* i3)
   i3->op.rs3 = test_reg;
 }
 
+
+#undef branch
+#undef jump
+#undef reg_jump
+#undef stop
+
+#define branch(test, taken, fall)  { if (test) pc=(taken); else pc=(fall); goto end_bb; }
+#define jump(npc)  { pc=(npc); goto end_bb; }
+#define reg_jump(npc)  { pc=(npc); goto end_bb; }
+#define stop       { pc+=4;    goto end_bb; }
+
+bool hart_t::single_step()
+{
+  uintptr_t addresses[10];	// address list is one per hart
+  Header_t* bb = bbptr(&tcache.array[0]);
+  bb->addr = pc;
+  bb->count = 1;
+  Insn_t* i = (Insn_t*)bb + 2;	// skip over header
+  uintptr_t oldpc = pc;
+  *i = decoder(pc);
+  uintptr_t* ap = addresses;
+  if (i->opcode()==Op_sc_w || i->opcode()==Op_sc_d)
+    substitute_cas(pc, i);
+   
+  WRITE_REG(0, 0);
+  debug.insert(pc, *i);
+#if 0
+  labelpc(pc);
+  disasm(pc, i);
+#endif 
+
+  _executed++;
+  switch (i->opcode()) {
+  case Op_ZERO:	die("Should never see Op_ZERO at pc=%lx", pc);
+#include "semantics.h"
+  case Op_ILLEGAL:  die("Op_ILLEGAL opcode");
+  case Op_UNKNOWN:  die("Op_UNKNOWN opcode");
+  }
+    
+  debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
+ end_bb: // at this point pc=target basic block but i still points to last instruction.
+  debug.addval(s.xrf[i->rd()]);
+  if (conf_show()) {
+    print(oldpc, i, stdout);
+  }
+  simulator(this, bb);
+  return false;
+}

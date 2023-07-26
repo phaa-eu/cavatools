@@ -31,7 +31,8 @@ uintptr_t gdb_text, gdb_data, gdb_bss;
 static int lastGdbSignal = 0;
 static hart_t* gdb_cpu;
 #ifdef SPIKE
-static reg_t& gdb_pc;
+static reg_t* gdb_pc;
+static reg_t* gdb_reg;
 #else
 static uintptr_t* gdb_pc;
 static long* gdb_reg;
@@ -534,10 +535,10 @@ void controlled_by_gdb(const char* host_port, hart_t* cpu)
 #if 0
   gdb_cpu = cpu;
 #ifdef SPIKE
-#define gdb_pc (&cpu->pc)
-#define gdb_reg cpu->strand->s.spike_cpu.get_state()->XPR
+  gdb_pc = &cpu->pc;
+  gdb_reg = cpu->strand->s.spike_cpu.get_state()->XPR;
 #else
-  gdb_pc = ?
+  gdb_pc = &cpu->pc;
   gdb_reg = (long*)cpu->s.xrf;
 #endif
 

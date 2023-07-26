@@ -93,6 +93,13 @@ void* status_thread(void* arg)
   }
 }
 
+void exitfunc()
+{
+  fprintf(stderr, "\nNormal exit\n");
+  status_report();
+  fprintf(stderr, "\n");
+}
+
 int main(int argc, const char* argv[], const char* envp[])
 {
   parse_options(argc, argv, "uspike: user-mode RISC-V interpreter derived from Spike");
@@ -136,11 +143,7 @@ int main(int argc, const char* argv[], const char* envp[])
       pthread_t tnum;
       dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
     }
-    int retval = mycpu->interpreter();
-    //terminate_threads();
-    fprintf(stderr, "\n");
-    status_report();
-    fprintf(stderr, "\n\n");
-    return retval;
+    atexit(exitfunc);
+    mycpu->interpreter();
   }
 }
