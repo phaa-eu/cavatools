@@ -22,6 +22,7 @@ install:
 clean:
 	rm -f $(CAVA)/lib/libcava.a *~ ./#*#
 	rm -f $(CAVA)/include/cava/*
+	rm -f softfloat/libsoftfloat.a
 	make -C softfloat clean
 	make -C spike     clean
 	make -C opcodes   clean
