@@ -105,13 +105,13 @@ for name in opcodes:
         registers[0] = '1'
     if type=='cds':
         registers[0] = '2'
-    if re.match('f\w+\.', name):
+    if re.match(r'f\w+\.', name):
         b = opcodes[name]['bits']
-        if re.match('.*\.[wl]u?\.[sd]|(feq|flt|fle|fclass)\.[sd]|fmv\.x\.[wd]', name):
+        if re.match(r'.*\.[wl]u?\.[sd]|(feq|flt|fle|fclass)\.[sd]|fmv\.x\.[wd]', name):
             b = b.replace('rs1', 'fs1')
-        elif re.match('.*\.[sd]u?\.[wl]u?|fmv\.[wd]\.x', name):
+        elif re.match(r'.*\.[sd]u?\.[wl]u?|fmv\.[wd]\.x', name):
             b = b.replace('rd', 'fd')
-        elif re.match('f\w+\.[sd]', name):
+        elif re.match(r'f\w+\.[sd]', name):
             b = b.replace('rd',  'fd')
             b = b.replace('rs1', 'fs1')
             b = b.replace('rs2', 'fs2')
@@ -124,7 +124,7 @@ for name in opcodes:
             code |= int(b, 2) << pos
             mask |= ((1<<len(b))-1) << pos
             pos += len(b)
-        elif re.match('\{[^}]+\}', b):
+        elif re.match(r'\{[^}]+\}', b):
             tuple = []
             signed = False
             i = 0
@@ -133,7 +133,7 @@ for name in opcodes:
                 i = 1
             while b[i] != '}':
                 i += 1
-                m = re.match('(\d+)(:\d+)?', b[i:])
+                m = re.match(r'(\d+)(:\d+)?', b[i:])
                 if not m:
                     eprint('Bad immediate', name, b[i:])
                     exit(-1)
@@ -179,17 +179,17 @@ newlist = OrderedDict()
 opcode_list = ['ZERO']
 # First come all the compressed instructions
 for name in opcodes:
-    if re.match('c\.', name):
+    if re.match(r'c\.', name):
         opcode_list.append(name)
         last_compressed_opcode = name
 # Next all the fast uncompressed instructions
 for name in opcodes:
-    if re.match('c\.', name):  continue
+    if re.match(r'c\.', name):  continue
     if 'fast' in opcodes[name]:
         opcode_list.append(name)
 # Last all the spike-semantics instructions
 for name in opcodes:
-    if re.match('c\.', name):  continue
+    if re.match(r'c\.', name):  continue
     if 'fast' not in opcodes[name]:
         opcode_list.append(name)
 opcode_list.append('ILLEGAL')

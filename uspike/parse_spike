@@ -79,7 +79,7 @@ for name in opcodes.copy():
             for t in tuple:
                 b += "{:11s} ".format(t)
     ext = []
-    for m in re.finditer("require_extension\(([^)]+)\)", action):
+    for m in re.finditer(r"require_extension\(([^)]+)\)", action):
         x = m.group(1)
         n = re.match("'([a-zA-Z])'", x)
         if n:  x = n.group(1)
@@ -90,7 +90,7 @@ for name in opcodes.copy():
         flags['pc'] = 1
     if re.search("require_fp;", action):
         flags['fp'] = 1
-    if re.search("MMU\.|VI_LD_|VI_ST_", action):
+    if re.search(r"MMU\.|VI_LD_|VI_ST_", action):
         flags['mmu'] = 1
     if re.search("amo_|VI_AMO", action):
         flags['amo'] = 1

@@ -455,7 +455,7 @@ def str_inst(name,arguments):
 def opcode(name, type, fields):
   tuple = []
   for t in fields[:-1]:
-    if re.match('\w+', t) and t in arglut:
+    if re.match(r'\w+', t) and t in arglut:
       if len(arglut[t]) > 2:
         t = arglut[t][2]
     tuple.append(t)
@@ -646,7 +646,7 @@ def print_inst(n):
   elif 'rs3' in arguments[n]:
     print_r4_type(n, match[n], arguments[n])
   #elif re.match('v.+\..*v', n):
-  elif re.match('v.+\.', n):
+  elif re.match(r'v.+\.', n):
     print_v_type(n, match[n], arguments[n])
   else:
     print_r_type(n, match[n], arguments[n])
