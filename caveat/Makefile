@@ -2,17 +2,15 @@
 #  Copyright (c) 2023 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 #
 
-# Comment this out to create cavatools without Spike
-#spike := -DSPIKE
-
 # Cavatools installed in $(CAVA)/bin, $(CAVA)/lib, $(CAVA)/include/cava
 ifndef CAVA
 CAVA := $(HOME)
 endif
 
-MINUS_O := -Ofast -Wswitch
+#MINUS_O := -Ofast -Wswitch
+MINUS_O := -Ofast -Wswitch -DDEBUG
 #MINUS_O := -O0 -DDEBUG -Wswitch
-#MINUS_O := -O -DDEBUG -Wswitch
+#MINUS_O := -g -O0 -DDEBUG -Wswitch
 #MINUS_O := -O -Wswitch
 
 HEADERS := options.h opcodes.h caveat.h hart.h
@@ -24,7 +22,8 @@ bins := uspike.o gdblink.o $(libfiles)
 CXXFLAGS := -g $(MINUS_O) $(spike) -I$(CAVA)/include/softfloat -I../spike
 
 LIBS := $(CAVA)/lib/libspike.a $(CAVA)/lib/libsoftfloat.a
-LDFLAGS := -Wl,-Ttext=70000000 -static
+#LDFLAGS := -Wl,-Ttext=70000000 -static
+LDFLAGS := -Wl,-Ttext=70000000
 
 uspike: $(bins) $(LIBS)
 	$(CXX) $(CXXFLAGS) -o uspike $(bins) $(LDFLAGS) $(LIBS)

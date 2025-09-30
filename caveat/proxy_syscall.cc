@@ -152,10 +152,10 @@ uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uin
     
 #if 0
   case SYS_brk:
-    //fprintf(stderr, "SYS_brk(%lx)\n", a0);
-    //    retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
+    //retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
     //fprintf(stderr, "current.brk = 0x%lx\n", current.brk);
     retval = emulate_brk(a0);
+    fprintf(stderr, "SYS_brk(%lx)->%lx\n", a0, retval);
     return retval;
 #endif
     
@@ -236,6 +236,7 @@ void thread_interpreter(hart_t* me)
 
 int clone_thread(hart_t* child)
 {
+  fprintf(stderr, "clone_thread called\n");
   child->_tid = 0;		// acts as futex lock
   std::thread t(thread_interpreter, child);
   while (child->_tid == 0)

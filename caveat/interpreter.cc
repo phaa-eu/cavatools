@@ -14,7 +14,10 @@
 
 #include "caveat.h"
 #include "hart.h"
+
+#ifndef SPIKE
 #include "arithmetic.h"
+#endif
 
 void substitute_cas(uintptr_t pc, Insn_t* i3);
 
@@ -164,7 +167,7 @@ void hart_t::interpreter()
 #define jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
 #define reg_jump(npc)  { pc=(npc); target=&mismatch; stop; }
       //#define reg_jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
-	
+      
       switch (i->opcode()) {
       case Op_ZERO:	die("Should never see Op_ZERO at pc=%lx", pc);
 #include "semantics.h"

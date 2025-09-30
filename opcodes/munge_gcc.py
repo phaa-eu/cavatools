@@ -7,7 +7,7 @@ repo = sys.argv[1]
 if repo[-1] != '/':
     repo += '/'
 
-cava_comment = re.compile('\s*/\*\s*CAVA((?:\s+\w+)+)\s*\*/')
+cava_comment = re.compile(r'\s*/\*\s*CAVA((?:\s+\w+)+)\s*\*/')
 
 def eprint(*args):
     sys.stderr.write(' '.join(map(str,args)) + '\n')
@@ -23,7 +23,7 @@ with open('isa.json', 'r') as f:
 
 opcodes = ['ZERO'] + [key for key in instructions] + ['ILLEGAL', 'UNKNOWN']
 
-reg_specifier = re.compile('(\w+)\[(\d+):(\d+)\]')
+reg_specifier = re.compile(r'(\w+)\[(\d+):(\d+)\]')
 def gettype(a):
     if a == '-':
         return None

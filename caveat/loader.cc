@@ -52,7 +52,7 @@ std::map<std::string, long> symaddr;
 #define dbmsg(fmt, ...)
 
 #define MEM_END		0x60000000L
-#define STACK_SIZE	0x01000000L
+#define STACK_SIZE	0x08000000L
 #define BRK_SIZE	0x01000000L
 
 #define INTERP_BASE	MEM_END
@@ -194,7 +194,7 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
   size_t tblsz;
   char* shstrtbl;
   ssize_t ret;
-
+  
   int file = open(file_name, O_RDONLY, 0);
   quitif(file<0, "Unable to open binary file \"%s\"\n", file_name);
 
@@ -236,7 +236,7 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
       break;
     }
   }
-  
+
   // find address range of loaded sections
   uintptr_t first = -1L;
   uintptr_t last = 0L;
@@ -258,6 +258,7 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
   void* base = (void*)(first - prepad);
   size_t len = last - first + prepad;
   dieif(mmap(base, len, PROT_READ|PROT_WRITE, MAP_FIXED|MAP_PRIVATE|MAP_ANONYMOUS, 0, 0)!=base, "mmap() failed");
+  
   // first read file header into prepad
   dieif(lseek(file, 0, SEEK_SET) < 0, "lseek failed");
   dieif(read(file, base, prepad)!=prepad, "read failed");
@@ -270,12 +271,14 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
     size_t zeros = ph[i].p_memsz - ph[i].p_filesz;
     if (zeros > 0) {
       uintptr_t begin = ph[i].p_vaddr + bias + ph[i].p_filesz;
-      memset((void*)begin, 0, zeros);
+      //memset((void*)begin, 0, zeros);
+      for (int k=0; k<zeros; k++)
+	((char*)begin)[k] = 0;
     }
   }
+  
   // record program header address for aux vector
   phdrs = (uintptr_t)base + eh.e_phoff;
-
   /* Read section header string table. */
   Elf64_Shdr header;
   assert(lseek(file, eh.e_shoff + eh.e_shstrndx * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
@@ -285,9 +288,11 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
   shstrtbl = new char[header.sh_size];
   dieif(read(file, shstrtbl, header.sh_size) != (ssize_t)header.sh_size, "read shstrtbl failed");
 
-  for (int i=eh.e_shnum-1; i>=0; i--) {
+  //for (int i=eh.e_shnum-1; i>=0; i--) {
+  for (int i=eh.e_shnum-1; i>0; i--) {
     assert(lseek(file, eh.e_shoff + i * sizeof(Elf64_Shdr), SEEK_SET) >= 0);
-    assert(read(file, &header, sizeof header) >= 0);
+    //assert(read(file, &header, sizeof header) >= 0);
+    assert(read(file, &header, sizeof header) == sizeof header);
     if (strcmp(shstrtbl+header.sh_name, ".bss") == 0 ||
 	//	strcmp(shstrtbl+header.sh_name, ".tbss") == 0 ||
 	strcmp(shstrtbl+header.sh_name, ".sbss") == 0) {
@@ -296,7 +301,7 @@ static long load_elf_file(const char* file_name, uintptr_t bias, pinfo_t* info)
   }
 
   close(file);
-  //  delete shstrtbl;
+  delete shstrtbl;
   return entry;
 }
 
@@ -461,3 +466,54 @@ const char* elf_find_pc(long pc, long* offset)
   }
   return 0;
 }
+
+
+
+#if 1
+
+extern "C" {
+
+#define poolsize  (1<<30)	/* size of simulation memory pool */
+
+static char simpool[poolsize];	/* base of memory pool */
+static volatile char* pooltop = simpool; /* current allocation address */
+
+void *malloc(size_t size)
+{
+  char volatile *rv, *newtop;
+  do {
+    volatile char* after = pooltop + size + 16; /* allow for alignment */
+    if (after > simpool+poolsize) {
+      fprintf(stderr, " failed\n");
+      return 0;
+    }
+    rv = pooltop;
+    newtop = (char*)((unsigned long)after & ~0xfL); /* always align to 16 bytes */
+  } while (!__sync_bool_compare_and_swap(&pooltop, rv, newtop));
+      
+  return (void*)rv;
+}
+
+void free(void *ptr)
+{
+  /* we don't free stuff */
+}
+
+void *calloc(size_t nmemb, size_t size)
+{
+  return malloc(nmemb * size);
+}
+
+void *realloc(void *ptr, size_t size)
+{
+  return 0;
+}
+
+void *reallocarray(void *ptr, size_t nmemb, size_t size)
+{
+  return 0;
+}
+
+};
+
+#endif

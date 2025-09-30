@@ -2,8 +2,8 @@
 import sys
 import re
 
-nr_pat = re.compile('#define __NR[^_]*_(\S+)\s+(\d+)')
-eq_pat = re.compile('#define __NR[^_]*_(\S+)\s+__NR[^_]*_(\S+)')
+nr_pat = re.compile(r'#define __NR[^_]*_(\S+)\s+(\d+)')
+eq_pat = re.compile(r'#define __NR[^_]*_(\S+)\s+__NR[^_]*_(\S+)')
 
 equiv = {}
 def read_unistd(fname):

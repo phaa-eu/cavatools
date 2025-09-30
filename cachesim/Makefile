@@ -14,7 +14,7 @@ B := $(RVTOOLS)/riscv-isa-sim
 CXXFLAGS := -I$(CAVA)/include/cava -I$(CAVA)/include/softfloat -g -Ofast
 
 BINS := cachesim.o cache.o
-LIBS := $(CAVA)/lib/libcava.a ~/lib/libsoftfloat.a
+LIBS := $(CAVA)/lib/libcava.a $(CAVA)/lib/libspike.a $(CAVA)/lib/libsoftfloat.a
 LDFLAGS := -Wl,-Ttext=70000000
 
 install:  cachesim
@@ -30,7 +30,7 @@ cachesim:  $(BINS) $(LIBS)
 	g++ -o cachesim $(BINS) $(LDFLAGS) $(LIBS)
 #	g++ -o cachesim $(BINS) $(LDFLAGS) $(LIBS) -ldl -lrt
 
-cachesim.o: ~/include/cava/caveat.h ~/include/cava/hart.h
+#cachesim.o: ~/include/cava/caveat.h ~/include/cava/hart.h
 
 cache.o: lru_fsm_1way.h lru_fsm_2way.h lru_fsm_3way.h lru_fsm_4way.h lru_fsm_5way.h lru_fsm_6way.h
 

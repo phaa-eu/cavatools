@@ -3,8 +3,8 @@ import os
 import re
 import json
 
-opcode_line = re.compile('^([ ]|\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
-reglist_field = re.compile('^(\S+)\[(\d+):(\d+)\](\+\d+)?$')
+opcode_line = re.compile(r'^([ ]|\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+\"(.*)\"\s+(\S+)\s+\"(.*)\"')
+reglist_field = re.compile(r'^(\S+)\[(\d+):(\d+)\](\+\d+)?$')
 
 def eprint(*args):
     sys.stderr.write(' '.join(map(str,args)) + '\n')
@@ -26,7 +26,7 @@ def ParseOpcode(bits):
             pos += len(b)
         elif re.match('[.]+', b):
             pos += len(b)
-        elif re.match('\{[^}]+\}', b):
+        elif re.match(r'\{[^}]+\}', b):
             immtyp = 0
             tuple = []
             signed = False
@@ -36,7 +36,7 @@ def ParseOpcode(bits):
                 i = 1
             while b[i] != '}':
                 i += 1
-                m = re.match('(\d+)(:\d+)?', b[i:])
+                m = re.match(r'(\d+)(:\d+)?', b[i:])
                 if not m:
                     eprint('Bad immediate', name, b[i:])
                     exit(-1)

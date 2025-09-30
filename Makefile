@@ -8,6 +8,13 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
+
+
+# Comment this out to create cavatools without Spike
+#export spike := -DSPIKE
+
+
+
 .PHONY:  nothing clean install
 nothing:
 	echo "clean, tarball, install?"

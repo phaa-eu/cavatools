@@ -530,13 +530,13 @@ static void ProcessGdbException()
 
 void controlled_by_gdb(const char* host_port, hart_t* cpu)
 {
-  abort();
+  //  abort();
 
-#if 0
+#if 1
   gdb_cpu = cpu;
 #ifdef SPIKE
   gdb_pc = &cpu->pc;
-  gdb_reg = cpu->strand->s.spike_cpu.get_state()->XPR;
+  gdb_reg = cpu->s.spike_cpu.get_state()->XPR;
 #else
   gdb_pc = &cpu->pc;
   gdb_reg = (long*)cpu->s.xrf;

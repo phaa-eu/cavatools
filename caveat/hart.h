@@ -122,19 +122,6 @@ struct insn_t {
 
 
 class hart_t {
-  processor_state_t s;
-  Tcache_t tcache;
-  Debug_t debug;
-  long _executed;		// number of instructions
-  
-#ifdef SPIKE
-  //  const processor_t* p = &s.spike_cpu;
-  processor_t* p = &s.spike_cpu;
-  reg_t& pc = s.spike_cpu.get_state()->pc;
-#else
-  uintptr_t pc;
-#endif
-  
   static int _num_harts;	// how many have been cloned
   static hart_t* _list;		// for find() using thread id
   hart_t* _next;		// list of hart_t
@@ -143,7 +130,6 @@ class hart_t {
   pthread_t ptnum;		// pthread handle
   
   void initialize();		// used by constructor functions
-  void riscv_syscall();
 
   friend void controlled_by_gdb(const char* host_port, hart_t* cpu);
   friend void thread_interpreter(hart_t* me);
@@ -152,9 +138,25 @@ class hart_t {
   friend void exit_func();
     
 public:
+  processor_state_t s;
+  long _executed;		// number of instructions
+#ifdef SPIKE
+  processor_t* p = &s.spike_cpu;
+  reg_t& pc = s.spike_cpu.get_state()->pc;
+#else
+  uintptr_t pc;
+#endif
+
+
+
+  
+  Tcache_t tcache;
+  Debug_t debug;
+  
   simfunc_t simulator;		// function pointer for simulation
   clonefunc_t clone;		// function pointer just for clone system call
   syscallfunc_t syscall;	// function pointer for other system calls
+  void riscv_syscall();
   
   hart_t(int argc, const char* argv[], const char* envp[]);
   hart_t(hart_t* p);
@@ -164,6 +166,7 @@ public:
   bool single_step();
   void print(uintptr_t pc, Insn_t* i, FILE* out =stderr);
   long executed() { return _executed; }
+  void execute(int n =1) { _executed += n; }
   long flushed() { return tcache.flushed(); }
   void debug_print() { debug.print(); }
 
@@ -188,21 +191,21 @@ public:
     T replace =  s.xrf[i->rs2()];
     T expect  =  s.xrf[i->rs3()];
     T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
-    *ap++ = (long)ptr;
+    *ap++ = (uintptr_t)ptr;
     return (oldval != expect);
   }
   template<typename op>	int32_t amo_int32(uintptr_t a, op f, uintptr_t*& ap) {
     int32_t lhs, *ptr = (int32_t*)a;
     do lhs = *ptr;
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
-    *ap++ = (long)ptr;
+    *ap++ = (uintptr_t)ptr;
     return lhs;
   }
   template<typename op>	int64_t amo_int64(uintptr_t a, op f, uintptr_t*& ap) {
     int64_t lhs, *ptr = (int64_t*)a;
     do lhs = *ptr;
     while (!__sync_bool_compare_and_swap(ptr, lhs, f(lhs)));
-    *ap++ = (long)ptr;
+    *ap++ = (uintptr_t)ptr;
     return lhs;
   }
 };

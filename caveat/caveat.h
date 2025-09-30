@@ -27,17 +27,17 @@ extern const uint64_t stop_after[];
 #define FPREG	(GPREG+32)
 #define VPREG	(FPREG+32)
 #define VMREG	(VPREG+32)
-#define NOREG	-1
+#define NOREG	0xFF
 
 class alignas(8) Insn_t {
   Opcode_t op_code;
-  int8_t op_rd;
-  int8_t op_rs1;
+  uint8_t op_rd;
+  uint8_t op_rs1;
   union {
     struct {
       int16_t imm;
-      int8_t rs2;
-      int8_t rs3;
+      uint8_t rs2;
+      uint8_t rs3;
     } op;
     int32_t op_longimm;
   };
@@ -47,10 +47,10 @@ public:
   long immed() const { return longimmed() ? op_longimm : op.imm>>1; }
 
   Opcode_t opcode() const { return op_code; }
-  int rd()  const { return op_rd; }
-  int rs1() const { return op_rs1; }
-  int rs2() const { return op.rs2; }
-  int rs3() const { return op.rs3; }
+  uint rd()  const { return op_rd; }
+  uint rs1() const { return op_rs1; }
+  uint rs2() const { return op.rs2; }
+  uint rs3() const { return op.rs3; }
   bool compressed() const { return op_code <= Last_Compressed_Opcode; }
 
   friend Insn_t decoder(uintptr_t pc);

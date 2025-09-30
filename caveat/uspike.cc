@@ -11,6 +11,7 @@
 #include "hart.h"
 
 option<long> conf_report("report", 1, "Status report per second");
+option<bool> conf_step  ("step", false, true, "Single step");
 
 void status_report()
 {
@@ -144,6 +145,11 @@ int main(int argc, const char* argv[], const char* envp[])
       dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
     }
     atexit(exitfunc);
-    mycpu->interpreter();
+    if (conf_step()) {
+      for (;;)
+	mycpu->single_step();
+    }
+    else
+      mycpu->interpreter();
   }
 }

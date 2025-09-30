@@ -6,8 +6,8 @@ import sys
 cjump = [ 'beq', 'bgeu', 'blt', 'bltu', 'bne', 'beqz', 'bneq', 'c.beqz', 'c.bnez' ]
 ujump = [ 'c.jalr', 'c.j', 'c.jr', 'dret', 'jal', 'jalr' ]
 
-filepat = re.compile('(\w+)\.h')
-matchmaskpat = re.compile('#define\s+(MATCH|MASK)_(\S+)\s+(\S+)')
+filepat = re.compile(r'(\w+)\.h')
+matchmaskpat = re.compile(r'#define\s+(MATCH|MASK)_(\S+)\s+(\S+)')
 
 def diffcp(fname):
     if os.path.exists(fname) and os.system('cmp -s newcode.tmp '+fname) == 0:
