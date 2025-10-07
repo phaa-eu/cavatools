@@ -30,6 +30,7 @@
 #define THREAD_STACK_SIZE (1<<16)
 
 extern long emulate_brk(long addr);
+uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
 
 option<bool> conf_ecall("ecall",	false, true,			"Show system calls");
 
@@ -84,10 +85,8 @@ static struct syscall_map_t rv_to_host[] = {
 
 int maintid;
 
-void hart_t::riscv_syscall()
+long proxy_syscall(long rvnum, long a0, long a1, long a2, long a3, long a4, long a5, hart_t* me)
 {
-  long a0=s.xrf[10], a1=s.xrf[11], a2=s.xrf[12], a3=s.xrf[13], a4=s.xrf[14], a5=s.xrf[15];
-  long rvnum = s.xrf[17];
   if (rvnum<0 || rvnum>HIGHEST_ECALL_NUM || !rv_to_host[rvnum].name) {
     fprintf(stderr, "Illegal ecall number %ld\n", rvnum);
     abort();
@@ -112,18 +111,12 @@ void hart_t::riscv_syscall()
   long rv;
   if (sysnum == SYS_clone)
     //    s.xrf[10] = hart_pointer->clone(hart_pointer, (long*)s.xrf+10);
-    rv = clone(this);
+    rv = me->clone(me);
   else
-    rv = syscall(this, sysnum, a0, a1, a2, a3, a4, a5);
+    rv = host_syscall(sysnum, a0, a1, a2, a3, a4, a5);
   if (conf_ecall())
     fprintf(stderr, " -> %ld(0x%lx)\n", rv, rv);
-  
-#ifdef SPIKE
-  //  (*p->get_state()).XPR.write(10, rv);
-  WRITE_REG(10, rv);
-#else
-  s.xrf[10] = rv;
-#endif
+  return rv;
 }
 
 #define prefix(x) (strncmp(path, x, strlen(x))==0)
@@ -194,11 +187,6 @@ uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uin
   }
   exit(a0);
 }
- 
-uintptr_t default_syscall_func(class hart_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5)
-{
-  return host_syscall(num,  a0, a1, a2, a3, a4, a5);
-}
 
 
 
@@ -231,7 +219,7 @@ void thread_interpreter(hart_t* me)
   me->s.xrf[10] = 0;		// indicate child thread
 #endif
   me->pc += 4;			// skip over ecall
-  me->interpreter();
+  me->interpreter(me);
 }
 
 int clone_thread(hart_t* child)

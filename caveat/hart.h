@@ -155,18 +155,19 @@ public:
   
   simfunc_t simulator;		// function pointer for simulation
   clonefunc_t clone;		// function pointer just for clone system call
-  syscallfunc_t syscall;	// function pointer for other system calls
-  void riscv_syscall();
+  interpreterfunc_t interpreter;// function pointer for interpreter
+  syscallfunc_t riscv_syscall;	// function pointer for system calls
   
   hart_t(int argc, const char* argv[], const char* envp[]);
   hart_t(hart_t* p);
   ~hart_t();
-  
-  void interpreter();
+
+  Header_t* find_bb(uintptr_t pc);
+  void default_interpreter();
   bool single_step();
   void print(uintptr_t pc, Insn_t* i, FILE* out =stderr);
   long executed() { return _executed; }
-  void execute(int n =1) { _executed += n; }
+  void count_insn(int n =1) { _executed += n; }
   long flushed() { return tcache.flushed(); }
   void debug_print() { debug.print(); }
 
@@ -185,11 +186,9 @@ public:
     set_csr(what, f(old));
     return old;
   }
-  template<class T> bool cas(const Insn_t* i, uintptr_t*& ap)
+  template<class T> bool cas(long r1, T replace, T expect, uintptr_t*& ap)
   {
-    T* ptr = (T*)s.xrf[i->rs1()];
-    T replace =  s.xrf[i->rs2()];
-    T expect  =  s.xrf[i->rs3()];
+    T* ptr = (T*)r1;
     T oldval = __sync_val_compare_and_swap(ptr, expect, replace);
     *ap++ = (uintptr_t)ptr;
     return (oldval != expect);
@@ -209,3 +208,7 @@ public:
     return lhs;
   }
 };
+
+
+void default_riscv_syscall(hart_t* h);
+long proxy_syscall(long rvnum, long a0, long a1, long a2, long a3, long a4, long a5, hart_t* me);

@@ -55,7 +55,8 @@ hart_t::hart_t(int argc, const char* argv[], const char* envp[])
   ptnum = pthread_self();
   simulator = 0;		// must be filled in by deriving class
   clone = 0;			// same
-  syscall = default_syscall_func; // but not necessarily this one
+  interpreter = 0;
+  riscv_syscall = 0;
   initialize(); // do at end because there are atomic stuff in initialize()
 }
 
@@ -65,7 +66,8 @@ hart_t::hart_t(hart_t* from)
   pc = from->pc;		// not in state structure
   simulator = from->simulator;
   clone = from->clone;
-  syscall = from->syscall;
+  interpreter = from->interpreter;
+  riscv_syscall = from->riscv_syscall;
   initialize();
 }
 

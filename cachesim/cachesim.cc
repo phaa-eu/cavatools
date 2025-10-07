@@ -139,5 +139,5 @@ int main(int argc, const char* argv[], const char* envp[])
   }
   
   start_time();
-  cpu->interpreter();
+  cpu->interpreter(cpu);
 }

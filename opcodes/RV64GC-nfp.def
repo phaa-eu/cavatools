@@ -96,7 +96,7 @@
 
    fence	rd,rs1		<,I,ex,>	"{11:0}            ..... 000   ..... 00011 11"		l[11:7],l[19:15],-,-			"fence(imm)"
    fence.i	rd,rs1		<,I,ex,>	"{11:0}            ..... 001   ..... 00011 11"		l[11:7],l[19:15],-,-			"fence_i(imm)"
-   ecall	-		<,I,ex,>	"000000000000      00000 000   00000 11100 11"		-,-,-,-					"riscv_syscall()"
+   ecall	-		<,I,ex,>	"000000000000      00000 000   00000 11100 11"		-,-,-,-					"riscv_syscall(this)"
    ebreak	-		I,ex		"000000000001      00000 000   00000 11100 11"		-,-,-,-					"ebreak()"
 
    csrrw	d,E,s		<,I,sr,>	"{11:0}            ..... 001   ..... 11100 11"		l[11:7],l[19:15],-,-			"wrd(csr_func(imm,       [&](uint64_t old) { return        r1;                  } ))"
@@ -169,8 +169,8 @@
    amomaxu.d	d,t,0(s)	A,amo,st,>	"11100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); }, ap))"
 
 # Internal instructions to emulate Compare-And-Swap
-   cas.w	d,t,0(s),r	A,amo,st,>	"..... 11    ..... ..... 111   ..... 11111 11"		w[11:7],l[19:15],w[24:20],w[31:27]	"wrd(cas<int32_t>(i, ap))"
-   cas.d	d,t,0(s),r	A,amo,st,>	"..... 11    ..... ..... 111   ..... 11111 11"		l[11:7],l[19:15],l[24:20],l[31:27]	"wrd(cas<int64_t>(i, ap))"
+   cas.w	d,t,0(s),r	A,amo,st,>	"..... 11    ..... ..... 111   ..... 11111 11"		w[11:7],l[19:15],w[24:20],w[31:27]	"wrd(cas<int32_t>(r1, r2, r3, ap))"
+   cas.d	d,t,0(s),r	A,amo,st,>	"..... 11    ..... ..... 111   ..... 11111 11"		l[11:7],l[19:15],l[24:20],l[31:27]	"wrd(cas<int64_t>(r1, r2, r3, ap))"
 
 # RV32F Standard Extension
 

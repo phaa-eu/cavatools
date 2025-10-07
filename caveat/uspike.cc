@@ -49,18 +49,16 @@ void simulator(hart_t* h, Header_t* bb, uintptr_t* ap)
 {
 }
 
-int clone_proxy(class hart_t* parent)
+int my_clone_proxy(class hart_t* parent)
 {
   hart_t* child = new hart_t(parent);
   return clone_thread(child);
 }
 
-uintptr_t syscall_proxy(class hart_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5)
-  
+void my_interpreter(hart_t* h)
 {
-  return host_syscall(num, a0, a1, a2, a3, a4, a5);
+  h->default_interpreter();
 }
-
 
 static jmp_buf return_to_top_level;
 
@@ -109,8 +107,9 @@ int main(int argc, const char* argv[], const char* envp[])
   // before creating harts
   mycpu = new hart_t(argc, argv, envp);
   mycpu->simulator = simulator;
-  mycpu->clone = clone_proxy;
-  mycpu->syscall = syscall_proxy;
+  mycpu->clone = my_clone_proxy;
+  mycpu->riscv_syscall = default_riscv_syscall;
+  mycpu->interpreter = my_interpreter;
   start_time();
 
 #ifdef DEBUG
@@ -150,6 +149,6 @@ int main(int argc, const char* argv[], const char* envp[])
 	mycpu->single_step();
     }
     else
-      mycpu->interpreter();
+      my_interpreter(mycpu);
   }
 }

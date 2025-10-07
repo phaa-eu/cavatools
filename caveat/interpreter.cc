@@ -20,82 +20,75 @@
 #endif
 
 void substitute_cas(uintptr_t pc, Insn_t* i3);
+long proxy_syscall(long rvnum, long a0, long a1, long a2, long a3, long a4, long a5, hart_t* me);
 
 inline float  m32(freg_t x) { union { freg_t r; float  f; } cv; cv.r=x; return cv.f; }
 inline double m64(freg_t x) { union { freg_t r; double f; } cv; cv.r=x; return cv.f; }
 inline float32_t n32(float  x)  { union { float32_t t; float  f; } cv; cv.f=x; return cv.t; }
 inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; return cv.t; }
     
-//static Header_t mismatch_header = { 0, 0, 0, false, 0 };
-static Header_t mismatch_header = Header_t(0, 0, 0, false);
-static Header_t* mismatch = &mismatch_header;
+thread_local Header_t mismatch_header = Header_t(0, 0, 0, false);
+thread_local Header_t* mismatch = &mismatch_header;
+thread_local Header_t** target = &mismatch;
 
 #ifdef SPIKE
 #include "spike_insns.h"
 #endif
 
-void hart_t::interpreter()
+Header_t* hart_t::find_bb(uintptr_t pc)
 {
-  uintptr_t addresses[1000];	// address list is one per strand
-  Header_t** target = &mismatch;
-  for (;;) {			// once per basic block
-    Header_t* bb;		// current basic block
-    if ((*target)->addr == pc) {
-      bb = *target;		// valid link from last basic block
-      //dbmsg("%8lx linked", pc);
-    }
-    else { // no linkage or incorrect target (eg. jump register)
-      bb = tcache.find(pc);
-      //if (bb) dbmsg("%8lx hit", pc);
-      if (!bb) {	     // never seen target
-	  
-	//pthread_mutex_lock(&tcache.lock);
-	  
-	//
-	// Pre-decode entire basic block temporarily into address array
-	//
-	uintptr_t dpc = pc;	// decode pc
-	Header_t* wbb = (Header_t*)addresses;
-	Insn_t* j = (Insn_t*)(wbb+1) - 1; // note pre-incremented in loop
-	//dbmsg("Decoding");
-	do {
-	  *++j = decoder(dpc);
+  Header_t* bb = tcache.find(pc);
+  if (bb)
+    return bb;
+  uintptr_t dpc = pc;	// decode pc
+  Insn_t buffer[140];
+  Header_t* wbb = (Header_t*)buffer;
+  Insn_t* j = (Insn_t*)(wbb+1) - 1; // note pre-incremented in loop
+  //dbmsg("Decoding");
+  do {
+    *++j = decoder(dpc);
 	    
-	  //labelpc(dpc);
-	  //disasm(dpc, j);
+    //labelpc(dpc);
+    //disasm(dpc, j);
 	    
-	  // instructions with attribute '<' must be first in basic block
-	  if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb+1))) {
-	    --j;		// remove ourself for next time
-	    break;
-	  }
-	  dpc += j->compressed() ? 2 : 4;
-	  // instructions with attribute '>' ends block
-	  if (stop_after[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L)
-	    break;
-	} while (dpc-pc < 256 && j-insnp(wbb) < 128);
-	// pattern match store conditional if necessary
-	if (j->opcode()==Op_sc_w || j->opcode()==Op_sc_d)
-	  substitute_cas(dpc-4, j);
-	//dbmsg("want to added bb %8lx count=%d", wbb->addr, wbb->count);
-	*wbb = Header_t(pc, dpc-pc, j+1-insnp(wbb+1), (attributes[j->opcode()] & ATTR_cj)!=0);
-	//
-	// Always end with one pointer to next basic block
-	// Conditional branches have second fall-thru pointer
-	//
-	*(Header_t**)(++j) = &mismatch_header; // space for branch taken pointer
-	if (wbb->conditional)
-	  *(Header_t**)(++j) = &mismatch_header; // space for fall-thru pointer
-	  
-	// atomically add block into tcache
-	long n = j - insnp(wbb) + 1;
-	bb = tcache.add(wbb, n);
-      }
-      *target = bb;
-      //dbmsg("End decoding");
+    // instructions with attribute '<' must be first in basic block
+    if ((stop_before[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L) && (j > insnp(wbb+1))) {
+      --j;		// remove ourself for next time
+      break;
     }
-    uintptr_t* ap = addresses;
+    dpc += j->compressed() ? 2 : 4;
+    // instructions with attribute '>' ends block
+    if (stop_after[j->opcode() / 64] >> (j->opcode() % 64) & 0x1L)
+      break;
+  } while (dpc-pc < 256 && j-insnp(wbb) < 128);
+	
+  // pattern match store conditional if necessary
+  if (j->opcode()==Op_sc_w || j->opcode()==Op_sc_d)
+    substitute_cas(dpc-4, j);
+  //dbmsg("want to added bb %8lx count=%d", wbb->addr, wbb->count);
+  *wbb = Header_t(pc, dpc-pc, j+1-insnp(wbb+1), (attributes[j->opcode()] & ATTR_cj)!=0);
+  //
+  // Always end with one pointer to next basic block
+  // Conditional branches have second fall-thru pointer
+  //
+  *(Header_t**)(++j) = &mismatch_header; // space for branch taken pointer
+  if (wbb->conditional)
+    *(Header_t**)(++j) = &mismatch_header; // space for fall-thru pointer
+	  
+  // atomically add block into tcache
+  long n = j - insnp(wbb) + 1;
+  bb = tcache.add(wbb, n);
+  //dbmsg("End decoding");
+  return bb;
+}
 
+void hart_t::default_interpreter()
+{
+  for (;;) {			// once per basic block
+    Header_t* bb = ((*target)->addr == pc) ? *target : find_bb(pc);
+    *target = bb;
+    uintptr_t addresses[1000];
+    uintptr_t* ap = addresses;
     //
     // execute basic block
     //
@@ -123,6 +116,7 @@ void hart_t::interpreter()
 #define wrd(e)	WRITE_REG(i->rd(), (e))
 #define r1	READ_REG(i->rs1())
 #define r2	READ_REG(i->rs2())
+#define r3	READ_REG(i->rs3())
 #define imm	i->immed()
 #define wfd(e)	WRITE_FREG(i->rd()-FPREG, (e))
 #define f1	READ_FREG(i->rs1()-FPREG)
@@ -137,6 +131,7 @@ void hart_t::interpreter()
 #define wrd(e)	s.xrf[i->rd()] = (e)
 #define r1	s.xrf[i->rs1()]
 #define r2	s.xrf[i->rs2()]
+#define r3	s.xrf[i->rs3()]
 #define imm	i->immed()
 #define wfd(e)	s.frf[i->rd()-FPREG] = freg(e)
 #define f1	s.frf[i->rs1()-FPREG]
@@ -180,6 +175,33 @@ void hart_t::interpreter()
   end_bb:
     simulator(this, bb, addresses);
   }
+}
+
+void default_riscv_syscall(hart_t* h)
+{
+#ifdef SPIKE
+#undef STATE
+#define STATE  (*h->s.spike_cpu.get_state())
+  long a0 = READ_REG(10);
+  long a1 = READ_REG(11);
+  long a2 = READ_REG(12);
+  long a3 = READ_REG(13);
+  long a4 = READ_REG(14);
+  long a5 = READ_REG(15);
+  long rvnum = READ_REG(17);
+  long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, h);
+  WRITE_REG(10, rv);
+#else
+  long a0 = h->s.xrf[10];
+  long a1 = h->s.xrf[11];
+  long a2 = h->s.xrf[12];
+  long a3 = h->s.xrf[13];
+  long a4 = h->s.xrf[14];
+  long a5 = h->s.xrf[15];
+  long rvnum = h->s.xrf[17];
+  long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, h);
+  h->s.xrf[10] = rv;
+#endif
 }
 
   
