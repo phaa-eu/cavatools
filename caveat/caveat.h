@@ -29,7 +29,7 @@ extern const uint64_t stop_after[];
 #define VMREG	(VPREG+32)
 #define NOREG	0xFF
 
-class alignas(8) Insn_t {
+struct alignas(8) Insn_t {
   Opcode_t op_code;
   uint8_t op_rd;
   uint8_t op_rs1;

@@ -67,8 +67,7 @@ uintptr_t core_t::perform(Insn_t* i, uintptr_t pc)
       
 
   //#define stop debug.addval(s.reg[i->rd()].x); goto end_bb
-#define stop        goto end_bb
-#define spike_stop  target=&mismatch; stop
+#define stop        return pc
 
 #define branch(test, taken, fall)  { pc=(test)?(taken):(fall); stop; }
 #define jump(npc)  { pc=(npc); stop; }
@@ -82,7 +81,4 @@ uintptr_t core_t::perform(Insn_t* i, uintptr_t pc)
   }
   //debug.addval(i->rd()!=NOREG ? s.reg[i->rd()].x : s.reg[i->rs2()].x);
   return 0;
-
- end_bb:
-  return pc;
 }

@@ -1,4 +1,4 @@
-
+#include <cassert>
 #include <limits.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -103,31 +103,234 @@ void my_interpreter(hart_t* h)
   c->ooo_pipeline();
 }
 
+
+
+
+const int num_deferred_insns = 2;
+
+
+#if 0
+template<typename T, int N> class queue_t {
+  int f, r;
+  T element[N+1];
+  T& operator[](int k) { return element[k]; }
+  int next(int i, int k) { return (i+k+N+1) % (N+1); }
+  int front(int k=0) { return next(f, k); }
+  int rear(int k=0) { return next(r, k); }
+public:
+  queue_t() { memset(this, 0, sizeof *this); }
+  int len() { return (r-f+N+1) % (N+1); }
+  bool empty() { return front()==rear(); }
+  bool full() { return front()==rear(+1); }
+  //bool empty() { return len()==0; }
+  //bool full() { return len()==N; }
+  T deque() { assert(!empty()); int t=f; f=front(+1); return element[t]; }
+  void enque(T e) { assert(!full()); element[r]=e; r=rear(+1); }
+};
+#endif
+
+template<typename T, int N> class queue_t {
+  int f, r;
+  T element[N+1];
+  void P(const char* m) { return; fprintf(stderr, "queue_t %s f=%d r=%d\n", m, f, r); }
+public:
+  queue_t() { memset(this, 0, sizeof *this); }
+  bool empty() { return f==r; }
+  bool full() { return f==(r+1)%(N+1); }
+  T deque() { P("D"); assert(f!=r); T e=element[f]; f=(f+1)%(N+1); return e; }
+  void enque(T e) { P("E"); element[r]=e; r=(r+1)%(N+1); assert(f!=r); }
+};
+
+struct iq_elt_t {
+  Insn_t o;
+  Insn_t n;
+  uintptr_t p;
+};
+
+template<int N> class issueq_t {
+  struct iq_elt_t iq[N];
+  int last;
+public:
+  issueq_t() { last=0; }
+  bool full() { return last==N; }
+  void append(iq_elt_t  e) { assert(!full()); iq[last++]=e; }
+  bool issued(iq_elt_t &e) { if (last==0) return false; e=iq[--last]; return true; }
+};
+
+
+extern const char* reg_name[];
+static int sdisreg(char* buf, char sep, int o, int n)
+{
+  return sprintf(buf, "%c%s(r%d)", sep, reg_name[o], n);
+}
+
+static int my_sdisasm(char* buf, uintptr_t pc, const Insn_t* o, const Insn_t* i)
+{
+  int n = 0;
+  if (i->opcode() == Op_ZERO) {
+    n += sprintf(buf, "Nothing here");
+    return n;
+  }
+  uint32_t b = *(uint32_t*)pc;
+  if (i->compressed())
+    n += sprintf(buf+n, "    %04x  ", b&0xFFFF);
+  else
+    n += sprintf(buf+n, "%08x  ",     b);
+  n += sprintf(buf+n, "%-23s", op_name[i->opcode()]);
+  char sep = ' ';
+  if (i->rd()  != NOREG) { n += sdisreg(buf+n, sep, o->rd(),  i->rd() ); sep=','; }
+  if (i->rs1() != NOREG) { n += sdisreg(buf+n, sep, o->rs1(), i->rs1()); sep=','; }
+  if (i->longimmed())    { n += sprintf(buf+n, "%c%ld", sep, i->immed()); }
+  else {
+    if (i->rs2() != NOREG) { n += sdisreg(buf+n, sep, o->rs2(), i->rs2()); sep=','; }
+    if (i->rs3() != NOREG) { n += sdisreg(buf+n, sep, o->rs3(), i->rs3()); sep=','; }
+    n += sprintf(buf+n, "%c%ld", sep, i->immed());
+  }
+  return n;
+}
+
+static void my_disasm(uintptr_t pc, const Insn_t* o, const Insn_t* i, const char* end, FILE* f)
+{
+  char buffer[1024];
+  my_sdisasm(buffer, pc, o, i);
+  fprintf(f, "%s%s", buffer, end);
+}
+
+
+
+uint8_t regmap[256];
+int reguses[256];
+bool regbusy[256];
+queue_t<uint8_t, num_deferred_insns+1> freelist;
+issueq_t<num_deferred_insns> issueq;
+
 void core_t::ooo_pipeline()
 {
   fprintf(stderr, "ooo_pipeline() starting\n");
+
+  // initialize register map and freelist
+  for (int k=0; k<64; ++k) {
+    regmap[k] = k;
+    reguses[k] = 1;
+  }
+  for (int k=64; k<64+num_deferred_insns; ++k) {
+    freelist.enque(k);
+    reguses[k] = 0;
+  }
+  regmap[NOREG] = NOREG;
+  reguses[NOREG] = 0;
+
   pc = get_state();
   Header_t* bb = find_bb(pc);
   i = insnp(bb+1);
+
+  long cycle = 0;
   for (;;) {
+#if 0
     if (conf_show()) {
       put_state();
       print(pc, i, stdout);
     }
-#if 0
     else if (conf_trace()) {
       fprintf(trace_file, "%lx\n", pc);
     }
 #endif
-    uintptr_t jumped = perform(i, pc);
-    pc += i->compressed() ? 2 : 4;
-    if (jumped || ++i >= insnp(bb+1)+bb->count) {
-      if (jumped)
-	pc = jumped;
-      bb = find_bb(pc);
-      i = insnp(bb+1);
+
+    // once per cycle
+    ++cycle;
+    if (conf_show())
+      fprintf(stderr, "\n%6ld ", cycle);
+    Insn_t ir;			// instruction with physical register numbers
+
+    // rename input registers
+    uint8_t r1 = regmap[i->rs1()];
+    uint8_t r2 = i->longimmed() ? NOREG : regmap[i->rs2()];
+    uint8_t r3 = i->longimmed() ? NOREG : regmap[i->rs3()];
+
+    // rename output register
+    uint8_t rd = i->rd();
+    if (rd != NOREG && rd != 0) {
+      if (freelist.empty()) {
+	if (conf_show())
+	  fprintf(stderr, "unable to rename output register");
+	goto issue_from_queue;	// unable to rename output register
+      }
+      uint8_t old_rd = regmap[rd];
+      if (--reguses[old_rd] == 0)
+	freelist.enque(old_rd);
+      rd = freelist.deque();
+      regmap[i->rd()] = rd;
+      ++reguses[rd];
     }
-  }
+
+    // create instruction with physical registers
+    ir = *i;
+    ir.op_rd = rd;
+    ir.op_rs1 = r1;
+    if (!ir.longimmed()) {
+      ir.op.rs2 = r2;
+      ir.op.rs3 = r3;
+    }
+
+    // new instruction ready to execute immediately?
+    if (regbusy[r1] || regbusy[r2] || regbusy[r3]) {
+      if (conf_show())
+	fprintf(stderr, "new instruction has busy registers");
+      goto enqueue_new_insn;	// input register not ready
+    }
+    
+    // immediately execute new instruction
+    {
+      
+      if (conf_show()) {
+	fprintf(stderr, "new ");
+	labelpc(pc, stderr);
+	my_disasm(pc, i, &ir, "", stderr);
+      }
+
+      uintptr_t jumped = perform(&ir, pc);
+      pc += ir.compressed() ? 2 : 4;
+      if (jumped || ++i >= insnp(bb+1)+bb->count) {
+	if (jumped)
+	  pc = jumped;
+	bb = find_bb(pc);
+	i = insnp(bb+1);
+      }
+    }
+    continue;
+
+  enqueue_new_insn:
+    if (!issueq.full()) {
+      issueq.append({*i, ir, pc});
+      pc += ir.compressed() ? 2 : 4;
+      if (++i >= insnp(bb+1)+bb->count) {
+	bb = find_bb(pc);
+	i = insnp(bb+1);
+      }
+      if (conf_show())
+	fprintf(stderr, "enqueued instruction");
+    }
+    else {
+      if (conf_show())
+	fprintf(stderr, "issue queue full");
+    }
+    
+  issue_from_queue:
+    iq_elt_t e;
+    if (issueq.issued(e)) {
+      if (conf_show()) {
+	fprintf(stderr, "OLD ");
+	labelpc(e.p, stderr);
+	my_disasm(e.p, &e.o, &e.n, "", stderr);
+      }
+      (void)perform(&e.n, e.p);
+    }
+    else {
+      if (conf_show())
+	fprintf(stderr, "Nothing in queue");
+    }
+    
+  } // once per cycle
 }
 
 void my_interpreter(core_t* c)
@@ -138,15 +341,21 @@ void my_interpreter(core_t* c)
 void my_riscv_syscall(hart_t* h)
 {
   core_t* c = (core_t*)h;
-  long a0 = c->s.reg[10].x;
-  long a1 = c->s.reg[11].x;
-  long a2 = c->s.reg[12].x;
-  long a3 = c->s.reg[13].x;
-  long a4 = c->s.reg[14].x;
-  long a5 = c->s.reg[15].x;
-  long rvnum = c->s.reg[17].x;
+  long a0 = c->s.reg[regmap[10]].x;
+  long a1 = c->s.reg[regmap[11]].x;
+  long a2 = c->s.reg[regmap[12]].x;
+  long a3 = c->s.reg[regmap[13]].x;
+  long a4 = c->s.reg[regmap[14]].x;
+  long a5 = c->s.reg[regmap[15]].x;
+  long rvnum = c->s.reg[regmap[17]].x;
   long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, c);
-  c->s.reg[10].x = rv;
+  uint8_t old_rd = regmap[10];
+  if (--reguses[old_rd] == 0)
+    freelist.enque(old_rd);
+  uint8_t rd = freelist.deque();
+  regmap[10] = rd;
+  ++reguses[rd];
+  c->s.reg[rd].x = rv;
 }
 
 int main(int argc, const char* argv[], const char* envp[])
