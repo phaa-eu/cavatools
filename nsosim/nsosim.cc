@@ -76,9 +76,9 @@ void core_t::put_state()
   hart_t* h = this;
   h->pc = pc;
   for (int i=0; i<32; i++)
-    h->s.xrf[i] = s.reg[i].x;
+    h->s.xrf[i] = s.reg[regmap[i]].x;
   for (int i=0; i<32; i++)
-    h->s.frf[i] = s.reg[i+32].f;
+    h->s.frf[i] = s.reg[regmap[i+32]].f;
   h->s.fflags = s.fflags;
   h->s.frm = s.frm;
 }
@@ -104,58 +104,6 @@ void my_interpreter(hart_t* h)
 }
 
 
-
-
-const int num_deferred_insns = 2;
-
-
-#if 0
-template<typename T, int N> class queue_t {
-  int f, r;
-  T element[N+1];
-  T& operator[](int k) { return element[k]; }
-  int next(int i, int k) { return (i+k+N+1) % (N+1); }
-  int front(int k=0) { return next(f, k); }
-  int rear(int k=0) { return next(r, k); }
-public:
-  queue_t() { memset(this, 0, sizeof *this); }
-  int len() { return (r-f+N+1) % (N+1); }
-  bool empty() { return front()==rear(); }
-  bool full() { return front()==rear(+1); }
-  //bool empty() { return len()==0; }
-  //bool full() { return len()==N; }
-  T deque() { assert(!empty()); int t=f; f=front(+1); return element[t]; }
-  void enque(T e) { assert(!full()); element[r]=e; r=rear(+1); }
-};
-#endif
-
-template<typename T, int N> class queue_t {
-  int f, r;
-  T element[N+1];
-  void P(const char* m) { return; fprintf(stderr, "queue_t %s f=%d r=%d\n", m, f, r); }
-public:
-  queue_t() { memset(this, 0, sizeof *this); }
-  bool empty() { return f==r; }
-  bool full() { return f==(r+1)%(N+1); }
-  T deque() { P("D"); assert(f!=r); T e=element[f]; f=(f+1)%(N+1); return e; }
-  void enque(T e) { P("E"); element[r]=e; r=(r+1)%(N+1); assert(f!=r); }
-};
-
-struct iq_elt_t {
-  Insn_t o;
-  Insn_t n;
-  uintptr_t p;
-};
-
-template<int N> class issueq_t {
-  struct iq_elt_t iq[N];
-  int last;
-public:
-  issueq_t() { last=0; }
-  bool full() { return last==N; }
-  void append(iq_elt_t  e) { assert(!full()); iq[last++]=e; }
-  bool issued(iq_elt_t &e) { if (last==0) return false; e=iq[--last]; return true; }
-};
 
 
 extern const char* reg_name[];
@@ -198,12 +146,6 @@ static void my_disasm(uintptr_t pc, const Insn_t* o, const Insn_t* i, const char
 
 
 
-uint8_t regmap[256];
-int reguses[256];
-bool regbusy[256];
-queue_t<uint8_t, num_deferred_insns+1> freelist;
-issueq_t<num_deferred_insns> issueq;
-
 void core_t::ooo_pipeline()
 {
   fprintf(stderr, "ooo_pipeline() starting\n");
@@ -219,8 +161,9 @@ void core_t::ooo_pipeline()
   }
   regmap[NOREG] = NOREG;
   reguses[NOREG] = 0;
+  memset(regbusy, 0, sizeof regbusy);
 
-  pc = get_state();
+ pc = get_state();
   Header_t* bb = find_bb(pc);
   i = insnp(bb+1);
 
@@ -240,6 +183,9 @@ void core_t::ooo_pipeline()
     ++cycle;
     if (conf_show())
       fprintf(stderr, "\n%6ld ", cycle);
+
+    s.reg[0].x = 0;
+    
     Insn_t ir;			// instruction with physical register numbers
 
     // rename input registers
@@ -341,20 +287,20 @@ void my_interpreter(core_t* c)
 void my_riscv_syscall(hart_t* h)
 {
   core_t* c = (core_t*)h;
-  long a0 = c->s.reg[regmap[10]].x;
-  long a1 = c->s.reg[regmap[11]].x;
-  long a2 = c->s.reg[regmap[12]].x;
-  long a3 = c->s.reg[regmap[13]].x;
-  long a4 = c->s.reg[regmap[14]].x;
-  long a5 = c->s.reg[regmap[15]].x;
-  long rvnum = c->s.reg[regmap[17]].x;
+  long a0 = c->s.reg[c->regmap[10]].x;
+  long a1 = c->s.reg[c->regmap[11]].x;
+  long a2 = c->s.reg[c->regmap[12]].x;
+  long a3 = c->s.reg[c->regmap[13]].x;
+  long a4 = c->s.reg[c->regmap[14]].x;
+  long a5 = c->s.reg[c->regmap[15]].x;
+  long rvnum = c->s.reg[c->regmap[17]].x;
   long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, c);
-  uint8_t old_rd = regmap[10];
-  if (--reguses[old_rd] == 0)
-    freelist.enque(old_rd);
-  uint8_t rd = freelist.deque();
-  regmap[10] = rd;
-  ++reguses[rd];
+  uint8_t old_rd = c->regmap[10];
+  if (--c->reguses[old_rd] == 0)
+    c->freelist.enque(old_rd);
+  uint8_t rd = c->freelist.deque();
+  c->regmap[10] = rd;
+  ++c->reguses[rd];
   c->s.reg[rd].x = rv;
 }
 

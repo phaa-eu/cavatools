@@ -25,6 +25,7 @@ install:
 	make -C opcodes  install
 	make -C caveat   install
 	make -C cachesim install
+	make -C nsosim   install
 
 clean:
 	rm -f $(CAVA)/lib/libcava.a *~ ./#*#
@@ -35,6 +36,7 @@ clean:
 	make -C opcodes   clean
 	make -C caveat    clean
 	make -C cachesim  clean
+	make -C nsosim    clean
 
 tarball:  clean
 	( cd ..; tar -czvf cavatools.tgz cavatools )

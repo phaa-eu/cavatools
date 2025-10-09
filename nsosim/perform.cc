@@ -12,6 +12,8 @@
 #include <sys/mman.h>
 #include <signal.h>
 
+#include <cassert>
+
 #include "caveat.h"
 #include "hart.h"
 #include "arithmetic.h"
