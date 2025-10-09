@@ -177,12 +177,11 @@ void hart_t::default_interpreter()
   }
 }
 
-void default_riscv_syscall(hart_t* h)
+long default_riscv_syscall(hart_t* h, long a0)
 {
 #ifdef SPIKE
 #undef STATE
 #define STATE  (*h->s.spike_cpu.get_state())
-  long a0 = READ_REG(10);
   long a1 = READ_REG(11);
   long a2 = READ_REG(12);
   long a3 = READ_REG(13);
@@ -190,9 +189,7 @@ void default_riscv_syscall(hart_t* h)
   long a5 = READ_REG(15);
   long rvnum = READ_REG(17);
   long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, h);
-  WRITE_REG(10, rv);
 #else
-  long a0 = h->s.xrf[10];
   long a1 = h->s.xrf[11];
   long a2 = h->s.xrf[12];
   long a3 = h->s.xrf[13];
@@ -200,8 +197,8 @@ void default_riscv_syscall(hart_t* h)
   long a5 = h->s.xrf[15];
   long rvnum = h->s.xrf[17];
   long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, h);
-  h->s.xrf[10] = rv;
 #endif
+  return rv;
 }
 
   

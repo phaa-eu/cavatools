@@ -88,5 +88,5 @@ public:
   uintptr_t perform(Insn_t* i, uintptr_t pc);
 
   void ooo_pipeline();
-  friend void my_riscv_syscall(hart_t* h);
+  friend long my_riscv_syscall(hart_t* h, long a0);
 };

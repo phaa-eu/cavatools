@@ -284,10 +284,9 @@ void my_interpreter(core_t* c)
   c->ooo_pipeline();
 }
 
-void my_riscv_syscall(hart_t* h)
+long my_riscv_syscall(hart_t* h, long a0)
 {
   core_t* c = (core_t*)h;
-  long a0 = c->s.reg[c->regmap[10]].x;
   long a1 = c->s.reg[c->regmap[11]].x;
   long a2 = c->s.reg[c->regmap[12]].x;
   long a3 = c->s.reg[c->regmap[13]].x;
@@ -295,6 +294,8 @@ void my_riscv_syscall(hart_t* h)
   long a5 = c->s.reg[c->regmap[15]].x;
   long rvnum = c->s.reg[c->regmap[17]].x;
   long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, c);
+  return rv;
+#if 0
   uint8_t old_rd = c->regmap[10];
   if (--c->reguses[old_rd] == 0)
     c->freelist.enque(old_rd);
@@ -302,6 +303,7 @@ void my_riscv_syscall(hart_t* h)
   c->regmap[10] = rd;
   ++c->reguses[rd];
   c->s.reg[rd].x = rv;
+#endif
 }
 
 int main(int argc, const char* argv[], const char* envp[])

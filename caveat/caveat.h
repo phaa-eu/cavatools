@@ -156,9 +156,7 @@ public:
 
 
 typedef void (*simfunc_t)(class hart_t* h, Header_t* bb, uintptr_t* ap);
-//typedef uintptr_t (*syscallfunc_t)(class hart_t* h, int num,
-//				   uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
-typedef void (*syscallfunc_t)(class hart_t* h);
+typedef long (*syscallfunc_t)(class hart_t* h, long a0);
 typedef int (*clonefunc_t)(class hart_t* h);
 typedef void (*interpreterfunc_t)(class hart_t* h);
 
@@ -174,9 +172,3 @@ int slabelpc(char* buf, uintptr_t pc);
 void labelpc(uintptr_t pc, FILE* f =stderr);
 int sdisasm(char* buf, uintptr_t pc, const Insn_t* i);
 void disasm(uintptr_t pc, const Insn_t* i, const char* end ="\n", FILE* f =stderr);
-
-#if 0
-int clone_thread(hart_t* s);
-uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
-uintptr_t default_syscall_func(hart_t* h, int num, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
-#endif
