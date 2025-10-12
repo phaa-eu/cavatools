@@ -8,6 +8,8 @@ const int num_write_ports = 1;
 const int max_latency = 32;
 const int issue_queue_length = 16;
 
+const int history_depth = 128;
+
 // unified physical register file
 union simreg_t {
   reg_t x;			// for integer
@@ -21,13 +23,6 @@ struct simulator_state_t {
   unsigned frm;
 };
 
-// issue queue entry
-struct deferred_insn_t {
-  Insn_t insn;			// deferred instruction
-  uintptr_t pc;			// from this address
-  Insn_t ref;			// original instruction
-};
-
 // event flags for display
 #define FLAG_busy	0x01	// instruction has busy registers
 #define FLAG_qfull	0x02	// issue queue is full
@@ -38,12 +33,23 @@ struct deferred_insn_t {
 #define FLAG_queue	0x40	// deferring instruction into queue
 #define FLAG_free	0x80	// register free list is empty
 #define FLAG_stall	0x100	// instruction must wait
+#define FLAG_retire	0x200	// instruction has retired
+
+// phantom reorder buffer for visual debugging
+struct History_t {
+  Insn_t insn;
+  uintptr_t pc;
+  Insn_t* ref;
+  unsigned long cycle;
+  unsigned flags;
+};
 
 
 // one simulation thread
 class core_t : public hart_t {
   simulator_state_t s;		// replaces uspike state
-  long unsigned cycle;		// counts execution cycle
+  long unsigned cycle;		// count number of processor cycles
+  long unsigned insns;		// count number of instructions executed
   long outstanding;		// number of instructions in flight
 
   // renaming register file
@@ -53,12 +59,16 @@ class core_t : public hart_t {
   uint8_t freelist[max_phy_regs-64];
   int numfree;			// maintained as stack
 
+  // phantom reorder buffer for visual debugging
+  // rob indexed by [executed() % history_depth]
+  History_t rob[history_depth];
+
   // issue queue
-  deferred_insn_t queue[issue_queue_length];
+  History_t* queue[issue_queue_length];
   int last;			// queue depth
 
   // pipeline for time when instruction finishes
-  Insn_t wheel[num_write_ports][max_latency+1];
+  History_t* wheel[num_write_ports][max_latency+1];
   int index(unsigned k) { assert(k<=max_latency); return (cycle+k)%(max_latency+1); }
 
   bool no_free_reg(Insn_t ir) { return !ir.rd() || ir.rd()==NOREG || numfree==max_phy_regs-64; };
@@ -88,6 +98,8 @@ public:
 
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
+
+  void display_history();
 };
 
 long ooo_riscv_syscall(hart_t* h, long a0);

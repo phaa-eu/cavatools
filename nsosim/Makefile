@@ -18,7 +18,7 @@ CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include/softfloat -I../caveat -I../spike
 
 BINS := core.o perform.o nsosim.o
 LIBS := $(CAVA)/lib/libcava.a ~/lib/libsoftfloat.a
-LDFLAGS := -Wl,-Ttext=70000000
+LDFLAGS := -Wl,-Ttext=70000000 -lncurses
 
 nsosim:  $(BINS) $(LIBS)
 	g++ -o nsosim $(BINS) $(LDFLAGS) $(LIBS)

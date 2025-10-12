@@ -2,6 +2,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <ncurses.h>
 
 #include "caveat.h"
 #include "hart.h"
@@ -91,11 +92,18 @@ int main(int argc, const char* argv[], const char* envp[])
   cpu->interpreter = ooo_interpreter;
   atexit(exitfunc);
 
-  if (conf_report() > 0 && !conf_show()) {
+  if (0 && conf_report() > 0 && !conf_show()) {
     pthread_t tnum;
     dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
   }
+
+  initscr();                    /* Start curses mode */
+  keypad(stdscr, true);         /* Need all keys */
+  nonl();
+  cbreak();                     /* Line buffering disabled */
+  noecho();
   
   start_time();
   ooo_interpreter(cpu);
+  endwin();
 }

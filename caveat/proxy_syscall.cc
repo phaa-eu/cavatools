@@ -143,12 +143,12 @@ uintptr_t host_syscall(int sysnum, uintptr_t a0, uintptr_t a1, uintptr_t a2, uin
   case SYS_exit_group:
     goto stop;
     
-#if 0
+#if 1
   case SYS_brk:
     //retval = emulate_brk(a0, read_pc()>MEM_END ? &dl_linux_info : &prog_info);
     //fprintf(stderr, "current.brk = 0x%lx\n", current.brk);
     retval = emulate_brk(a0);
-    fprintf(stderr, "SYS_brk(%lx)->%lx\n", a0, retval);
+    //fprintf(stderr, "SYS_brk(%lx)->%lx\n", a0, retval);
     return retval;
 #endif
     
