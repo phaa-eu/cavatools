@@ -24,6 +24,16 @@
 #error "Spike linkage not support at present"
 #endif
 
+#undef READ_REG
+#undef READ_FREG
+#undef WRITE_REG
+#undef WRITE_FREG
+
+#define READ_REG(n)   s.reg[n].x
+#define READ_FREG(n)  s.reg[n].f
+#define WRITE_REG(n, v)   s.reg[n].x = (v)
+#define WRITE_FREG(n, v)  s.reg[n].f = (v)
+
 void substitute_cas(uintptr_t pc, Insn_t* i3);
 
 inline float  m32(freg_t x) { union { freg_t r; float  f; } cv; cv.r=x; return cv.f; }

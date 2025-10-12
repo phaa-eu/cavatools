@@ -69,6 +69,7 @@ static void segv_handler(int, siginfo_t*, void*) {
   
   
 hart_t* mycpu;
+thread_local long cycle = 0;
 
 #ifdef DEBUG
 void signal_handler(int nSIGnum, siginfo_t* si, void* vcontext)
