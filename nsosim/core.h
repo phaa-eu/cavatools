@@ -52,6 +52,10 @@ class core_t : public hart_t {
   long unsigned insns;		// count number of instructions executed
   long outstanding;		// number of instructions in flight
 
+  Header_t* bb;			// current basic block
+  Insn_t* i;			// current decoded instruction
+  uintptr_t pc;			// at this address
+
   // renaming register file
   uint8_t regmap[256];		// architectural to physical
   bool busy[max_phy_regs];	// register waiting to be filled
@@ -84,7 +88,6 @@ class core_t : public hart_t {
   void try_issue_from_queue();
   uintptr_t perform(Insn_t* i, uintptr_t pc);
 
-  void show_insn(Insn_t ir, uintptr_t pc, Insn_t* ref, unsigned flags);
   void initialize() { memset(&s, 0, sizeof s); }
 public:
   core_t(hart_t* from) :hart_t(from) { initialize(); }
@@ -94,7 +97,11 @@ public:
   
   friend long ooo_riscv_syscall(hart_t* h, long a0);
   friend int clone_proxy(hart_t* h);
-  void ooo_simulator();
+  friend void simulator(hart_t* h);
+
+  void init_simulator();
+  void simulate_cycle();
+  void fini_simulator();
 
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }

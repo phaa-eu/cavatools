@@ -58,13 +58,6 @@ void exitfunc()
 
 
 
-
-void ooo_interpreter(hart_t* h)
-{
-  core_t* c = (core_t*)h;
-  c->ooo_simulator();
-}
-
 int main(int argc, const char* argv[], const char* envp[])
 {
   parse_options(argc, argv, "nsosim: RISC-V non-speculative out-of-order simulator");
@@ -76,7 +69,7 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
 
   for (int k=0; k<Number_of_Opcodes; ++k) {
-    latency[k] = 3;
+    latency[k] = 1;
     continue;
     Opcode_t op = (Opcode_t)k;
     ATTR_bv_t a = attributes[op];
@@ -89,7 +82,7 @@ int main(int argc, const char* argv[], const char* envp[])
   core_t* cpu = new core_t(argc, argv, envp);
   cpu->clone = clone_proxy;
   cpu->riscv_syscall = ooo_riscv_syscall;
-  cpu->interpreter = ooo_interpreter;
+  //cpu->interpreter = simulator;
   atexit(exitfunc);
 
   if (0 && conf_report() > 0 && !conf_show()) {
@@ -102,8 +95,37 @@ int main(int argc, const char* argv[], const char* envp[])
   nonl();
   cbreak();                     /* Line buffering disabled */
   noecho();
+  nodelay(stdscr, true);
   
   start_time();
-  ooo_interpreter(cpu);
-  endwin();
+  cpu->init_simulator();
+  bool freerun = false;
+  for (;;) {
+    int ch = getch();
+    while (freerun && ch == ERR) {
+      usleep(20000);
+      if (freerun) {
+	cpu->simulate_cycle();
+	cpu->display_history();
+      }
+      ch = getch();
+    }
+    switch (ch) {
+    case ERR:
+      break;
+    case 'q':
+      endwin();
+      exit(0);
+    case 's':
+      freerun = false;
+      cpu->simulate_cycle();
+      cpu->display_history();
+      break;
+    case 'c':
+      freerun = true;
+      break;
+    default:
+      ;
+    }
+  }
 }
