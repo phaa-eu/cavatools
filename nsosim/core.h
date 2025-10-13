@@ -29,11 +29,9 @@ struct simulator_state_t {
 #define FLAG_jump	0x04	// jump instruction cannot be deferred
 #define FLAG_store	0x08	// store address not yet available
 #define FLAG_serialize	0x10	// waiting for pipeline to flush
-#define FLAG_delayed	0x20	// executing instruction from queue
-#define FLAG_queue	0x40	// deferring instruction into queue
-#define FLAG_free	0x80	// register free list is empty
-#define FLAG_stall	0x100	// instruction must wait
-#define FLAG_retire	0x200	// instruction has retired
+#define FLAG_free	0x20	// register free list is empty
+#define FLAG_decode	0x40	// instruction in decode stage
+#define FLAG_execute	0x80	// instruction is executing
 
 // phantom reorder buffer for visual debugging
 struct History_t {
@@ -42,6 +40,10 @@ struct History_t {
   Insn_t* ref;
   unsigned long cycle;
   unsigned flags;
+  void display(bool busy[]);
+private:
+  void show_opcode();
+  void show_reg(char sep, int orig, int phys, bool busy[]);
 };
 
 
@@ -107,6 +109,7 @@ public:
   core_t* next() { return (core_t*)hart_t::next(); }
 
   void display_history();
+  void interactive();
 };
 
 long ooo_riscv_syscall(hart_t* h, long a0);

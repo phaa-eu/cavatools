@@ -8,36 +8,80 @@
 #include "core.h"
 
 
-
-static int sdisreg(char* buf, char sep, int o, int n)
+// show opcode highlighting execution status
+void History_t::show_opcode()
 {
-  return sprintf(buf, "%c%s(r%d)", sep, reg_name[o], n);
+  extern const char* op_name[];
+  if (flags & FLAG_execute) attron( A_REVERSE);
+  int len = strlen(op_name[insn.opcode()]);
+  printw("%s", op_name[insn.opcode()]);
+  if (flags & FLAG_execute) attroff(A_REVERSE);
+  printw("%*s", 12-len, "");
 }
 
-static int my_sdisasm(char* buf, const Insn_t* i, uintptr_t pc, const Insn_t* o)
+// show register with renaming and highlight status
+void History_t::show_reg(char sep, int orig, int phys, bool busy[])
 {
   extern const char* reg_name[];
-  int n = 0;
-  if (i->opcode() == Op_ZERO) {
-    n += sprintf(buf, "Nothing here");
-    return n;
+  if (phys == NOREG) {
+    printw("%c%s", sep, reg_name[orig]);
   }
-  uint32_t b = *(uint32_t*)pc;
-  if (i->compressed())
-    n += sprintf(buf+n, "    %04x  ", b&0xFFFF);
-  else
-    n += sprintf(buf+n, "%08x  ",     b);
-  n += sprintf(buf+n, "%-23s", op_name[i->opcode()]);
-  char sep = ' ';
-  if (i->rd()  != NOREG) { n += sdisreg(buf+n, sep, o->rd(),  i->rd() ); sep=','; }
-  if (i->rs1() != NOREG) { n += sdisreg(buf+n, sep, o->rs1(), i->rs1()); sep=','; }
-  if (i->longimmed())    { n += sprintf(buf+n, "%c%ld", sep, i->immed()); }
   else {
-    if (i->rs2() != NOREG) { n += sdisreg(buf+n, sep, o->rs2(), i->rs2()); sep=','; }
-    if (i->rs3() != NOREG) { n += sdisreg(buf+n, sep, o->rs3(), i->rs3()); sep=','; }
-    n += sprintf(buf+n, "%c%ld", sep, i->immed());
+    if (busy[phys]) attron( A_REVERSE);
+    printw("%c%s(r%d)", sep, reg_name[orig], phys);
+    if (busy[phys]) attroff(A_REVERSE);
   }
-  return n;
+}
+
+void History_t::display(bool busy[])
+{
+  if (pc==0 || insn.opcode()==Op_ZERO) {
+    printw("*** nothing here ***");
+    return;
+  }
+
+  if (flags == 0) attron(A_DIM);
+  if (flags & FLAG_decode) attron(A_BOLD);
+  
+  printw("%c", (flags&FLAG_busy)	? 'b' : ' ');
+  printw("%c", (flags&FLAG_qfull)	? 'f' : ' ');
+  printw("%c", (flags&FLAG_jump)	? 'j' : ' ');
+  printw("%c", (flags&FLAG_store)	? 's' : ' ');
+  printw("%c", (flags&FLAG_serialize)	? '!' : ' ');
+  printw("%c", (flags&FLAG_free)	? 'f' : ' ');
+  printw("\t");
+  
+  char buf[256];;
+  slabelpc(buf, pc);
+  printw("%s", buf);
+  
+  uint32_t b = *(uint32_t*)pc;
+  if (insn.compressed())
+    printw("    %04x  ", b&0xFFFF);
+  else
+    printw("%08x  ",     b);
+  show_opcode();
+  char sep = ' ';
+  if (ref) {
+    if (insn.rd()  != NOREG)   { show_reg(sep, ref->rd(),  insn.rd() , busy); sep=','; }
+    if (insn.rs1() != NOREG)   { show_reg(sep, ref->rs1(), insn.rs1(), busy); sep=','; }
+    if (! insn.longimmed()) {
+      if (insn.rs2() != NOREG) { show_reg(sep, ref->rs2(), insn.rs2(), busy); sep=','; }
+      if (insn.rs3() != NOREG) { show_reg(sep, ref->rs3(), insn.rs3(), busy); sep=','; }
+    }
+  }
+  else {
+    if (insn.rd()  != NOREG)   { show_reg(sep, insn.rd(),  NOREG, busy); sep=','; }
+    if (insn.rs1() != NOREG)   { show_reg(sep, insn.rs1(), NOREG, busy); sep=','; }
+    if (! insn.longimmed()) {
+      if (insn.rs2() != NOREG) { show_reg(sep, insn.rs2(), NOREG, busy); sep=','; }
+      if (insn.rs3() != NOREG) { show_reg(sep, insn.rs3(), NOREG, busy); sep=','; }
+    }
+  }
+  printw("%c%ld", sep, insn.immed());
+  
+  if (flags & FLAG_decode) attroff(A_BOLD);
+  if (flags == 0) attroff(A_DIM);
 }
 
 void core_t::display_history()
@@ -50,31 +94,58 @@ void core_t::display_history()
   //int k = (insns-1) % history_depth; // rob slot to display
   int k = insns % history_depth; // rob slot to display
   for (int l=0; l<lines-3; ++l, --when) {    // leave a few blank lines
-    History_t* h = &rob[k];
-    move((when+lines)%lines, 0);	// line for this cycle number
-    if (when != h->cycle)
-      printw(".\n");
-    else {
-      printw("%7ld ", when);
-      unsigned flags = h->flags;
-      printw("%c", (flags&FLAG_retire)	? 'R' : ' ');
-      printw("%c", (flags&FLAG_delayed)	? 'D' : ' ');
-      printw("%c", (flags&FLAG_queue)	? 'Q' : ' ');
-      printw("%c", (flags&FLAG_busy)	? 'b' : ' ');
-      printw("%c", (flags&FLAG_qfull)	? 'f' : ' ');
-      printw("%c", (flags&FLAG_jump)	? 'j' : ' ');
-      printw("%c", (flags&FLAG_store)	? 's' : ' ');
-      printw("%c", (flags&FLAG_serialize)	? '!' : ' ');
-      printw("\t");
-      slabelpc(buf, h->pc);
-      printw("%s", buf);
-      if (h->ref)
-	my_sdisasm(buf, &h->insn, h->pc, h->ref);
-      else
-	sdisasm(buf, pc, &h->insn);
-      printw("%s\n", buf);
+    if (when < 0)
+      continue;
+    move(when%lines, 0);
+    printw("%7ld ", when);
+    if (when == rob[k].cycle) {
+      rob[k].display(busy);
       k = (k-1+history_depth) % history_depth;
     }
+    printw("\n");
   }
   refresh();
 }
+
+void core_t::interactive()
+{
+  initscr();                    /* Start curses mode */
+  keypad(stdscr, true);         /* Need all keys */
+  nonl();
+  cbreak();                     /* Line buffering disabled */
+  noecho();
+  nodelay(stdscr, true);
+  //start_color();
+  
+  bool freerun = false;
+  for (;;) {
+    int ch = getch();
+    while (freerun && ch == ERR) {
+      usleep(20000);
+      if (freerun) {
+	simulate_cycle();
+	display_history();
+      }
+      ch = getch();
+    }
+    switch (ch) {
+    case ERR:
+      break;
+    case 'q':
+      endwin();
+      return;
+    case 's':
+      freerun = false;
+      simulate_cycle();
+      display_history();
+      break;
+    case 'c':
+      freerun = true;
+      break;
+    default:
+      ;
+    }
+  }
+}
+
+  

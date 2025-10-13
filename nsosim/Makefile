@@ -26,7 +26,7 @@ nsosim:  $(BINS) $(LIBS)
 
 #perform.o: ~/include/cava/caveat.h ~/include/cava/hart.h
 
-perform.o nsosim.o:  core.h
+display.o core.o perform.o nsosim.o:  core.h
 
 install:  nsosim
 	cp nsosim $(CAVA)/bin/.

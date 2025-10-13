@@ -47,8 +47,8 @@ void core_t::simulate_cycle() {
     if (h) {
       Insn_t* p = &h->insn;
       busy[p->rd()] = false;	// destination register available
-      wheel[k][index(0)]->flags &= ~(FLAG_delayed|FLAG_queue);
-      wheel[k][index(0)]->flags |= FLAG_retire;
+      wheel[k][index(0)]->flags = 0;
+      wheel[k][index(0)]->ref = 0;
       // decrement use count and free if zero
       release_reg(p->rs1());
       if (!p->longimmed()) {
@@ -77,9 +77,8 @@ void core_t::simulate_cycle() {
 	(flags & FLAG_jump)      && !ready_insn(ir) ) {
       if (no_free_reg(ir))
 	flags |= FLAG_free;
-      flags |= FLAG_stall;
       if (flags & FLAG_serialize) {
-	rob[insns % history_depth].flags = flags;
+	rob[insns % history_depth].flags = flags | FLAG_decode;
 	++cycle;
 	return;
       }
@@ -90,10 +89,11 @@ void core_t::simulate_cycle() {
   // try to immediately execute new instruction
   if (ready_insn(ir)) {
     commit_insn(ir);
+    uintptr_t jumped = perform(&ir, pc);
+    flags |= FLAG_execute;
     History_t* h = &rob[insns++ % history_depth];
     *h = { ir, pc, i, cycle, flags };
     wheel[0][ index(latency[ir.opcode()]) ] = h;
-    uintptr_t jumped = perform(&ir, pc);
     // advance pc
     if (jumped) {
       pc = jumped;
@@ -117,7 +117,6 @@ void core_t::simulate_cycle() {
   }
   else {
     commit_insn(ir);
-    flags |= FLAG_queue;
     History_t* h = &rob[insns++ % history_depth];
     *h = { ir, pc, i, cycle, flags };
     queue[last++] = h;
@@ -132,7 +131,7 @@ void core_t::simulate_cycle() {
  finish:
   try_issue_from_queue();
   ++cycle;
-  rob[insns % history_depth] = { *i, pc, 0, cycle, 0 };
+  rob[insns % history_depth] = { *i, pc, 0, cycle, FLAG_decode };
 }
 
 void core_t::try_issue_from_queue()
@@ -141,7 +140,6 @@ void core_t::try_issue_from_queue()
   for (int k=0; k<last; ++k) {
     History_t* h = queue[k];
     if (ready_insn(h->insn)) {
-      flags |= FLAG_delayed;
       wheel[0][ index(latency[h->insn.opcode()]) ] = h;
       (void)perform(&h->insn, h->pc); // no branches in queue
       //show_insn(q->insn, q->pc, &q->ref, flags);

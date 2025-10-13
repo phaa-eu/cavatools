@@ -2,7 +2,6 @@
 #include <limits.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <ncurses.h>
 
 #include "caveat.h"
 #include "hart.h"
@@ -82,50 +81,14 @@ int main(int argc, const char* argv[], const char* envp[])
   core_t* cpu = new core_t(argc, argv, envp);
   cpu->clone = clone_proxy;
   cpu->riscv_syscall = ooo_riscv_syscall;
-  //cpu->interpreter = simulator;
   atexit(exitfunc);
 
   if (0 && conf_report() > 0 && !conf_show()) {
     pthread_t tnum;
     dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
   }
-
-  initscr();                    /* Start curses mode */
-  keypad(stdscr, true);         /* Need all keys */
-  nonl();
-  cbreak();                     /* Line buffering disabled */
-  noecho();
-  nodelay(stdscr, true);
   
   start_time();
   cpu->init_simulator();
-  bool freerun = false;
-  for (;;) {
-    int ch = getch();
-    while (freerun && ch == ERR) {
-      usleep(20000);
-      if (freerun) {
-	cpu->simulate_cycle();
-	cpu->display_history();
-      }
-      ch = getch();
-    }
-    switch (ch) {
-    case ERR:
-      break;
-    case 'q':
-      endwin();
-      exit(0);
-    case 's':
-      freerun = false;
-      cpu->simulate_cycle();
-      cpu->display_history();
-      break;
-    case 'c':
-      freerun = true;
-      break;
-    default:
-      ;
-    }
-  }
+  cpu->interactive();
 }
