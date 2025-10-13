@@ -45,8 +45,8 @@ void History_t::display(bool busy[])
   
   printw("%c", (flags&FLAG_busy)	? 'b' : ' ');
   printw("%c", (flags&FLAG_qfull)	? 'f' : ' ');
-  printw("%c", (flags&FLAG_jump)	? 'j' : ' ');
-  printw("%c", (flags&FLAG_store)	? 's' : ' ');
+  printw("%c", (flags&FLAG_staddr)	? 'a' : ' ');
+  printw("%c", (flags&FLAG_stbuf)	? 's' : ' ');
   printw("%c", (flags&FLAG_serialize)	? '!' : ' ');
   printw("%c", (flags&FLAG_free)	? 'f' : ' ');
   printw("\t");
@@ -118,6 +118,7 @@ void core_t::interactive()
   //start_color();
   
   bool freerun = false;
+  display_history();
   for (;;) {
     int ch = getch();
     while (freerun && ch == ERR) {

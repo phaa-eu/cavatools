@@ -68,14 +68,15 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
 
   for (int k=0; k<Number_of_Opcodes; ++k) {
-    latency[k] = 1;
-    continue;
+    latency[k] = 2;
+#if 0
     Opcode_t op = (Opcode_t)k;
     ATTR_bv_t a = attributes[op];
     if      (a & ATTR_fp) latency[op] = conf_fp();
     else if (a & ATTR_ld) latency[op] = conf_ld();
     else if (a & ATTR_st) latency[op] = conf_st();
     else                  latency[op] = conf_alu();
+#endif
   }
   
   core_t* cpu = new core_t(argc, argv, envp);

@@ -44,45 +44,36 @@ void core_t::simulate_cycle() {
   // retire pipelined instruction(s)
   for (int k=0; k<num_write_ports; ++k) {
     History_t* h = wheel[k][index(0)];
+    wheel[k][index(0)] = 0;
     if (h) {
-      Insn_t* p = &h->insn;
-      busy[p->rd()] = false;	// destination register available
-      wheel[k][index(0)]->flags = 0;
-      wheel[k][index(0)]->ref = 0;
+      Insn_t& insn = h->insn;
+      busy[insn.rd()] = false;	// destination register now available
+      h->flags = 0;		// retired
+      h->ref = 0;		// do not show renaming anymore
+
       // decrement use count and free if zero
-      release_reg(p->rs1());
-      if (!p->longimmed()) {
-	release_reg(p->rs2());
-	release_reg(p->rs3());
+      release_reg(insn.rs1());
+      if (!insn.longimmed()) {
+	release_reg(insn.rs2());
+	release_reg(insn.rs3());
       }
-      --outstanding;
-      wheel[k][index(0)] = 0;
+      --outstanding;		// for serializing pipeline
     }
   }
 
-  // detect special cases
   Insn_t ir = *i;
   unsigned flags = 0;
   ATTR_bv_t attr = attributes[ir.opcode()];
-  if (attr & (ATTR_uj|ATTR_cj|ATTR_st|ATTR_ex)) {
-    if (attr & (ATTR_uj|ATTR_cj))	flags |= FLAG_jump;
-    if (attr &  ATTR_st)		flags |= FLAG_store;
-    if (attr &  ATTR_ex)		flags |= FLAG_serialize;
-  }
-    
   rename_input_regs(ir);
-  if (flags || no_free_reg(ir)) {
-    if ((flags & FLAG_serialize) && outstanding > 0 ||
-	(flags & FLAG_store)     && busy[ir.rs1()]  ||
-	(flags & FLAG_jump)      && !ready_insn(ir) ) {
-      if (no_free_reg(ir))
-	flags |= FLAG_free;
-      if (flags & FLAG_serialize) {
-	rob[insns % history_depth].flags = flags | FLAG_decode;
-	++cycle;
-	return;
-      }
-      goto finish;
+  
+  // detect special cases that cannot go into queue
+  if (attr & (ATTR_uj|ATTR_cj|ATTR_st|ATTR_ex)) {
+    if ((attr &  ATTR_ex         ) && outstanding > 0 ||
+	(attr & (ATTR_uj|ATTR_cj)) && !ready_insn(ir) ||
+	(attr &  ATTR_st         ) && busy[ir.rs1()]) {
+      rob[insns % history_depth].flags = flags | FLAG_decode;
+      ++cycle;
+      goto issue_from_queue;
     }
   }
     
@@ -107,31 +98,32 @@ void core_t::simulate_cycle() {
 	i = insnp(bb+1);
       }
     }
-    goto finish;
-  }
-  flags |= FLAG_busy;
-
-  // try deferring instruction
-  if (last == issue_queue_length) {
-    flags |= FLAG_qfull;
   }
   else {
-    commit_insn(ir);
-    History_t* h = &rob[insns++ % history_depth];
-    *h = { ir, pc, i, cycle, flags };
-    queue[last++] = h;
-    // advance pc, can never be branch
-    pc += ir.compressed() ? 2 : 4;
-    if (++i >= insnp(bb+1)+bb->count) {
-      bb = find_bb(pc);
-      i = insnp(bb+1);
+    flags |= FLAG_busy;
+    if (last == issue_queue_length) {
+      flags |= FLAG_qfull;
+    }
+    else {
+      commit_insn(ir);
+      History_t* h = &rob[insns++ % history_depth];
+      *h = { ir, pc, i, cycle, flags };
+      queue[last++] = h;
+      // advance pc, can never be branch
+      pc += ir.compressed() ? 2 : 4;
+      if (++i >= insnp(bb+1)+bb->count) {
+	bb = find_bb(pc);
+	i = insnp(bb+1);
+      }
     }
   }
 
- finish:
+ issue_from_queue:
   try_issue_from_queue();
   ++cycle;
-  rob[insns % history_depth] = { *i, pc, 0, cycle, FLAG_decode };
+  ir = *i;
+  rename_input_regs(ir);
+  rob[insns % history_depth] = { ir, pc, i, cycle, FLAG_decode };
 }
 
 void core_t::try_issue_from_queue()

@@ -5,6 +5,8 @@
 const int max_phy_regs = 256;
 const int num_write_ports = 1;
 
+const int store_buffer_depth = 8;
+
 const int max_latency = 32;
 const int issue_queue_length = 16;
 
@@ -26,12 +28,13 @@ struct simulator_state_t {
 // event flags for display
 #define FLAG_busy	0x01	// instruction has busy registers
 #define FLAG_qfull	0x02	// issue queue is full
-#define FLAG_jump	0x04	// jump instruction cannot be deferred
-#define FLAG_store	0x08	// store address not yet available
+#define FLAG_staddr	0x04	// store address not yet available
+#define FLAG_stbuf	0x08	// store buffer is full
 #define FLAG_serialize	0x10	// waiting for pipeline to flush
 #define FLAG_free	0x20	// register free list is empty
 #define FLAG_decode	0x40	// instruction in decode stage
 #define FLAG_execute	0x80	// instruction is executing
+// flags==0 means instruction has retired
 
 // phantom reorder buffer for visual debugging
 struct History_t {
