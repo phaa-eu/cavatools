@@ -12,7 +12,7 @@ option<long> conf_report("report", 1, "Status report per second");
 
 option<int> conf_fp("fp", 3, "Latency floating point");
 option<int> conf_ld("ld", 4, "Latency loads");
-option<int> conf_st("ld", 20, "Latency stores");
+option<int> conf_st("st", 20, "Latency stores");
 option<int> conf_alu("alu", 1, "Latency ALU");
 
 uint8_t latency[Number_of_Opcodes];
@@ -68,15 +68,12 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
 
   for (int k=0; k<Number_of_Opcodes; ++k) {
-    latency[k] = 1;
-#if 0
     Opcode_t op = (Opcode_t)k;
     ATTR_bv_t a = attributes[op];
     if      (a & ATTR_fp) latency[op] = conf_fp();
     else if (a & ATTR_ld) latency[op] = conf_ld();
     else if (a & ATTR_st) latency[op] = conf_st();
     else                  latency[op] = conf_alu();
-#endif
   }
   
   core_t* cpu = new core_t(argc, argv, envp);

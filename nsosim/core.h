@@ -11,6 +11,12 @@ const int issue_queue_length = 16;
 
 const int history_depth = 128;
 
+const int membank_number = 8;
+
+
+extern thread_local long unsigned cycle;	// count number of processor cycles
+
+
 // Unified physical register file + store buffer.
 //   First part holds physical registers with a free list.
 //   Second part holds store buffer entries.
@@ -19,6 +25,8 @@ const int history_depth = 128;
 const int max_phy_regs = 128;
 const int store_buffer_length = 8;
 const int regfile_size = max_phy_regs + store_buffer_length;
+
+inline bool is_store_buffer(uint8_t r) { return max_phy_regs<=r && r<max_phy_regs+store_buffer_length; }
 
 union simreg_t {
   reg_t x;			// for integer
@@ -60,10 +68,16 @@ private:
 };
 
 
+// memory bank
+struct membank_t {
+  long unsigned finish;
+  uint8_t rd;			// destination register or associated store buffer
+};
+
+
 // one simulation thread
 class core_t : public hart_t {
   simulator_state_t s;		// replaces uspike state
-  long unsigned cycle;		// count number of processor cycles
   long unsigned insns;		// count number of instructions executed
   long outstanding;		// number of instructions in flight
 
@@ -97,6 +111,10 @@ class core_t : public hart_t {
   History_t* wheel[num_write_ports][max_latency+1];
   int index(unsigned k) { assert(k<=max_latency); return (cycle+k)%(max_latency+1); }
 
+  // memory banks
+  membank_t memory[membank_number];
+  
+
   bool no_free_reg(Insn_t ir) { return !ir.rd() || ir.rd()==NOREG || numfree==max_phy_regs-64; };
   void rename_input_regs(Insn_t& ir);
   bool ready_insn(Insn_t ir);
@@ -107,7 +125,8 @@ class core_t : public hart_t {
   uintptr_t get_state();
   void put_state(uintptr_t pc);
 
-  void try_issue_from_queue();
+  bool can_execute_insn(Insn_t ir, uintptr_t pc);
+  bool issue_from_queue();
   uintptr_t perform(Insn_t* i, uintptr_t pc);
 
   void initialize() { memset(&s, 0, sizeof s); }

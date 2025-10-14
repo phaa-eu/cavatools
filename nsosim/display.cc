@@ -7,16 +7,21 @@
 
 #include "core.h"
 
+const int msglines = 3;
+
+static WINDOW* memwin;
+static WINDOW* robwin;
+static WINDOW* msgwin;
 
 // show opcode highlighting execution status
 void History_t::show_opcode()
 {
   extern const char* op_name[];
-  if (flags & FLAG_execute) attron( A_REVERSE);
+  if (flags & FLAG_execute) wattron(robwin,  A_REVERSE);
   int len = strlen(op_name[insn.opcode()]);
-  printw("%s", op_name[insn.opcode()]);
-  if (flags & FLAG_execute) attroff(A_REVERSE);
-  printw("%*s", 12-len, "");
+  wprintw(robwin, "%s", op_name[insn.opcode()]);
+  if (flags & FLAG_execute) wattroff(robwin, A_REVERSE);
+  wprintw(robwin, "%*s", 12-len, "");
 }
 
 // show register with renaming and highlight status
@@ -24,51 +29,52 @@ void History_t::show_opcode()
 void History_t::show_reg(char sep, int orig, int phys, bool busy[], unsigned uses[])
 {
   extern const char* reg_name[];
+  wprintw(robwin, "%c", sep);
   if (orig == NOREG) {
     if (phys < max_phy_regs)
-      printw("%c(r%d=%d)", sep, phys, uses[phys]);
+      wprintw(robwin, "(r%d=%d)", phys, uses[phys]);
     else
-      printw("%c[sb%d=%d]", sep, phys-max_phy_regs, uses[phys]);
+      wprintw(robwin, "[sb%d=%d]", phys-max_phy_regs, uses[phys]);
   }
   else {
-    if (busy[phys]) attron( A_REVERSE);
+    if (busy[phys]) wattron(robwin,  A_REVERSE);
     if (phys < max_phy_regs)
-      //printw("%c%s(r%d)", sep, reg_name[orig], phys);
-      printw("%c%s(r%d=%d)", sep, reg_name[orig], phys, uses[phys]);
+      //wprintw(robwin, "%s(r%d)", reg_name[orig], phys);
+      wprintw(robwin, "%s(r%d=%d)", reg_name[orig], phys, uses[phys]);
     else
-      //printw("%c(sb%d)", sep, orig-max_phy_regs);
-      printw("%c[sb%d=%d]", sep, phys-max_phy_regs, uses[phys]);
-    if (busy[phys]) attroff(A_REVERSE);
+      //wprintw(robwin, "(sb%d)", orig-max_phy_regs);
+      wprintw(robwin, "[sb%d=%d]", phys-max_phy_regs, uses[phys]);
+    if (busy[phys]) wattroff(robwin, A_REVERSE);
   }
 }
 
 void History_t::display(bool busy[], unsigned uses[])
 {
   if (pc==0 || insn.opcode()==Op_ZERO) {
-    printw("*** nothing here ***");
+    wprintw(robwin, "*** nothing here ***");
     return;
   }
 
-  if (flags == 0) attron(A_DIM);
-  if (flags & FLAG_decode) attron(A_BOLD);
+  if (flags == 0) wattron(robwin, A_DIM);
+  if (flags & FLAG_decode) wattron(robwin, A_BOLD);
   
-  printw("%c", (flags&FLAG_busy)	? 'b' : ' ');
-  printw("%c", (flags&FLAG_qfull)	? 'f' : ' ');
-  printw("%c", (flags&FLAG_staddr)	? 'a' : ' ');
-  printw("%c", (flags&FLAG_stbuf)	? 's' : ' ');
-  printw("%c", (flags&FLAG_serialize)	? '!' : ' ');
-  printw("%c", (flags&FLAG_free)	? 'f' : ' ');
-  printw("\t");
+  wprintw(robwin, "%c", (flags&FLAG_busy)	? 'b' : ' ');
+  wprintw(robwin, "%c", (flags&FLAG_qfull)	? 'f' : ' ');
+  wprintw(robwin, "%c", (flags&FLAG_staddr)	? 'a' : ' ');
+  wprintw(robwin, "%c", (flags&FLAG_stbuf)	? 's' : ' ');
+  wprintw(robwin, "%c", (flags&FLAG_serialize)	? '!' : ' ');
+  wprintw(robwin, "%c", (flags&FLAG_free)	? 'f' : ' ');
+  wprintw(robwin, "\t");
   
   char buf[256];;
   slabelpc(buf, pc);
-  printw("%s", buf);
+  wprintw(robwin, "%s", buf);
   
   uint32_t b = *(uint32_t*)pc;
   if (insn.compressed())
-    printw("    %04x  ", b&0xFFFF);
+    wprintw(robwin, "    %04x  ", b&0xFFFF);
   else
-    printw("%08x  ",     b);
+    wprintw(robwin, "%08x  ",     b);
   show_opcode();
   char sep = ' ';
   if (ref) {
@@ -87,17 +93,20 @@ void History_t::display(bool busy[], unsigned uses[])
       if (insn.rs3() != NOREG) { show_reg(sep, NOREG, insn.rs3(), busy, uses); sep=','; }
     }
   }
-  printw("%c%ld", sep, insn.immed());
+  wprintw(robwin, "%c%ld", sep, insn.immed());
   
-  if (flags & FLAG_decode) attroff(A_BOLD);
-  if (flags == 0) attroff(A_DIM);
+  if (flags & FLAG_decode) wattroff(robwin, A_BOLD);
+  if (flags == 0) wattroff(robwin, A_DIM);
 }
 
 void core_t::display_history()
 {
   char buf[1024];
-  int lines = (LINES<history_depth ? LINES : history_depth);
-  clear();
+  int lines, cols;
+  getmaxyx(robwin, lines, cols);
+  if (history_depth < lines)
+    lines = history_depth;
+  wclear(robwin);
 
   long when = cycle;		     // cycle to be printed
   //int k = (insns-1) % history_depth; // rob slot to display
@@ -105,17 +114,79 @@ void core_t::display_history()
   for (int l=0; l<lines-3; ++l, --when) {    // leave a few blank lines
     if (when < 0)
       continue;
-    move(when%lines, 0);
-    printw("%7ld ", when);
+    wmove(robwin, when%lines, 0);
+    wprintw(robwin, "%7ld ", when);
     if (when == rob[k].cycle) {
       rob[k].display(busy, uses);
       k = (k-1+history_depth) % history_depth;
     }
-    printw("\n");
+    wprintw(robwin, "\n");
   }
-  move(LINES, 0);
-  refresh();
+  //wrefresh(robwin);
+  wnoutrefresh(robwin);
 }
+
+void show_number_vertical(WINDOW* w, int y, int x, int n, int digits)
+{
+  char digit[digits];
+  for (int k=0; k<digits; ++k) {
+    digit[k] = n % 10 + '0';
+    n /= 10;
+  }
+  for (int k=digits-1; k>=0; k--)
+    if (digit[k] == '0')
+      digit[k] = ' ';
+    else
+      break;
+  for (int k=0; k<digits; ++k)
+    mvwprintw(w, y+digits-1-k, x, "%c", digit[k]);
+}
+
+void display_busy(bool busy[])
+{
+  int lines, cols;
+  getmaxyx(msgwin, lines, cols);
+  wclear(msgwin);
+  for (int k=0; k<max_phy_regs; ++k) {
+    if (!busy[k])
+      continue;
+    wattron( msgwin, A_REVERSE);
+    show_number_vertical(msgwin, 0, k, k, lines);
+    wattroff(msgwin, A_REVERSE);
+  }
+  wnoutrefresh(msgwin);
+}
+
+void display_memory(membank_t memory[])
+{
+  const int fieldwidth = 16;
+  int lines, cols;
+  getmaxyx(memwin, lines, cols);
+  wclear(memwin);
+  for (int k=0; k<membank_number; ++k) {
+    wmove(memwin, 0, k*fieldwidth);
+    wprintw(memwin, "bank[%d]", k);
+  }
+  for (int k=0; k<membank_number; ++k) {
+    membank_t* m = &memory[k];
+    if (m->rd) {
+      wmove(memwin, 1, k*fieldwidth);
+      if (is_store_buffer(m->rd)) {
+	wattron(memwin,  A_BOLD);
+	wprintw(memwin, "[sb%d]%ld", m->rd-max_phy_regs, m->finish-cycle);
+	wattroff(memwin, A_BOLD);
+      }
+      else {
+	wattron(memwin,  A_REVERSE);
+	wprintw(memwin, "(r%d)%ld", m->rd, m->finish-cycle);
+	wattroff(memwin, A_REVERSE);
+      }
+    }
+  }
+  wnoutrefresh(memwin);
+}
+
+#define display_screen() { display_memory(memory); display_history(); display_busy(busy); doupdate(); }
 
 void core_t::interactive()
 {
@@ -126,16 +197,21 @@ void core_t::interactive()
   noecho();
   nodelay(stdscr, true);
   //start_color();
+
+  memwin = newwin(2,			COLS,	0,		0);
+  robwin = newwin(LINES-2-msglines,	COLS,	2,		0);
+  msgwin = newwin(msglines,		COLS,	LINES-msglines,	0);
   
   bool freerun = false;
-  display_history();
+  display_screen();
   for (;;) {
     int ch = getch();
     while (freerun && ch == ERR) {
       usleep(20000);
       if (freerun) {
 	simulate_cycle();
-	display_history();
+	display_screen();
+	++cycle;
       }
       ch = getch();
     }
@@ -148,15 +224,18 @@ void core_t::interactive()
     case 's':
       freerun = false;
       simulate_cycle();
-      display_history();
+      display_screen();
       break;
     case 'c':
       freerun = true;
       break;
     case 'g':
       endwin();
-      for (;;)
+      for (;;) {
 	simulate_cycle();
+	++cycle;
+	fprintf(stderr, "\r\33[2K%ld %ld", cycle, insns);
+      }
     default:
       ;
     }

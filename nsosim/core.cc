@@ -9,9 +9,7 @@
 
 
 
-
-
-uintptr_t perform(Insn_t* i, uintptr_t pc);
+thread_local long unsigned cycle;	// count number of processor cycles
 
 void core_t::init_simulator() {
   memset(busy, 0, sizeof busy);
@@ -43,27 +41,35 @@ void core_t::init_simulator() {
 }
 
 void core_t::simulate_cycle() {
+
+  // retire memory operations
+  for (int k=0; k<membank_number; ++k) {
+    membank_t* m = &memory[k];
+    if (m->rd && m->finish == cycle) {
+      if (is_store_buffer(m->rd)) // AMO are both loads and stores
+	release_reg(m->rd);	  // wheel handles register release
+      m->rd = 0;
+    }
+  }
+  
   // retire pipelined instruction(s)
   for (int k=0; k<num_write_ports; ++k) {
     History_t* h = wheel[k][index(0)];
     wheel[k][index(0)] = 0;
     if (h) {
-      Insn_t& insn = h->insn;
-      busy[insn.rd()] = false;	// destination register now available
-#if 1
+      busy[h->insn.rd()] = false;	// destination register now available
       if (attributes[h->insn.opcode()] & ATTR_st) {
 	s.reg[h->insn.rd()].a = 0;
 	release_reg(h->insn.rd());
       }
-#endif
       h->flags = 0;		// retired
-      h->ref = 0;		// do not show renaming anymore
+      //h->ref = 0;		// do not show renaming anymore
 
       // decrement use count and free if zero
-      release_reg(insn.rs1());
-      if (!insn.longimmed()) {
-	release_reg(insn.rs2());
-	release_reg(insn.rs3());
+      release_reg(h->insn.rs1());
+      if (!h->insn.longimmed()) {
+	release_reg(h->insn.rs2());
+	release_reg(h->insn.rs3());
       }
       --outstanding;		// for serializing pipeline
     }
@@ -72,6 +78,7 @@ void core_t::simulate_cycle() {
   Insn_t ir = *i;
   ATTR_bv_t attr = attributes[ir.opcode()];
   unsigned flags = 0;
+  int idx;
   rename_input_regs(ir);
   
   // detect special cases that cannot go into queue
@@ -82,7 +89,6 @@ void core_t::simulate_cycle() {
       //rob[insns % history_depth].flags = flags | FLAG_decode;
       goto issue_from_queue;
     }
-#if 1
     if (attr & ATTR_st) {
       // check if room in store queue
       if (s.reg[stbuf(0)].a != 0) {
@@ -104,17 +110,19 @@ void core_t::simulate_cycle() {
 	}
       }
     }
-#endif
   }
-    
-  // try to immediately execute new instruction
-  if (ready_insn(ir)) {
+
+  if (outstanding > 0) {
+    if (issue_from_queue())
+      goto finish;
+  }
+
+  if (can_execute_insn(ir, pc)) {
     commit_insn(ir);
     uintptr_t jumped = perform(&ir, pc);
     flags |= FLAG_execute;
     History_t* h = &rob[insns++ % history_depth];
     *h = { ir, pc, i, cycle, flags };
-    wheel[0][ index(latency[ir.opcode()]) ] = h;
     
     // advance pc
     if (jumped) {
@@ -151,7 +159,7 @@ void core_t::simulate_cycle() {
   }
 
  issue_from_queue:
-  try_issue_from_queue();
+  issue_from_queue();
 
  finish:
   ++cycle;
@@ -160,15 +168,39 @@ void core_t::simulate_cycle() {
   rob[insns % history_depth] = { ir, pc, i, cycle, FLAG_decode };
 }
 
-void core_t::try_issue_from_queue()
+bool core_t::can_execute_insn(Insn_t ir, uintptr_t pc)
+{
+  // check output bus available
+  int idx = index(latency[ir.opcode()]);
+  if (wheel[0][idx])
+    return false;
+
+  // check memory bank not busy (must be last check)
+  if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) {
+    int bank = ((s.reg[ir.rs1()].x + ir.immed()) >> 3) % membank_number;
+    membank_t* m = &memory[bank];
+    if (m->rd)
+      return false;
+    m->rd = ir.rd();
+    m->finish = cycle+latency[ir.opcode()];
+  }
+
+  // stores handled by memory bank, not wheel
+  // but AMO uses both
+  if (! is_store_buffer(ir.rd()))
+    wheel[0][ index(latency[ir.opcode()]) ] = &rob[insns % history_depth];
+
+  return true;
+}
+
+bool core_t::issue_from_queue()
 {
   unsigned flags = 0;
   for (int k=0; k<last; ++k) {
     History_t* h = queue[k];
     Insn_t ir = h->insn;
     if (ready_insn(ir)) {
-      // special cases'
-#if 1
+      // special cases
       if (attributes[ir.opcode()] & ATTR_ld) {
 	uintptr_t addr = s.reg[ir.rs1()].x + ir.immed();
 	assert(addr != 0);
@@ -178,22 +210,24 @@ void core_t::try_issue_from_queue()
 	    h->insn.op.rs3 = stbuf(k);
 	    acquire_reg(stbuf(k));
 	    h->flags |= FLAG_depend;
-	    return;		// this issue cycle was "used up"
+	    return true;	// this issue cycle was "used up"
 	  }
 	}
       }
-#endif
-      
+
       // general case
-      wheel[0][ index(latency[h->insn.opcode()]) ] = h;
-      (void)perform(&ir, h->pc); // no branches in queue
-      // remove from issue queue
-      for (int j=k+1; j<last; ++j)
-	queue[j-1] = queue[j]; // later instructions move up
-      --last;			 // one slot
-      break;
+      if (can_execute_insn(ir, h->pc)) {
+	(void)perform(&ir, h->pc); // no branches in queue
+	h->flags |= FLAG_execute;
+	// remove from issue queue
+	for (int j=k+1; j<last; ++j)
+	  queue[j-1] = queue[j]; // later instructions move up
+	--last;			 // one slot
+	return true;
+      }
     }
   }
+  return false;
 }
 
 
