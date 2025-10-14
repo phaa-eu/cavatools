@@ -68,7 +68,7 @@ int main(int argc, const char* argv[], const char* envp[])
 #endif
 
   for (int k=0; k<Number_of_Opcodes; ++k) {
-    latency[k] = 2;
+    latency[k] = 1;
 #if 0
     Opcode_t op = (Opcode_t)k;
     ATTR_bv_t a = attributes[op];

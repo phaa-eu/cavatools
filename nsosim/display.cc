@@ -20,20 +20,29 @@ void History_t::show_opcode()
 }
 
 // show register with renaming and highlight status
-void History_t::show_reg(char sep, int orig, int phys, bool busy[])
+//void History_t::show_reg(char sep, int orig, int phys, bool busy[])
+void History_t::show_reg(char sep, int orig, int phys, bool busy[], unsigned uses[])
 {
   extern const char* reg_name[];
-  if (phys == NOREG) {
-    printw("%c%s", sep, reg_name[orig]);
+  if (orig == NOREG) {
+    if (phys < max_phy_regs)
+      printw("%c(r%d=%d)", sep, phys, uses[phys]);
+    else
+      printw("%c[sb%d=%d]", sep, phys-max_phy_regs, uses[phys]);
   }
   else {
     if (busy[phys]) attron( A_REVERSE);
-    printw("%c%s(r%d)", sep, reg_name[orig], phys);
+    if (phys < max_phy_regs)
+      //printw("%c%s(r%d)", sep, reg_name[orig], phys);
+      printw("%c%s(r%d=%d)", sep, reg_name[orig], phys, uses[phys]);
+    else
+      //printw("%c(sb%d)", sep, orig-max_phy_regs);
+      printw("%c[sb%d=%d]", sep, phys-max_phy_regs, uses[phys]);
     if (busy[phys]) attroff(A_REVERSE);
   }
 }
 
-void History_t::display(bool busy[])
+void History_t::display(bool busy[], unsigned uses[])
 {
   if (pc==0 || insn.opcode()==Op_ZERO) {
     printw("*** nothing here ***");
@@ -63,19 +72,19 @@ void History_t::display(bool busy[])
   show_opcode();
   char sep = ' ';
   if (ref) {
-    if (insn.rd()  != NOREG)   { show_reg(sep, ref->rd(),  insn.rd() , busy); sep=','; }
-    if (insn.rs1() != NOREG)   { show_reg(sep, ref->rs1(), insn.rs1(), busy); sep=','; }
+    if (insn.rd()  != NOREG)   { show_reg(sep, ref->rd(),  insn.rd() , busy, uses); sep=','; }
+    if (insn.rs1() != NOREG)   { show_reg(sep, ref->rs1(), insn.rs1(), busy, uses); sep=','; }
     if (! insn.longimmed()) {
-      if (insn.rs2() != NOREG) { show_reg(sep, ref->rs2(), insn.rs2(), busy); sep=','; }
-      if (insn.rs3() != NOREG) { show_reg(sep, ref->rs3(), insn.rs3(), busy); sep=','; }
+      if (insn.rs2() != NOREG) { show_reg(sep, ref->rs2(), insn.rs2(), busy, uses); sep=','; }
+      if (insn.rs3() != NOREG) { show_reg(sep, ref->rs3(), insn.rs3(), busy, uses); sep=','; }
     }
   }
   else {
-    if (insn.rd()  != NOREG)   { show_reg(sep, insn.rd(),  NOREG, busy); sep=','; }
-    if (insn.rs1() != NOREG)   { show_reg(sep, insn.rs1(), NOREG, busy); sep=','; }
+    if (insn.rd()  != NOREG)   { show_reg(sep, NOREG, insn.rd(),  busy, uses); sep=','; }
+    if (insn.rs1() != NOREG)   { show_reg(sep, NOREG, insn.rs1(), busy, uses); sep=','; }
     if (! insn.longimmed()) {
-      if (insn.rs2() != NOREG) { show_reg(sep, insn.rs2(), NOREG, busy); sep=','; }
-      if (insn.rs3() != NOREG) { show_reg(sep, insn.rs3(), NOREG, busy); sep=','; }
+      if (insn.rs2() != NOREG) { show_reg(sep, NOREG, insn.rs2(), busy, uses); sep=','; }
+      if (insn.rs3() != NOREG) { show_reg(sep, NOREG, insn.rs3(), busy, uses); sep=','; }
     }
   }
   printw("%c%ld", sep, insn.immed());
@@ -99,11 +108,12 @@ void core_t::display_history()
     move(when%lines, 0);
     printw("%7ld ", when);
     if (when == rob[k].cycle) {
-      rob[k].display(busy);
+      rob[k].display(busy, uses);
       k = (k-1+history_depth) % history_depth;
     }
     printw("\n");
   }
+  move(LINES, 0);
   refresh();
 }
 
@@ -143,6 +153,10 @@ void core_t::interactive()
     case 'c':
       freerun = true;
       break;
+    case 'g':
+      endwin();
+      for (;;)
+	simulate_cycle();
     default:
       ;
     }

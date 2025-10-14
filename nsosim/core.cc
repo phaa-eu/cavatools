@@ -15,13 +15,14 @@ uintptr_t perform(Insn_t* i, uintptr_t pc);
 
 void core_t::init_simulator() {
   memset(busy, 0, sizeof busy);
+  memset(regmap, 0, sizeof regmap);
   // initialize register map and freelist
   for (int k=0; k<64; ++k) {
     regmap[k] = k;
     uses[k] = 1;
   }
   numfree = 0;
-  for (int k=64; k<64+max_phy_regs; ++k) {
+  for (int k=64; k<max_phy_regs; ++k) {
     freelist[numfree++] = k;
     uses[k] = 0;
   }
@@ -30,6 +31,7 @@ void core_t::init_simulator() {
   // initialize pipelines and issue queue
   memset(wheel, 0, sizeof wheel);
   last = 0;
+  nextstb = 0;
   outstanding = 0;
 
   // get started
@@ -48,6 +50,12 @@ void core_t::simulate_cycle() {
     if (h) {
       Insn_t& insn = h->insn;
       busy[insn.rd()] = false;	// destination register now available
+#if 1
+      if (attributes[h->insn.opcode()] & ATTR_st) {
+	s.reg[h->insn.rd()].a = 0;
+	release_reg(h->insn.rd());
+      }
+#endif
       h->flags = 0;		// retired
       h->ref = 0;		// do not show renaming anymore
 
@@ -62,19 +70,41 @@ void core_t::simulate_cycle() {
   }
 
   Insn_t ir = *i;
-  unsigned flags = 0;
   ATTR_bv_t attr = attributes[ir.opcode()];
+  unsigned flags = 0;
   rename_input_regs(ir);
   
   // detect special cases that cannot go into queue
   if (attr & (ATTR_uj|ATTR_cj|ATTR_st|ATTR_ex)) {
-    if ((attr &  ATTR_ex         ) && outstanding > 0 ||
-	(attr & (ATTR_uj|ATTR_cj)) && !ready_insn(ir) ||
-	(attr &  ATTR_st         ) && busy[ir.rs1()]) {
-      rob[insns % history_depth].flags = flags | FLAG_decode;
-      ++cycle;
+    if ((attr & (ATTR_uj|ATTR_cj)) && !ready_insn(ir)  ||
+	(attr &  ATTR_ex         ) && outstanding > 0  ||
+	(attr &  ATTR_st         ) && busy[ir.rs1()])  {
+      //rob[insns % history_depth].flags = flags | FLAG_decode;
       goto issue_from_queue;
     }
+#if 1
+    if (attr & ATTR_st) {
+      // check if room in store queue
+      if (s.reg[stbuf(0)].a != 0) {
+	rob[insns % history_depth].flags |= FLAG_stbuf;
+	goto issue_from_queue;
+      }
+      // allocate store buffer entry
+      ir.op_rd = stbuf(0);
+      nextstb = (nextstb+1) % store_buffer_length;
+      // check store queue for hits
+      uintptr_t addr = s.reg[ir.rs1()].x + ir.immed();
+      assert(addr != 0);
+      for (int k=1; k<store_buffer_length; ++k) {
+	if (s.reg[stbuf(k)].a == addr) {	// add dependency to this store
+	  // note this depends on all stores having short immediates
+	  ir.op.rs3 = stbuf(k);
+	  acquire_reg(stbuf(k));
+	  break;
+	}
+      }
+    }
+#endif
   }
     
   // try to immediately execute new instruction
@@ -85,6 +115,7 @@ void core_t::simulate_cycle() {
     History_t* h = &rob[insns++ % history_depth];
     *h = { ir, pc, i, cycle, flags };
     wheel[0][ index(latency[ir.opcode()]) ] = h;
+    
     // advance pc
     if (jumped) {
       pc = jumped;
@@ -98,28 +129,31 @@ void core_t::simulate_cycle() {
 	i = insnp(bb+1);
       }
     }
+    goto finish;
+  }
+
+  // otherwise try to enqueue instruction
+  flags |= FLAG_busy;
+  if (last == issue_queue_length) {
+    flags |= FLAG_qfull;
   }
   else {
-    flags |= FLAG_busy;
-    if (last == issue_queue_length) {
-      flags |= FLAG_qfull;
-    }
-    else {
-      commit_insn(ir);
-      History_t* h = &rob[insns++ % history_depth];
-      *h = { ir, pc, i, cycle, flags };
-      queue[last++] = h;
-      // advance pc, can never be branch
-      pc += ir.compressed() ? 2 : 4;
-      if (++i >= insnp(bb+1)+bb->count) {
-	bb = find_bb(pc);
-	i = insnp(bb+1);
-      }
+    commit_insn(ir);
+    History_t* h = &rob[insns++ % history_depth];
+    *h = { ir, pc, i, cycle, flags };
+    queue[last++] = h;
+    // advance pc, can never be branch
+    pc += ir.compressed() ? 2 : 4;
+    if (++i >= insnp(bb+1)+bb->count) {
+      bb = find_bb(pc);
+      i = insnp(bb+1);
     }
   }
 
  issue_from_queue:
   try_issue_from_queue();
+
+ finish:
   ++cycle;
   ir = *i;
   rename_input_regs(ir);
@@ -131,11 +165,28 @@ void core_t::try_issue_from_queue()
   unsigned flags = 0;
   for (int k=0; k<last; ++k) {
     History_t* h = queue[k];
-    if (ready_insn(h->insn)) {
-      wheel[0][ index(latency[h->insn.opcode()]) ] = h;
-      (void)perform(&h->insn, h->pc); // no branches in queue
-      //show_insn(q->insn, q->pc, &q->ref, flags);
+    Insn_t ir = h->insn;
+    if (ready_insn(ir)) {
+      // special cases'
+#if 1
+      if (attributes[ir.opcode()] & ATTR_ld) {
+	uintptr_t addr = s.reg[ir.rs1()].x + ir.immed();
+	assert(addr != 0);
+	// check store buffer hits
+	for (int k=1; k<store_buffer_length; ++k) {
+	  if (s.reg[stbuf(k)].a == addr) { // add dependency to this store
+	    h->insn.op.rs3 = stbuf(k);
+	    acquire_reg(stbuf(k));
+	    h->flags |= FLAG_depend;
+	    return;		// this issue cycle was "used up"
+	  }
+	}
+      }
+#endif
       
+      // general case
+      wheel[0][ index(latency[h->insn.opcode()]) ] = h;
+      (void)perform(&ir, h->pc); // no branches in queue
       // remove from issue queue
       for (int j=k+1; j<last; ++j)
 	queue[j-1] = queue[j]; // later instructions move up
@@ -172,19 +223,18 @@ void core_t::commit_insn(Insn_t& ir)
     acquire_reg(ir.rs2());
     acquire_reg(ir.rs3());
   }
-  // rename output register
-  if (ir.rd() != 0 && ir.rd() != NOREG) {
-    //release_reg(ir.rd());
-    //if (--uses[regmap[ir.rd()]] == 0)
-    //  freelist[numfree++] = regmap[ir.rd()];
-    uint8_t old_rd = ir.rd();
-    release_reg(regmap[old_rd]);
-    ir.op_rd = freelist[--numfree];
-    regmap[old_rd] = ir.rd();
-    acquire_reg(ir.rd());
-    busy[ir.rd()] = true;
-  }
   ++outstanding;
+  if (ir.rd() == NOREG || ir.rd() == 0)
+    return;
+  // rename output register if not store buffer
+  if (ir.rd() < 64) {
+      uint8_t old_rd = ir.rd();
+      release_reg(regmap[old_rd]);
+      ir.op_rd = freelist[--numfree];
+      regmap[old_rd] = ir.rd();
+  }
+  acquire_reg(ir.rd());
+  busy[ir.rd()] = true;
 }
 
 void core_t::acquire_reg(uint8_t r)
@@ -199,8 +249,12 @@ void core_t::release_reg(uint8_t r)
   if (r==0 || r==NOREG)
     return;
   assert(uses[r] > 0);
-  if (--uses[r] == 0)
-    freelist[numfree++] = r;
+  if (--uses[r] == 0) {
+    if (r < max_phy_regs)
+      freelist[numfree++] = r;
+    else
+      s.reg[r].a = 0;		// free store buffer entry
+  }
 }
 
 

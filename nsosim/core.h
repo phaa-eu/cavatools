@@ -2,7 +2,6 @@
   Copyright (c) 2025 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
-const int max_phy_regs = 256;
 const int num_write_ports = 1;
 
 const int store_buffer_depth = 8;
@@ -12,15 +11,24 @@ const int issue_queue_length = 16;
 
 const int history_depth = 128;
 
-// unified physical register file
+// Unified physical register file + store buffer.
+//   First part holds physical registers with a free list.
+//   Second part holds store buffer entries.
+//
+
+const int max_phy_regs = 128;
+const int store_buffer_length = 8;
+const int regfile_size = max_phy_regs + store_buffer_length;
+
 union simreg_t {
   reg_t x;			// for integer
   freg_t f;			// float and double
+  uintptr_t a;			// store buffer entry
 };
 
-// replicates processor state in uspike
+// replicates processor state in uspike but with more physical registers
 struct simulator_state_t {
-  simreg_t reg[max_phy_regs];	// but with more physical registers
+  simreg_t reg[regfile_size];
   unsigned fflags;
   unsigned frm;
 };
@@ -34,6 +42,7 @@ struct simulator_state_t {
 #define FLAG_free	0x20	// register free list is empty
 #define FLAG_decode	0x40	// instruction in decode stage
 #define FLAG_execute	0x80	// instruction is executing
+#define FLAG_depend	0x100	// waiting on previous store
 // flags==0 means instruction has retired
 
 // phantom reorder buffer for visual debugging
@@ -43,10 +52,11 @@ struct History_t {
   Insn_t* ref;
   unsigned long cycle;
   unsigned flags;
-  void display(bool busy[]);
+  void display(bool busy[], unsigned uses[]);
 private:
   void show_opcode();
-  void show_reg(char sep, int orig, int phys, bool busy[]);
+  //void show_reg(char sep, int orig, int phys, bool busy[]);
+  void show_reg(char sep, int orig, int phys, bool busy[], unsigned uses[]);
 };
 
 
@@ -57,16 +67,23 @@ class core_t : public hart_t {
   long unsigned insns;		// count number of instructions executed
   long outstanding;		// number of instructions in flight
 
-  Header_t* bb;			// current basic block
+  Header_t* bb;			// current basic blocka
   Insn_t* i;			// current decoded instruction
   uintptr_t pc;			// at this address
 
   // renaming register file
   uint8_t regmap[256];		// architectural to physical
-  bool busy[max_phy_regs];	// register waiting to be filled
-  unsigned uses[max_phy_regs];	// number of readers
-  uint8_t freelist[max_phy_regs-64];
+  
+  bool busy[regfile_size];	// register waiting to be filled
+  unsigned uses[regfile_size];	// number of readers
+  
+  uint8_t freelist[max_phy_regs];
   int numfree;			// maintained as stack
+
+  // store buffer (within physical register file)
+  int nextstb;			// next store position in circular store buffer
+  int stbuf(unsigned k) { assert(k<store_buffer_length);
+    return (nextstb+k)%store_buffer_length +max_phy_regs; }
 
   // phantom reorder buffer for visual debugging
   // rob indexed by [executed() % history_depth]
