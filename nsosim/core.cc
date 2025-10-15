@@ -9,7 +9,8 @@
 
 
 
-thread_local long unsigned cycle;	// count number of processor cycles
+thread_local long unsigned cycle;
+thread_local membank_t memory[memory_channels][memory_banks];
 thread_local membank_t memport;
 
 void core_t::init_simulator() {
@@ -40,28 +41,28 @@ void core_t::init_simulator() {
   bb = find_bb(pc);
   i = insnp(bb+1);
 
-  rob[insns % history_depth] = { *i, pc, 0, cycle, 0 };
+  rob[insns % dispatch_history] = { 0, pc, *i, cycle, History_t::STATUS_dispatch };
 }
 
 void core_t::simulate_cycle() {
   // retire memory operations
-  for (int k=0; k<membank_number; ++k) {
-    membank_t* m = &memory[k];
-    if (m->rd && m->finish == cycle) {
-#if 0
-      if (is_store_buffer(m->rd)) // AMO are both loads and stores
-	release_reg(m->rd);	  // wheel handles register release
-#endif
-      m->rd = 0;		  // indicate not active
+  for (int j=0; j<memory_channels; ++j) {
+    for (int k=0; k<memory_banks; ++k) {
+      membank_t* m = &memory[j][k];
+      if (m->active() && m->finish==cycle) {
+	busy[m->rd] = false;
+	m->rd = NOREG;		  // indicate not active
+      }
     }
   }
 
   // initiate new memory operation
-  if (memport.rd != 0) {
-    membank_t* m = &memory[ (memport.addr>>3) % membank_number ];
-    if (m->rd == 0) {
+  if (memport.active()) {
+    membank_t* m = &memory[0][ (memport.addr>>3) % memory_banks ];
+    if (! m->active()) {
+      memport.finish += cycle;	// previously held latency
       *m = memport;
-      memport.rd = 0;		// indicate is free
+      memport.rd = NOREG;	// indicate is free
     }
   }
   
@@ -71,46 +72,36 @@ void core_t::simulate_cycle() {
     wheel[k][index(0)] = 0;
     if (h) {
       busy[h->insn.rd()] = false;	// destination register now available
-      if (attributes[h->insn.opcode()] & ATTR_st) {
-	s.reg[h->insn.rd()].a = 0;
-	release_reg(h->insn.rd());
-      }
-      h->flags = 0;		// retired
-      //h->ref = 0;		// do not show renaming anymore
-
-      // decrement use count and free if zero
-      release_reg(h->insn.rs1());
-      if (!h->insn.longimmed()) {
-	release_reg(h->insn.rs2());
-	release_reg(h->insn.rs3());
-      }
       --outstanding;		// for serializing pipeline
+      h->status = History_t::STATUS_retired;
     }
   }
 
   Insn_t ir = *i;
   ATTR_bv_t attr = attributes[ir.opcode()];
-  History_t* h = &rob[insns % history_depth];
+  History_t* h = &rob[insns % dispatch_history];
+  uint16_t& flags = cycle_flags[cycle % cycle_history];
   uintptr_t addr;
-  bool mem_unit_used = false;
+  bool mem_checker_used = false;
 
   rename_input_regs(ir);
   
   // conditions that prevent dispatch into issue queue
   if (last == issue_queue_length) {
-    h->flags |= FLAG_qfull;
+    flags |= FLAG_qfull;
     goto issue_from_queue;	// issue queue is full
   }
   if ((attr & (ATTR_uj|ATTR_cj)) && !ready_insn(ir)) {
-    h->flags |= FLAG_busy;
+    flags |= FLAG_busy;
     goto issue_from_queue;	// branch registers not ready
   }
   if ((attr & ATTR_st) && (busy[ir.rs1()] || stbuf_full())) {
-    h->flags |= FLAG_staddr;
+    if (busy[ir.rs1()]) flags |= FLAG_stuaddr;
+    if (stbuf_full())   flags |= FLAG_stbfull;
     goto issue_from_queue;	// unknown store address or SB full
   }
   if ((attr & ATTR_ex) && last>0) {
-    h->flags |= FLAG_serialize;
+    flags |= FLAG_serialize;
     goto issue_from_queue;	// waiting for pipeline flush
   }
 
@@ -120,7 +111,6 @@ void core_t::simulate_cycle() {
     acquire_reg(ir.rs2());
     acquire_reg(ir.rs3());
   }
-
   rename_output_reg(ir);
 
   if (attr & ATTR_st) {
@@ -130,10 +120,11 @@ void core_t::simulate_cycle() {
     s.reg[stbuf(0)].a = addr;
     if (ir.rd() == NOREG) {	// use busy bit of store buffer "register"
       ir.op_rd = stbuf(0);
-      acquire_reg(stbuf(0));
+      acquire_reg(ir.rd());
+      busy[ir.rd()];
     }
     nextstb = (nextstb+1) % store_buffer_length;
-#if 0
+#if 1
     // search for write-after-write dependency
     for (int k=1; k<store_buffer_length; ++k) {
       if (s.reg[stbuf(k)].a == addr) {        // add dependency
@@ -144,70 +135,25 @@ void core_t::simulate_cycle() {
       }
     }
 #endif
-    mem_unit_used = true;	// prevent issuing loads
+    mem_checker_used = true; // prevent issuing loads
   }
   // enter into phantom ROB
-  *h = { ir, pc, i, cycle, 0 };
+  *h = { i, pc, ir, cycle, History_t::STATUS_queue };
   ++insns;
   ++outstanding;
 
-  // put branches in front to execute immediately
-  if (attr & (ATTR_uj|ATTR_cj)) { // pc will be handled then
-    for (int k=last; k>=1; --k)	  // because may jump
-      queue[k] = queue[k-1];
-    queue[0] = h;		// front of queue
-  }
-  else { // everything else advances program counter
-    pc += ir.compressed() ? 2 : 4;
-    if (++i >= insnp(bb+1)+bb->count) {
-      bb = find_bb(pc);
-      i = insnp(bb+1);
-    }
-    queue[last] = h;		// end of queue
-  }
-  ++last;
+  // branches execute immediately
+  if (attr & (ATTR_uj|ATTR_cj)) {
+    assert(ready_insn(ir));
 
- issue_from_queue:
-  for (int k=0; k<last; ++k) {
-    h = queue[k];
-    ir = h->insn;
-    attr = attributes[ir.opcode()];
-    
-    if (!ready_insn(ir))
-      continue;
-    
-    // loads must check store buffer for dependency
-    if (attr & ATTR_ld) {
-      if (mem_unit_used)	// cannot enqueue store and execute
-	continue;		// a load in same cycle
-      for (int k=1; k<store_buffer_length; ++k) {
-	addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
-	if (s.reg[stbuf(k)].a == addr) {
-	  h->insn.op.rs3 = stbuf(k); // add dependency to this store
-	  acquire_reg(stbuf(k));
-	  h->flags |= FLAG_depend;
-	  goto finish_cycle;	// cycle was "used up" by store buffer check
-	  // note next time rs3 will not be ready
-	}
-      }
-    }
-    
-    // loads and stores check memory bank not busy (must be last check)
-    if (attr & (ATTR_ld|ATTR_st)) {
-      if (memport.active())	// memory port is busy
-	continue;
-      memport.addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
-      memport.rd = ir.rd();
-      memport.finish = (cycle+1) + latency[ir.opcode()];
-    }
+    // read register file
+    release_reg(ir.rs1());
+    if (! ir.longimmed())
+      release_reg(ir.rs2());
 
-    // found instruction for execution
-    h->flags |= FLAG_execute;
-    wheel[0][ index(latency[ir.opcode()]) ] = h;
-    
-    uintptr_t jumped = perform(&ir, h->pc);
-    if (attr & (ATTR_uj|ATTR_cj)) { // pc will be handled then
-      pc = jumped ? jumped : pc + (ir.compressed() ? 2 : 4);
+    uintptr_t jumped = perform(&ir, pc);
+    if (jumped) {
+      pc = jumped;
       bb = find_bb(pc);
       i = insnp(bb+1);
     }
@@ -218,19 +164,86 @@ void core_t::simulate_cycle() {
 	i = insnp(bb+1);
       }
     }
+    
+    // retire instruction
+    busy[h->insn.rd()] = false;
+    h->status = History_t::STATUS_retired;
+    --outstanding;
+    goto finish_cycle;
+  }
+  // everything else goes into queue
+  queue[last++] = h;
+  pc += ir.compressed() ? 2 : 4;
+  if (++i >= insnp(bb+1)+bb->count) {
+    bb = find_bb(pc);
+    i = insnp(bb+1);
+  }
+
+ issue_from_queue:
+  for (int k=0; k<last; ++k) {
+    h = queue[k];
+    ir = h->insn;
+    attr = attributes[ir.opcode()];
+    
+    if (!ready_insn(ir))
+      continue;
+    
+    // loads check store buffer for dependency
+    if (attr & (ATTR_ld|ATTR_st)) {
+      if (memport.active())
+	continue;
+      
+      if (attr & ATTR_ld) {
+	if (mem_checker_used)
+	  continue;
+	//mem_checker_used = true;
+	for (int k=1; k<store_buffer_length; ++k) {
+	  addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
+	  if (s.reg[stbuf(k)].a == addr) {
+	    h->insn.op.rs3 = stbuf(k); // add dependency to this store
+	    acquire_reg(stbuf(k));
+	    break;
+	  }
+	}
+      }
+      memport.addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
+      memport.rd = ir.rd();
+      memport.finish = latency[ir.opcode()];
+    }
+    
+    if (is_store_buffer(ir.rd())) {
+      busy[ir.rd()] = false;
+      release_reg(ir.rd());
+      h->status = History_t::STATUS_retired;
+      --outstanding;
+    }
+    else {
+      wheel[0][ index(latency[ir.opcode()]) ] = h;
+      h->status = History_t::STATUS_execute;
+    }
+
+    // read register file
+    release_reg(ir.rs1());
+    if (! ir.longimmed()) {
+      release_reg(ir.rs2());
+      release_reg(ir.rs3());
+    }
+    
+    (void)perform(&ir, h->pc);
 
     // remove from queue
     for (int j=k+1; j<last; ++j)
       queue[j-1] = queue[j];
     --last;
-    goto finish_cycle;
+    break;
   }
 
  finish_cycle:
   ++cycle;
+  cycle_flags[cycle % cycle_history] = 0;
   ir = *i;
   rename_input_regs(ir);
-  rob[insns % history_depth] = { ir, pc, i, cycle, FLAG_decode };
+  rob[insns % dispatch_history] = { i, pc, ir, cycle, History_t::STATUS_dispatch };
 }
 
 void core_t::rename_input_regs(Insn_t& ir)

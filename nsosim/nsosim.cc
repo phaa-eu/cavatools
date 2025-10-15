@@ -10,17 +10,17 @@
 
 option<long> conf_report("report", 1, "Status report per second");
 
-#if 0
+#if 1
 option<int> conf_fp("fp", 3, "Latency floating point");
 option<int> conf_ld("ld", 4, "Latency loads");
 option<int> conf_st("st", 20, "Latency stores");
 option<int> conf_alu("alu", 1, "Latency ALU");
+#else
+option<int> conf_fp("fp", 2, "Latency floating point");
+option<int> conf_ld("ld", 2, "Latency loads");
+option<int> conf_st("st", 2, "Latency stores");
+option<int> conf_alu("alu", 2, "Latency ALU");
 #endif
-
-option<int> conf_fp("fp", 1, "Latency floating point");
-option<int> conf_ld("ld", 1, "Latency loads");
-option<int> conf_st("st", 1, "Latency stores");
-option<int> conf_alu("alu", 1, "Latency ALU");
 
 uint8_t latency[Number_of_Opcodes];
 
