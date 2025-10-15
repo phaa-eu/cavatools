@@ -25,7 +25,7 @@ install:
 	make -C opcodes  install
 	make -C caveat   install
 	make -C cachesim install
-	make -C nsosim   install
+	make -j 16 -C nsosim   install
 
 clean:
 	rm -f $(CAVA)/lib/libcava.a *~ ./#*#

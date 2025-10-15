@@ -70,8 +70,11 @@ private:
 
 // memory bank
 struct membank_t {
+  uintptr_t addr;
   long unsigned finish;
+  History_t* h;			// for accessing flags
   uint8_t rd;			// destination register or associated store buffer
+  bool active() { return rd != 0; }
 };
 
 
@@ -95,9 +98,10 @@ class core_t : public hart_t {
   int numfree;			// maintained as stack
 
   // store buffer (within physical register file)
-  int nextstb;			// next store position in circular store buffer
-  int stbuf(unsigned k) { assert(k<store_buffer_length);
-    return (nextstb+k)%store_buffer_length +max_phy_regs; }
+  int nextstb;	       // next store position in circular store buffer
+  int stbuf(int k) { assert(0<=k && k<store_buffer_length);
+    return (nextstb-k+store_buffer_length)%store_buffer_length + max_phy_regs; }
+  bool stbuf_full() { return uses[stbuf(0)] > 0; }
 
   // phantom reorder buffer for visual debugging
   // rob indexed by [executed() % history_depth]
@@ -117,8 +121,8 @@ class core_t : public hart_t {
 
   bool no_free_reg(Insn_t ir) { return !ir.rd() || ir.rd()==NOREG || numfree==max_phy_regs-64; };
   void rename_input_regs(Insn_t& ir);
+  void rename_output_reg(Insn_t& ir);
   bool ready_insn(Insn_t ir);
-  void commit_insn(Insn_t& ir);
   void acquire_reg(uint8_t r);
   void release_reg(uint8_t r);
   
