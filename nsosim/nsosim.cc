@@ -9,6 +9,7 @@
 #include "core.h"
 
 option<long> conf_report("report", 1, "Status report per second");
+option<bool> conf_visual("visual", true, false, "Interactive visual mode");
 
 #if 1
 option<int> conf_fp("fp", 3, "Latency floating point");
@@ -16,10 +17,10 @@ option<int> conf_ld("ld", 4, "Latency loads");
 option<int> conf_st("st", 20, "Latency stores");
 option<int> conf_alu("alu", 1, "Latency ALU");
 #else
-option<int> conf_fp("fp", 2, "Latency floating point");
-option<int> conf_ld("ld", 2, "Latency loads");
-option<int> conf_st("st", 2, "Latency stores");
-option<int> conf_alu("alu", 2, "Latency ALU");
+option<int> conf_fp("fp", 1, "Latency floating point");
+option<int> conf_ld("ld", 1, "Latency loads");
+option<int> conf_st("st", 1, "Latency stores");
+option<int> conf_alu("alu", 1, "Latency ALU");
 #endif
 
 uint8_t latency[Number_of_Opcodes];
@@ -88,12 +89,19 @@ int main(int argc, const char* argv[], const char* envp[])
   cpu->riscv_syscall = ooo_riscv_syscall;
   atexit(exitfunc);
 
-  if (0 && conf_report() > 0 && !conf_show()) {
-    pthread_t tnum;
-    dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
+  if (conf_visual()) {
+    start_time();
+    cpu->init_simulator();
+    cpu->interactive();
   }
-  
-  start_time();
-  cpu->init_simulator();
-  cpu->interactive();
+  else {
+    if (conf_report() > 0 && !conf_show()) {
+      pthread_t tnum;
+      dieif(pthread_create(&tnum, 0, status_thread, 0), "failed to launch status_report thread");
+    }
+    start_time();
+    cpu->init_simulator();
+    for (;;)
+      cpu->run_fast();
+  }
 }

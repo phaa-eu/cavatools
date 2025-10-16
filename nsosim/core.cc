@@ -105,7 +105,7 @@ void core_t::simulate_cycle() {
     goto issue_from_queue;	// waiting for pipeline flush
   }
 
-  // commit instruction
+  // commit instruction for dispatch
   acquire_reg(ir.rs1());
   if (!ir.longimmed()) {
     acquire_reg(ir.rs2());
@@ -124,7 +124,7 @@ void core_t::simulate_cycle() {
       busy[ir.rd()];
     }
     nextstb = (nextstb+1) % store_buffer_length;
-#if 1
+
     // search for write-after-write dependency
     for (int k=1; k<store_buffer_length; ++k) {
       if (s.reg[stbuf(k)].a == addr) {        // add dependency
@@ -134,68 +134,54 @@ void core_t::simulate_cycle() {
 	break;
       }
     }
-#endif
     mem_checker_used = true; // prevent issuing loads
   }
+  
   // enter into phantom ROB
   *h = { i, pc, ir, cycle, History_t::STATUS_queue };
   ++insns;
   ++outstanding;
 
-  // branches execute immediately
-  if (attr & (ATTR_uj|ATTR_cj)) {
-    assert(ready_insn(ir));
-
-    // read register file
-    release_reg(ir.rs1());
-    if (! ir.longimmed())
-      release_reg(ir.rs2());
-
-    uintptr_t jumped = perform(&ir, pc);
-    if (jumped) {
-      pc = jumped;
-      bb = find_bb(pc);
-      i = insnp(bb+1);
-    }
-    else {
-      pc += ir.compressed() ? 2 : 4;
-      if (++i >= insnp(bb+1)+bb->count) {
-	bb = find_bb(pc);
-	i = insnp(bb+1);
-      }
-    }
-    
-    // retire instruction
-    busy[h->insn.rd()] = false;
-    h->status = History_t::STATUS_retired;
-    --outstanding;
-    goto finish_cycle;
-  }
-  // everything else goes into queue
-  queue[last++] = h;
+  // advance pc sequentially, but taken branch will override
   pc += ir.compressed() ? 2 : 4;
   if (++i >= insnp(bb+1)+bb->count) {
     bb = find_bb(pc);
     i = insnp(bb+1);
   }
 
+  // branches execute immediately
+  if (attr & (ATTR_uj|ATTR_cj)) {
+    assert(ready_insn(ir));
+    goto execute_instruction;
+  }
+
+  // everything else goes into queue
+  queue[last++] = h;
+
  issue_from_queue:
+
+  // find first ready instruction
+  h = 0;			// important!
   for (int k=0; k<last; ++k) {
-    h = queue[k];
-    ir = h->insn;
-    attr = attributes[ir.opcode()];
-    
-    if (!ready_insn(ir))
-      continue;
+    if (ready_insn(queue[k]->insn)) {
+      h = queue[k];
+      ir = h->insn;
+      attr = attributes[ir.opcode()];
+      // remove from queue
+      for (int j=k+1; j<last; ++j)
+	queue[j-1] = queue[j];
+      --last;
+      goto execute_instruction;
+    }
+  }
+  // if here then there was no ready instruction
+
+ execute_instruction:
+  if (h) {  // instruction is in ir but pc is in h->pc
     
     // loads check store buffer for dependency
     if (attr & (ATTR_ld|ATTR_st)) {
-      if (memport.active())
-	continue;
-      
       if (attr & ATTR_ld) {
-	if (mem_checker_used)
-	  continue;
 	//mem_checker_used = true;
 	for (int k=1; k<store_buffer_length; ++k) {
 	  addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
@@ -210,7 +196,16 @@ void core_t::simulate_cycle() {
       memport.rd = ir.rd();
       memport.finish = latency[ir.opcode()];
     }
+
+    // simulate reading register file
+    release_reg(ir.rs1());
+    if (! ir.longimmed()) {
+      release_reg(ir.rs2());
+      release_reg(ir.rs3());
+    }
     
+    // stores are actually "throws" because address already
+    //   computed and available in store buffer
     if (is_store_buffer(ir.rd())) {
       busy[ir.rd()] = false;
       release_reg(ir.rd());
@@ -222,25 +217,22 @@ void core_t::simulate_cycle() {
       h->status = History_t::STATUS_execute;
     }
 
-    // read register file
-    release_reg(ir.rs1());
-    if (! ir.longimmed()) {
-      release_reg(ir.rs2());
-      release_reg(ir.rs3());
+    // Tricky code here:  pc is actually associated with dispatched
+    // instruction, whereas if we issued from queue ir and h->pc are
+    // associated with instruction just dequeued.  Therefore if we
+    // jumped it must have been a branch being dispatched this cycle.
+    uintptr_t jumped = perform(&ir, h->pc);
+    if (jumped) {
+      pc = jumped;
+      bb = find_bb(pc);
+      i = insnp(bb+1);
     }
-    
-    (void)perform(&ir, h->pc);
-
-    // remove from queue
-    for (int j=k+1; j<last; ++j)
-      queue[j-1] = queue[j];
-    --last;
-    break;
   }
 
  finish_cycle:
   ++cycle;
   cycle_flags[cycle % cycle_history] = 0;
+  // following code just for display, gets rewritten next iteration
   ir = *i;
   rename_input_regs(ir);
   rob[insns % dispatch_history] = { i, pc, ir, cycle, History_t::STATUS_dispatch };
@@ -339,4 +331,25 @@ int clone_proxy(hart_t* h)
   parent->put_state(parent->pc);
   core_t* child = new core_t(parent);
   return clone_thread(child);
+}
+
+void core_t::run_fast()
+{
+  for (;;) {
+    uintptr_t jumped = perform(i, pc);
+    if (jumped) {
+      pc = jumped;
+      bb = find_bb(pc);
+      i = insnp(bb+1);
+    }
+    else {
+      pc += i->compressed() ? 2 : 4;
+      if (++i >= insnp(bb+1)+bb->count) {
+	bb = find_bb(pc);
+	i = insnp(bb+1);
+      }
+    }
+    ++insns;
+    ++cycle;
+  }
 }

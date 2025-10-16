@@ -159,6 +159,7 @@ public:
 
   void display_history();
   void interactive();
+  void run_fast();
 };
 
 long ooo_riscv_syscall(hart_t* h, long a0);
