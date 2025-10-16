@@ -61,10 +61,10 @@ struct History_t {
   Insn_t insn;			// with renamed registers
   unsigned long cycle;		// dispatch time
   enum { STATUS_retired, STATUS_execute, STATUS_queue, STATUS_dispatch } status;
-  void display(bool busy[], unsigned uses[]);
+  void display(WINDOW* w, bool busy[], unsigned uses[]);
 private:
-  void show_opcode(bool executing);
-  void show_reg(char sep, int orig, int phys, bool busy[], unsigned uses[]);
+  void show_opcode(WINDOW* w, bool executing);
+  void show_reg(WINDOW* w, char sep, int orig, int phys, bool busy[], unsigned uses[]);
 };
 
 
@@ -88,6 +88,7 @@ extern thread_local membank_t memory[memory_channels][memory_banks];
 
 // one simulation thread
 class core_t : public hart_t {
+public:
   simulator_state_t s;		// replaces uspike state
   long unsigned insns;		// count number of instructions executed
   long outstanding;		// number of instructions in flight
@@ -157,7 +158,7 @@ public:
   static core_t* list() { return (core_t*)hart_t::list(); }
   core_t* next() { return (core_t*)hart_t::next(); }
 
-  void display_history();
+  void display_history(WINDOW*w, int y, int x, int lines);
   void interactive();
   void run_fast();
 };

@@ -3,6 +3,8 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#include <ncurses.h>
+
 #include "caveat.h"
 #include "hart.h"
 

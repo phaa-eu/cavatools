@@ -13,6 +13,7 @@
 #include <signal.h>
 
 #include <cassert>
+#include <ncurses.h>
 
 #include "caveat.h"
 #include "hart.h"
