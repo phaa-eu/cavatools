@@ -85,6 +85,7 @@ struct membank_t {
 
 extern thread_local long unsigned cycle;	// count number of processor cycles
 extern thread_local membank_t memory[memory_channels][memory_banks];
+extern thread_local membank_t memport[memory_channels];
 
 // one simulation thread
 class core_t : public hart_t {

@@ -11,7 +11,7 @@
 
 thread_local long unsigned cycle;
 thread_local membank_t memory[memory_channels][memory_banks];
-thread_local membank_t memport;
+thread_local membank_t memport[memory_channels];
 
 void core_t::init_simulator() {
   memset(busy, 0, sizeof busy);
@@ -57,12 +57,15 @@ void core_t::simulate_cycle() {
   }
 
   // initiate new memory operation
-  if (memport.active()) {
-    membank_t* m = &memory[0][ (memport.addr>>3) % memory_banks ];
-    if (! m->active()) {
-      memport.finish += cycle;	// previously held latency
-      *m = memport;
-      memport.rd = NOREG;	// indicate is free
+  for (int j=0; j<memory_channels; ++j) {
+    membank_t& port = memport[j];
+    if (port.active()) {
+      membank_t* m = &memory[0][ (port.addr>>3) % memory_banks ];
+      if (! m->active()) {
+	port.finish += cycle;	// previously held latency
+	*m = port;
+	port.rd = NOREG;	// indicate is free
+      }
     }
   }
   
@@ -192,9 +195,10 @@ void core_t::simulate_cycle() {
 	  }
 	}
       }
-      memport.addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
-      memport.rd = ir.rd();
-      memport.finish = latency[ir.opcode()];
+      int channel = 0;
+      memport[channel].addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
+      memport[channel].rd = ir.rd();
+      memport[channel].finish = latency[ir.opcode()];
     }
 
     // simulate reading register file

@@ -3,6 +3,7 @@
 #include <ncurses.h>
 #include <signal.h>
 #include <setjmp.h>
+#include <climits>
 
 #include "caveat.h"
 #include "hart.h"
@@ -12,16 +13,21 @@
 const int msglines = 3;
 static WINDOW* msgwin;
 
-const int window_buffers = 32;
+const int window_buffers = 100;
 WINDOW* winbuf[window_buffers];
 int frontwin = 0;
 int behind = 0;
+
+
+unsigned long number = 0;
+
 
 void display_header(WINDOW* w, int y, int x)
 {
   wmove(w, y, x);
   wattron(w, A_UNDERLINE);
   wprintw(w, "  cycle\tflags\t\tpc label\t       pc  hex insn  opcode\treg(renamed=uses), [stbuf]");
+  wprintw(w, "%ld\n", number);
   wattroff(w, A_UNDERLINE);
 }
 
@@ -143,35 +149,40 @@ void core_t::display_history(WINDOW* w, int y, int x, int lines)
   }
 }
 
-
-
-
-
+void display_membank(WINDOW* w, int y, int x, membank_t* m)
+{
+  wmove(w, y, x);
+  if (! m->active()) {
+    wprintw(w, "-");
+    return;
+  }
+  if (is_store_buffer(m->rd)) {
+    wattron(w,  A_BOLD);
+    wprintw(w, "[sb%d]%ld", m->rd-max_phy_regs, m->finish-cycle);
+    wattroff(w, A_BOLD);
+  }
+  else {
+    wattron(w,  A_REVERSE);
+    wprintw(w, "(r%d)%ld", m->rd, m->finish-cycle);
+    wattroff(w, A_REVERSE);
+  }
+}
+ 
 void display_memory(WINDOW* w, int y, int x)
 {
-  const int fieldwidth = 16;
+  const int fieldwidth = 12;
   wclear(w);
+  wmove(w, y, x);
+  wprintw(w, "Channel");
   for (int k=0; k<memory_banks; ++k) {
-    wmove(w, y, x+k*fieldwidth);
+    wmove(w, y, x+4+(k+1)*fieldwidth);
     wprintw(w, "bank[%d]", k);
   }
   for (int j=0; j<memory_channels; ++j) {
-    for (int k=0; k<memory_banks; ++k) {
-      membank_t* m = &memory[j][k];
-      if (! m->active())
-	continue;
-      wmove(w, y+j+1, x+k*fieldwidth);
-      if (is_store_buffer(m->rd)) {
-	wattron(w,  A_BOLD);
-	wprintw(w, "[sb%d]%ld", m->rd-max_phy_regs, m->finish-cycle);
-	wattroff(w, A_BOLD);
-      }
-      else {
-	wattron(w,  A_REVERSE);
-	wprintw(w, "(r%d)%ld", m->rd, m->finish-cycle);
-	wattroff(w, A_REVERSE);
-      }
-    }
+    wprintw(w, "%d ", j);
+    display_membank(w, y+j+1, 3, &memport[j]);
+    for (int k=0; k<memory_banks; ++k)
+      display_membank(w, y+j+1, x+4+(k+1)*fieldwidth, &memory[j][k]);
   }
   //wnoutrefresh(w);
 }
@@ -233,6 +244,8 @@ static void fastrun_without_display(core_t* cpu)
   } // infinite loop
 }
 
+#define remember_cycle() { frontwin=(frontwin+1)%window_buffers; WINDOW* w=winbuf[frontwin]; wclear(w); display_memory(w, 0, 0); display_header(w, 2, 0); display_history(w, 3, 0, LINES-5); wrefresh(w); }
+
 
 void core_t::interactive()
 {
@@ -254,69 +267,85 @@ void core_t::interactive()
   //display_help();
   
   WINDOW* w = winbuf[frontwin];
-  for (int ch=getch(); ch!='q'; ch=getch()) {
-    switch (ch) {
-    case ERR:
-      if (framerate)
-	usleep(framerate);
-      if (!freerun)
-	continue;
-      break;
-    case 'h':
-      help_screen();
-      while ((ch=getch()) == ERR)
-	usleep(100000);
-      continue;
-    case 's':
-      framerate = 20000;
-      freerun = false;
-      behind = 0;
-      break;
-    case 'c':
-      framerate = 20000;
-      freerun = true;
-      behind = 0;
-      break;
-    case 'C':
-      framerate = 0;
-      freerun = true;
-      behind = 0;
-      break;
-    case 'g':
-      fastrun_without_display(this);
-      continue;
-
-    case 'b':
-      if (behind < window_buffers)
-	++behind;
-      else
-	beep();
-      overwrite(winbuf[ (frontwin-behind+window_buffers) % window_buffers ], stdscr);
-      refresh();
-      continue;
-      
-    case 'f':
-      if (behind > 0)
-	--behind;
-      else
-	beep();
-      overwrite(winbuf[ (frontwin-behind+window_buffers) % window_buffers ], stdscr);
-      refresh();
-      continue;
-      
-    default:
-      continue;
+  int ch;
+  long unsigned stop_cycle = ULONG_MAX;
+  //  for (int ch=getch(); ch!='q'; ch=getch()) {
+  
+ infinite_loop:
+  while ((ch=getch()) == ERR) {
+    if (freerun && cycle < stop_cycle) {
+      simulate_cycle();
+      remember_cycle();
+      wrefresh(winbuf[frontwin]);
     }
-    simulate_cycle();
-    frontwin = (frontwin+1) % window_buffers;
-    WINDOW* w = winbuf[frontwin];
-    wclear(w);
-    display_memory(w, 0, 0);
-    display_header(w, 2, 0);
-    display_history(w, 3, 0, LINES-3);
-    wrefresh(w);
+    if (framerate)
+      usleep(framerate);
   }
-  endwin();
+  
+  if ('0' <= ch && ch <= '9') {
+    number = 10*number + ch-'0';
+    goto infinite_loop;
+  }
+  
+  switch (ch) {
+  case 'q':
+    endwin();
+    return;
+  case 'h':
+    help_screen();
+    while ((ch=getch()) == ERR)
+      usleep(100000);
+    break;
+  case 's':
+    framerate = 20000;
+    freerun = false;
+    behind = 0;
+    number = 0;
+    simulate_cycle();
+    remember_cycle();
+    wrefresh(winbuf[frontwin]);
+    break;
+  case 'c':
+    framerate = 20000;
+    freerun = true;
+    behind = 0;
+    if (number) {
+      stop_cycle = number;
+      number = 0;
+    }
+    break;
+  case 'C':
+    framerate = 0;
+    freerun = true;
+    behind = 0;
+    if (number) {
+      stop_cycle = number;
+      number = 0;
+    }
+    break;
+  case 'g':
+    fastrun_without_display(this);
+    break;
+
+  case 'b':
+    if (behind < window_buffers)
+      ++behind;
+    else
+      beep();
+    overwrite(winbuf[ (frontwin-behind+window_buffers) % window_buffers ], stdscr);
+    refresh();
+    goto infinite_loop;
+      
+  case 'f':
+    if (behind > 0)
+      --behind;
+    else
+      beep();
+    overwrite(winbuf[ (frontwin-behind+window_buffers) % window_buffers ], stdscr);
+    refresh();
+    goto infinite_loop;
+  }
+  goto infinite_loop;
 }
 
   
