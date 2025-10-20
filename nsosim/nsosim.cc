@@ -1,3 +1,7 @@
+/*
+  Copyright (c) 2025 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+*/
+
 #include <cassert>
 #include <limits.h>
 #include <unistd.h>
@@ -95,11 +99,10 @@ void interactive(Core_t* cpu)
     if (cycle < stop_cycle) {
 #ifdef VERIFY
       History_t* h = cpu->nextrob();
-      clock_memory_system();
+      clock_memory_system(cpu);
       if (cpu->clock_pipeline()) {
 	cpu->single_step();
-	if (h->ref->rd() != NOREG)
-	  h->expected_rd = cpu->get_rd_from_spike(h->ref->rd());
+	h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
       }
 #else
       clock_memory_system();
@@ -111,22 +114,23 @@ void interactive(Core_t* cpu)
       wclear(w);
       display_memory(w, 0, 0);
       display_history(w, 2, 0, cpu, LINES-3);
-      wrefresh(w);
-      if (framerate)
-	usleep(framerate);
+      if (framerate >= 0) {
+	wrefresh(w);
+	if (framerate > 0)
+	  usleep(framerate);
+      }
+      else {
+	fprintf(stderr, "\r\33[2K%lld cycles, %lld instructions executed", cycle, cpu->insns());
+      }
     }
   }
+  wrefresh(winbuf[frontwin]);
   framerate = 20000;
 
   switch (ch) {
   case 'q':
     endwin();
     return;
-#if 0
-  case 'g':
-    fastrun_without_display(this);
-    return;
-#endif
   case 'h':
     extern void help_screen();
     help_screen();
@@ -170,6 +174,15 @@ void interactive(Core_t* cpu)
     behind = 0;
     framerate = 0;
     goto infinite_loop;
+
+  case 'g':
+    stop_cycle = number ? number : LLONG_MAX;
+    number = 0;
+    behind = 0;
+    framerate = -1;
+    clear();
+    goto infinite_loop;
+    
   }
   stop_cycle = cycle;
   goto infinite_loop;
@@ -216,11 +229,11 @@ int main(int argc, const char* argv[], const char* envp[])
     for (;;) {
 #ifdef VERIFY
       History_t* h = cpu->nextrob();
-      clock_memory_system();
+      clock_memory_system(cpu);
       if (cpu->clock_pipeline()) {
 	cpu->single_step();
-	if (h->ref->rd() != NOREG)
-	  h->expected_rd = cpu->get_rd_from_spike(h->ref->rd());
+	if (h->ref.rd() != NOREG)
+	  h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
       }
 #else
       clock_memory_system();

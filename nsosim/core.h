@@ -5,8 +5,8 @@
 const int issue_queue_length = 16;
 const int store_buffer_length = 8;
 
-const int cycle_history = 256;
-const int dispatch_history = 128;
+const int dispatch_history = 1024;
+const int cycle_history = 4*dispatch_history;
 
 // timing wheel for simulating pipelines
 const int num_write_ports = 1;
@@ -49,12 +49,12 @@ struct History_t {		// dispatched instruction
   long long clock;		// at this time
   Insn_t insn;			// with renamed registers
   Addr_t pc;			// at this PC
-  Insn_t* ref;			// original instruction (for display)
+  Insn_t ref;			// original instruction (for display)
 #ifdef VERIFY
   uintptr_t expected_rd;	// for checking against uspike
   uintptr_t actual_rd;		// for display
 #endif
-  enum Status_t { Retired, Executing, Queued, Dispatch, Mismatch } status;
+  enum Status_t { Retired, Executing, Queued, Dispatch } status;
   
   void display(WINDOW* w, class Core_t*);
 };
@@ -132,13 +132,12 @@ public:
   void rename_input_regs(Insn_t& ir);
   void rename_output_reg(Insn_t& ir);
   bool ready_insn(Insn_t ir);
-  void retire_insn(History_t* h);
   void acquire_reg(uint8_t r);
   void release_reg(uint8_t r);
   
   uintptr_t get_state();
   void put_state(uintptr_t pc);
-  uintptr_t get_rd_from_spike(Reg_t n) { return ((hart_t*)this)->s.xrf[n]; }
+  uintptr_t get_rd_from_spike(Reg_t n);
 
   Addr_t perform(Insn_t* i, Addr_t pc);
 
@@ -147,6 +146,7 @@ public:
 
   long long insns() { return _insns; }
   
+  friend void clock_memory_system(Core_t* cpu);
   friend void display_history(WINDOW* w, int y, int x, Core_t* c, int lines);
   friend void interactive(Core_t* cpu);
 };

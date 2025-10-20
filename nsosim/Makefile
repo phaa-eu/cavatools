@@ -29,7 +29,7 @@ nsosim:  $(BINS) $(LIBS)
 
 #perform.o: ~/include/cava/caveat.h ~/include/cava/hart.h
 
-memory.o core.o display.o perform.onsosim.o:  core.h memory.h
+memory.o core.o display.o perform.o nsosim.o:  core.h memory.h
 
 install:  nsosim
 	cp nsosim $(CAVA)/bin/.

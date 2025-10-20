@@ -16,17 +16,24 @@ thread_local long long cycle;
 
 
 bool Core_t::clock_pipeline() {
+  History_t* h = nextrob();
   
   // retire pipelined instruction(s)
   for (int k=0; k<num_write_ports; ++k) {
-    if (wheel[k][index(0)])
-      retire_insn(wheel[k][index(0)]);
-    wheel[k][index(0)] = 0;
+    h = wheel[k][index(0)];
+    if (h) {
+      Insn_t ir = h->insn;
+      h->status = History_t::Retired;
+      busy[ir.rd()] = false;
+      release_reg(ir.rd());
+      --_inflight;
+      wheel[k][index(0)] = 0;
+    }
   }
 
+  h = nextrob();
   Insn_t ir = *i;
   ATTR_bv_t attr = attributes[ir.opcode()];
-  History_t* h = nextrob();
   uint16_t& flags = cycle_flags[cycle % cycle_history];
   Addr_t addr;
   bool mem_checker_used = false;
@@ -48,7 +55,7 @@ bool Core_t::clock_pipeline() {
     if (stbuf_full())   flags |= FLAG_stbfull;
     goto issue_from_queue;	// unknown store address or SB full
   }
-  if ((attr & ATTR_ex) && last>0) {
+  if ((attr & (ATTR_ex|ATTR_amo)) && last>0) {
     flags |= FLAG_serialize;
     goto issue_from_queue;	// waiting for pipeline flush
   }
@@ -172,22 +179,31 @@ bool Core_t::clock_pipeline() {
     // associated with instruction just dequeued.  Therefore if we
     // jumped it must have been a branch being dispatched this cycle.
     uintptr_t jumped = perform(&ir, h->pc);
+#ifdef VERIFY
+    h->actual_rd = (h->ref.rd()==NOREG) ? 0 : s.reg[ir.rd()].a;
+#endif
     if (jumped) {
       pc = jumped;
       bb = find_bb(pc);
       i = insnp(bb+1);
     }
     
-    if (attr & (ATTR_uj|ATTR_cj) || is_store_buffer(ir.rd())) {
-      // Retire immediately.  Note cannot verify rd
+    
+    //if ((attr & (ATTR_uj|ATTR_cj)) || is_store_buffer(ir.rd())) {
+
+    if (attr & (ATTR_uj|ATTR_cj|ATTR_ld|ATTR_st)) {
+      if ((attr & (ATTR_uj|ATTR_cj)) || is_store_buffer(ir.rd())) {
+	if (ir.rd() != NOREG) {
+	  busy[ir.rd()] = false;
+	  release_reg(ir.rd());
+	}
+      }
       h->status = History_t::Retired;
-      busy[ir.rd()] = false;
-      release_reg(ir.rd());
       --_inflight;
     }
     else {
-      h->status = History_t::Executing;
       wheel[0][ index(latency[ir.opcode()]) ] = h;
+      h->status = History_t::Executing;
     }
   }
 
@@ -204,7 +220,7 @@ bool Core_t::clock_pipeline() {
   h->clock = cycle;
   h->insn = ir;
   h->pc = pc;
-  h->ref = i;
+  h->ref = *i;
   h->status = History_t::Dispatch;
 
   return dispatched;		// was instruction dispatched?
@@ -239,22 +255,6 @@ bool Core_t::ready_insn(Insn_t ir)
     if (busy[ir.rs3()]) return false;
   }
   return true;
-}
-
-void Core_t::retire_insn(History_t* h)
-{
-  Insn_t ir = h->insn;
-  h->status = History_t::Retired;
-#ifdef VERIFY
-  if (ir.rd()!=NOREG && !is_store_buffer(ir.rd())) {
-    h->actual_rd = s.reg[ir.rd()].a;
-    if (h->actual_rd != h->expected_rd)
-      h->status = History_t::Mismatch;
-  }
-#endif
-  busy[ir.rd()] = false;
-  release_reg(ir.rd());
-  --_inflight;
 }
 
 void Core_t::acquire_reg(uint8_t r)
@@ -295,6 +295,15 @@ void Core_t::put_state(uintptr_t pc)
   h->s.fflags = s.fflags;
   h->s.frm = s.frm;
   h->pc = pc;
+}
+
+uintptr_t Core_t::get_rd_from_spike(Reg_t n) {
+  if (n == NOREG)
+    return 0;
+  else if (n < 32)
+    return ((hart_t*)this)->s.xrf[n];
+  else
+    return (uintptr_t)((hart_t*)this)->s.frf[n].v[0];
 }
 
 
@@ -359,7 +368,7 @@ void Core_t::reset() {
   h->clock = cycle;
   h->insn = *i;
   h->pc = pc;
-  h->ref = i;
+  h->ref = *i;
   h->status = History_t::Dispatch;
 }
 

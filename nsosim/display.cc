@@ -49,17 +49,18 @@ void Core_t::show_reg(WINDOW* w, Reg_t n, char sep, int ref)
 void History_t::display(WINDOW* w, Core_t* c)
 {
   switch (status) {
-  case History_t::Mismatch:	wattron(w, A_REVERSE); break;
   case History_t::Retired:	wattron(w, A_DIM); break;
   case History_t::Dispatch:	wattron(w, A_UNDERLINE); break;
   }
 
 #ifdef VERIFY
   extern const char* reg_name[];
-  if (ref->rd() == NOREG)
+  if (ref.rd() == NOREG)
     wprintw(w, "%40s", "");
   else
-    wprintw(w, "%4s[%16lx %16lx] ", reg_name[ref->rd()], expected_rd, actual_rd);
+    wprintw(w, "%4s[%16lx %16lx] ", reg_name[ref.rd()], expected_rd, actual_rd);
+  bool mismatch = status==History_t::Retired ? actual_rd != expected_rd : false;
+  if (mismatch) wattron(w, A_REVERSE);
 #endif
   
   char buf[256];;
@@ -67,7 +68,7 @@ void History_t::display(WINDOW* w, Core_t* c)
   wprintw(w, "%s", buf);
 
   if (status == History_t::Retired) {
-    sdisasm(buf, pc, ref);
+    sdisasm(buf, pc, &ref);
     wprintw(w, "%s", buf);
   }
   else {
@@ -78,17 +79,17 @@ void History_t::display(WINDOW* w, Core_t* c)
       wprintw(w, "%08x  ",     b);
     show_opcode(w, insn.opcode(), status==History_t::Executing);
     char sep = ' ';
-    if (insn.rd()  != NOREG)   { c->show_reg(w, insn.rd(), sep, ref->rd()),  sep=','; }
-    if (insn.rs1() != NOREG)   { c->show_reg(w, insn.rd(), sep, ref->rs1()), sep=','; }
+    if (insn.rd()  != NOREG)   { c->show_reg(w, insn.rd(),  sep, ref.rd()),  sep=','; }
+    if (insn.rs1() != NOREG)   { c->show_reg(w, insn.rs1(), sep, ref.rs1()), sep=','; }
     if (! insn.longimmed()) {
-      if (insn.rs2() != NOREG) { c->show_reg(w, insn.rd(), sep, ref->rs2()), sep=','; }
-      if (insn.rs3() != NOREG) { c->show_reg(w, insn.rd(), sep, ref->rs3()), sep=','; }
+      if (insn.rs2() != NOREG) { c->show_reg(w, insn.rs2(), sep, ref.rs2()), sep=','; }
+      if (insn.rs3() != NOREG) { c->show_reg(w, insn.rs3(), sep, ref.rs3()), sep=','; }
     }
     wprintw(w, "%c%ld", sep, insn.immed());
   }
 
+  if (mismatch) wattroff(w, A_REVERSE);
   switch (status) {
-  case History_t::Mismatch:	wattroff(w, A_REVERSE); break;
   case History_t::Retired:	wattroff(w, A_DIM); break;
   case History_t::Dispatch:	wattroff(w, A_UNDERLINE); break;
   }
@@ -128,17 +129,38 @@ static void show_flags(WINDOW* w, unsigned flags)
 
 void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
 {
+  wmove(w, y, 0);
+  wprintw(w, "sb[");
+  for (int k=0; k<store_buffer_length; ++k) {
+    if (c->busy[k+max_phy_regs]) wattron(w, A_REVERSE);
+    wprintw(w, " ");
+    if (c->busy[k+max_phy_regs]) wattroff(w, A_REVERSE);
+  }
+  wprintw(w, "]    busy[");
+  for (int k=0; k<max_phy_regs; ++k) {
+    if (c->busy[k]) wattron(w, A_REVERSE);
+    wprintw(w, " ");
+    if (c->busy[k]) wattroff(w, A_REVERSE);
+  }
+  wprintw(w, "]\n");
+  --lines;			    // account for register busy line
+  ++y;
+  
   wmove(w, y, x);
   wattron(w, A_UNDERLINE);
-  wprintw(w, "  cycle\tflags\t\tpc label\t       pc  hex insn  opcode\treg(renamed=uses), [stbuf]");
+  wprintw(w, "  cycle\tflags\t");
+#ifdef VERIFY
+  wprintw(w, "\t     Expected\t\tActual\t");
+#endif
+  wprintw(w, "\tpc label\t       pc  hex insn  opcode\t\treg(renamed=uses), [stbuf]");
   wprintw(w, "%ld\n", number);
   wattroff(w, A_UNDERLINE);
+  --lines;			    // account for header line
+  ++y;
 
   char buf[1024];
   long when = cycle;		    // cycle to be printed
   int k = c->insns() % dispatch_history; // rob slot to display
-  --lines;			    // account for header line
-  
   for (int l=0; l<lines-3; ++l, --when) { // leave a few blank lines
     if (when < 0)
       continue;
