@@ -30,6 +30,7 @@ bool Core_t::clock_pipeline() {
   uint16_t& flags = cycle_flags[cycle % cycle_history];
   Addr_t addr;
   bool mem_checker_used = false;
+  bool dispatched = false;
 
   rename_input_regs(ir);
   
@@ -85,10 +86,11 @@ bool Core_t::clock_pipeline() {
   }
   
   // enter into phantom ROB
-  //*h = { cycle, ir, pc, i, History_t::Queued };
-  *h = make_history(cycle, ir, pc, i, History_t::Queued);
+  h->insn = ir;
+  h->status = History_t::Queued;
   _insns++;
   _inflight++;
+  dispatched = true;
 
   // advance pc sequentially, but taken branch will override
   pc += ir.compressed() ? 2 : 4;
@@ -177,10 +179,11 @@ bool Core_t::clock_pipeline() {
     }
     
     if (attr & (ATTR_uj|ATTR_cj) || is_store_buffer(ir.rd())) {
-      // Stores are actually "throws" because address already
-      // computed and available in store buffer.
-      // Loads and AMO exchanges use wheel.  Stores retire immediately.
-      retire_insn(h);
+      // Retire immediately.  Note cannot verify rd
+      h->status = History_t::Retired;
+      busy[ir.rd()] = false;
+      release_reg(ir.rd());
+      --_inflight;
     }
     else {
       h->status = History_t::Executing;
@@ -191,12 +194,20 @@ bool Core_t::clock_pipeline() {
  finish_cycle:
   ++cycle;
   cycle_flags[cycle % cycle_history] = 0;
+  
   // following code just for display, gets rewritten next iteration
   ir = *i;
   rename_input_regs(ir);
-  *nextrob() = make_history(cycle, ir, pc, i, History_t::Dispatch);
 
-  return h != 0;		// was instruction dispatched?
+  // prepare next history
+  h = nextrob();
+  h->clock = cycle;
+  h->insn = ir;
+  h->pc = pc;
+  h->ref = i;
+  h->status = History_t::Dispatch;
+
+  return dispatched;		// was instruction dispatched?
 }
 
 void Core_t::rename_input_regs(Insn_t& ir)
@@ -236,7 +247,8 @@ void Core_t::retire_insn(History_t* h)
   h->status = History_t::Retired;
 #ifdef VERIFY
   if (ir.rd()!=NOREG && !is_store_buffer(ir.rd())) {
-    if (s.reg[ir.rd()].a != h->expected_rd)
+    h->actual_rd = s.reg[ir.rd()].a;
+    if (h->actual_rd != h->expected_rd)
       h->status = History_t::Mismatch;
   }
 #endif
@@ -259,16 +271,6 @@ void Core_t::release_reg(uint8_t r)
   assert(uses[r] > 0);
   if (--uses[r] == 0 && r < max_phy_regs)
     freelist[numfree++] = r;
-}
-  
-History_t make_history(long long c, Insn_t ir, Addr_t p, Insn_t* i, History_t::Status_t s) {
-  History_t h;
-  h.clock=c;
-  h.insn=ir;
-  h.pc=p;
-  h.ref=i;
-  h.status=s;
-  return h;
 }
 
 uintptr_t Core_t::get_state()
@@ -353,6 +355,27 @@ void Core_t::reset() {
   bb = find_bb(pc);
   i = insnp(bb+1);
 
-  *nextrob() = make_history(cycle, *i, pc, 0, History_t::Dispatch);
+  History_t* h = nextrob();
+  h->clock = cycle;
+  h->insn = *i;
+  h->pc = pc;
+  h->ref = i;
+  h->status = History_t::Dispatch;
 }
+
+
+#if 0
+// leftover stuff
+
+History_t make_history(long long c, Insn_t ir, Addr_t p, Insn_t* i, History_t::Status_t s) {
+  History_t h;
+  h.clock=c;
+  h.insn=ir;a
+  h.pc=p;
+  h.ref=i;
+  h.status=s;
+  return h;
+}
+
+#endif
 

@@ -49,10 +49,18 @@ void Core_t::show_reg(WINDOW* w, Reg_t n, char sep, int ref)
 void History_t::display(WINDOW* w, Core_t* c)
 {
   switch (status) {
-  case History_t::Mismatch:	wattron(w, A_REVERSE|A_BLINK); break;
+  case History_t::Mismatch:	wattron(w, A_REVERSE); break;
   case History_t::Retired:	wattron(w, A_DIM); break;
   case History_t::Dispatch:	wattron(w, A_UNDERLINE); break;
   }
+
+#ifdef VERIFY
+  extern const char* reg_name[];
+  if (ref->rd() == NOREG)
+    wprintw(w, "%40s", "");
+  else
+    wprintw(w, "%4s[%16lx %16lx] ", reg_name[ref->rd()], expected_rd, actual_rd);
+#endif
   
   char buf[256];;
   slabelpc(buf, pc);
@@ -80,7 +88,7 @@ void History_t::display(WINDOW* w, Core_t* c)
   }
 
   switch (status) {
-  case History_t::Mismatch:	wattroff(w, A_REVERSE|A_BLINK); break;
+  case History_t::Mismatch:	wattroff(w, A_REVERSE); break;
   case History_t::Retired:	wattroff(w, A_DIM); break;
   case History_t::Dispatch:	wattroff(w, A_UNDERLINE); break;
   }
@@ -151,26 +159,31 @@ void Memory_t::display(WINDOW* w)
     wprintw(w, "-");
     return;
   }
-  wattron(w,  A_BOLD);
+  if (is_store_buffer(rd)) wattron(w, A_BOLD|A_REVERSE);
+  else                     wattron(w,  A_BOLD);
   if (is_store_buffer(rd))
     wprintw(w, "[sb%d]", rd-max_phy_regs);
   else
     wprintw(w, "(r%d)", rd);
   wprintw(w, "%lld", cycle-finish);
-  wattroff(w, A_BOLD);
+  if (is_store_buffer(rd)) wattroff(w, A_BOLD|A_REVERSE);
+  else                     wattroff(w,  A_BOLD);
 }
 
 void Memory_t::show_as_port(WINDOW* w)
 {
   if (! active())
     return;
-
+  if (is_store_buffer(rd)) wattron(w, A_BOLD|A_REVERSE);
+  else                     wattron(w,  A_BOLD);
   wprintw(w, "[%ld]", mem_bank(addr));
   if (is_store_buffer(rd))
     wprintw(w, "sb%d", rd-max_phy_regs);
   else
     wprintw(w, "r%d", rd);
   wprintw(w, "+%lld", finish);
+  if (is_store_buffer(rd)) wattroff(w, A_BOLD|A_REVERSE);
+  else                     wattroff(w,  A_BOLD);
 }
 
  

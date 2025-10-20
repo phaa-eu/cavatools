@@ -94,10 +94,12 @@ void interactive(Core_t* cpu)
   while ((ch=getch()) == ERR) {
     if (cycle < stop_cycle) {
 #ifdef VERIFY
+      History_t* h = cpu->nextrob();
       clock_memory_system();
       if (cpu->clock_pipeline()) {
 	cpu->single_step();
-	cpu->nextrob()->expected_rd = cpu->get_rd_from_spike();
+	if (h->ref->rd() != NOREG)
+	  h->expected_rd = cpu->get_rd_from_spike(h->ref->rd());
       }
 #else
       clock_memory_system();
@@ -213,10 +215,12 @@ int main(int argc, const char* argv[], const char* envp[])
     cpu->reset();
     for (;;) {
 #ifdef VERIFY
+      History_t* h = cpu->nextrob();
       clock_memory_system();
       if (cpu->clock_pipeline()) {
 	cpu->single_step();
-	cpu->nextrob()->expected_rd = cpu->get_rd_from_spike();
+	if (h->ref->rd() != NOREG)
+	  h->expected_rd = cpu->get_rd_from_spike(h->ref->rd());
       }
 #else
       clock_memory_system();

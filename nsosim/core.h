@@ -52,13 +52,14 @@ struct History_t {		// dispatched instruction
   Insn_t* ref;			// original instruction (for display)
 #ifdef VERIFY
   uintptr_t expected_rd;	// for checking against uspike
+  uintptr_t actual_rd;		// for display
 #endif
   enum Status_t { Retired, Executing, Queued, Dispatch, Mismatch } status;
   
   void display(WINDOW* w, class Core_t*);
 };
 
-History_t make_history(long long c, Insn_t ir, Addr_t p, Insn_t* i, History_t::Status_t s);
+//History_t make_history(long long c, Insn_t ir, Addr_t p, Insn_t* i, History_t::Status_t s);
 
 
 extern thread_local long long cycle;        // count number of processor cycles
@@ -119,6 +120,7 @@ public:
 
   long long inflight() { return _inflight; }
   History_t* nextrob() { return &rob[_insns % dispatch_history]; }
+  //History_t* nextrob(int k =0) { return &rob[(_insns+k+dispatch_history) % dispatch_history]; }
 
   bool clock_pipeline();
   
@@ -136,7 +138,7 @@ public:
   
   uintptr_t get_state();
   void put_state(uintptr_t pc);
-  uintptr_t get_rd_from_spike() { return ((hart_t*)this)->s.xrf[i->rd()]; }
+  uintptr_t get_rd_from_spike(Reg_t n) { return ((hart_t*)this)->s.xrf[n]; }
 
   Addr_t perform(Insn_t* i, Addr_t pc);
 
