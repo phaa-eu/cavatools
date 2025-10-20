@@ -9,26 +9,75 @@
 #include "hart.h"
 
 #include "core.h"
+#include "memory.h"
 
 const int msglines = 3;
 static WINDOW* msgwin;
-
-const int window_buffers = 100;
-WINDOW* winbuf[window_buffers];
-int frontwin = 0;
-int behind = 0;
 
 
 unsigned long number = 0;
 
 
-void display_header(WINDOW* w, int y, int x)
+
+// show opcode highlighting execution status
+static void show_opcode(WINDOW* w, Opcode_t op, bool executing)
 {
-  wmove(w, y, x);
-  wattron(w, A_UNDERLINE);
-  wprintw(w, "  cycle\tflags\t\tpc label\t       pc  hex insn  opcode\treg(renamed=uses), [stbuf]");
-  wprintw(w, "%ld\n", number);
-  wattroff(w, A_UNDERLINE);
+  extern const char* op_name[];
+  if (executing) wattron(w,  A_REVERSE);
+  int len = strlen(op_name[op]);
+  wprintw(w, "%s", op_name[op]);
+  if (executing) wattroff(w,  A_REVERSE);
+  wprintw(w, "%*s", 23-len, "");
+}
+
+// show register with renaming and highlight status
+//void History_t::show_reg(char sep, int orig, int phys, bool busy[])
+void Core_t::show_reg(WINDOW* w, Reg_t n, char sep, int ref)
+{
+  extern const char* reg_name[];
+  wprintw(w, "%c", sep);
+  if (busy[n]) wattron(w,  A_REVERSE);
+  if (is_store_buffer(n))
+    wprintw(w, "[sb%d=%d]", n-max_phy_regs, uses[n]);
+  else
+    wprintw(w, "%s(r%d=%d)", reg_name[ref], n, uses[n]);
+  if (busy[n]) wattroff(w, A_REVERSE);
+}
+
+
+
+void History_t::display(WINDOW* w, Core_t* c)
+{
+  if (status == History_t::Retired)  wattron(w, A_DIM);
+  if (status == History_t::Dispatch) wattron(w, A_UNDERLINE);
+  
+  char buf[256];;
+  slabelpc(buf, pc);
+  wprintw(w, "%s", buf);
+
+  if (status == History_t::Retired) {
+    sdisasm(buf, pc, ref);
+    wprintw(w, "%s", buf);
+  }
+  else {
+    uint32_t b = *(uint32_t*)pc;
+    if (insn.compressed())
+      wprintw(w, "    %04x  ", b&0xFFFF);
+    else
+      wprintw(w, "%08x  ",     b);
+    show_opcode(w, insn.opcode(), status==History_t::Executing);
+    char sep = ' ';
+    if (insn.rd()  != NOREG)   { c->show_reg(w, insn.rd(), sep, ref->rd()),  sep=','; }
+    if (insn.rs1() != NOREG)   { c->show_reg(w, insn.rd(), sep, ref->rs1()), sep=','; }
+    if (! insn.longimmed()) {
+      if (insn.rs2() != NOREG) { c->show_reg(w, insn.rd(), sep, ref->rs2()), sep=','; }
+      if (insn.rs3() != NOREG) { c->show_reg(w, insn.rd(), sep, ref->rs3()), sep=','; }
+    }
+    wprintw(w, "%c%ld", sep, insn.immed());
+  }
+
+  if (status == History_t::Dispatch) wattroff(w, A_UNDERLINE);
+  if (status == History_t::Retired)  wattroff(w, A_DIM);
 }
 
 void help_screen()
@@ -51,34 +100,8 @@ void help_screen()
   printw("\n");
   refresh();
 }
-  
 
-// show opcode highlighting execution status
-void History_t::show_opcode(WINDOW* w, bool executing)
-{
-  extern const char* op_name[];
-  if (executing) wattron(w,  A_REVERSE);
-  int len = strlen(op_name[insn.opcode()]);
-  wprintw(w, "%s", op_name[insn.opcode()]);
-  if (executing) wattroff(w,  A_REVERSE);
-  wprintw(w, "%*s", 23-len, "");
-}
-
-// show register with renaming and highlight status
-//void History_t::show_reg(char sep, int orig, int phys, bool busy[])
-void History_t::show_reg(WINDOW* w, char sep, int orig, int r, bool busy[], unsigned uses[])
-{
-  extern const char* reg_name[];
-  wprintw(w, "%c", sep);
-  if (busy[r]) wattron(w,  A_REVERSE);
-  if (is_store_buffer(r))
-    wprintw(w, "[sb%d=%d]", r-max_phy_regs, uses[r]);
-  else
-    wprintw(w, "%s(r%d=%d)", reg_name[orig], r, uses[r]);
-  if (busy[r]) wattroff(w, A_REVERSE);
-}
-
-void show_flags(WINDOW* w, unsigned flags)
+static void show_flags(WINDOW* w, unsigned flags)
 {
   wprintw(w, "%c", (flags&FLAG_busy)	? 'b' : ' ');
   wprintw(w, "%c", (flags&FLAG_qfull)	? 'f' : ' ');
@@ -89,89 +112,65 @@ void show_flags(WINDOW* w, unsigned flags)
   wprintw(w, "\t");
 }
 
-void History_t::display(WINDOW* w, bool busy[], unsigned uses[])
+void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
 {
-  if (pc==0 || insn.opcode()==Op_ZERO) {
-    wprintw(w, "*** nothing here ***");
-    return;
-  }
+  wmove(w, y, x);
+  wattron(w, A_UNDERLINE);
+  wprintw(w, "  cycle\tflags\t\tpc label\t       pc  hex insn  opcode\treg(renamed=uses), [stbuf]");
+  wprintw(w, "%ld\n", number);
+  wattroff(w, A_UNDERLINE);
 
-  if (status==STATUS_retired)  wattron(w, A_DIM);
-  if (status==STATUS_dispatch) wattron(w, A_UNDERLINE);
-  
-  char buf[256];;
-  slabelpc(buf, pc);
-  wprintw(w, "%s", buf);
-
-  if (status == STATUS_retired) {
-    sdisasm(buf, pc, ref);
-    wprintw(w, "%s", buf);
-  }
-  else {
-    uint32_t b = *(uint32_t*)pc;
-    if (insn.compressed())
-      wprintw(w, "    %04x  ", b&0xFFFF);
-    else
-      wprintw(w, "%08x  ",     b);
-    show_opcode(w, status==STATUS_execute);
-    char sep = ' ';
-    if (insn.rd()  != NOREG)   { show_reg(w, sep, ref->rd(),  insn.rd() , busy, uses); sep=','; }
-    if (insn.rs1() != NOREG)   { show_reg(w, sep, ref->rs1(), insn.rs1(), busy, uses); sep=','; }
-    if (! insn.longimmed()) {
-      if (insn.rs2() != NOREG) { show_reg(w, sep, ref->rs2(), insn.rs2(), busy, uses); sep=','; }
-      if (insn.rs3() != NOREG) { show_reg(w, sep, ref->rs3(), insn.rs3(), busy, uses); sep=','; }
-    }
-    wprintw(w, "%c%ld", sep, insn.immed());
-  }
-  
-  if (status==STATUS_dispatch) wattroff(w, A_UNDERLINE);
-  if (status==STATUS_retired)  wattroff(w, A_DIM);
-}
-
-void core_t::display_history(WINDOW* w, int y, int x, int lines)
-{
   char buf[1024];
-
   long when = cycle;		    // cycle to be printed
-  int k = insns % dispatch_history; // rob slot to display
+  int k = c->insns() % dispatch_history; // rob slot to display
+  --lines;			    // account for header line
   
   for (int l=0; l<lines-3; ++l, --when) { // leave a few blank lines
     if (when < 0)
       continue;
     wmove(w, y+when%lines, x);
     wprintw(w, "%7ld ", when);
-    show_flags(w, cycle_flags[when % cycle_history]);
-    if (when == rob[k].cycle) {
-      rob[k].display(w, busy, uses);
+    show_flags(w, c->cycle_flags[when % cycle_history]);
+    if (when == c->rob[k].clock) {
+      c->rob[k].display(w, c);
       k = (k-1+dispatch_history) % dispatch_history;
     }
     wprintw(w, "\n");
   }
 }
 
-void display_membank(WINDOW* w, int y, int x, membank_t* m)
+void Memory_t::display(WINDOW* w)
 {
-  wmove(w, y, x);
-  if (! m->active()) {
+  if (! active()) {
     wprintw(w, "-");
     return;
   }
-  if (is_store_buffer(m->rd)) {
-    wattron(w,  A_BOLD);
-    wprintw(w, "[sb%d]%ld", m->rd-max_phy_regs, m->finish-cycle);
-    wattroff(w, A_BOLD);
-  }
-  else {
-    wattron(w,  A_REVERSE);
-    wprintw(w, "(r%d)%ld", m->rd, m->finish-cycle);
-    wattroff(w, A_REVERSE);
-  }
+  wattron(w,  A_BOLD);
+  if (is_store_buffer(rd))
+    wprintw(w, "[sb%d]", rd-max_phy_regs);
+  else
+    wprintw(w, "(r%d)", rd);
+  wprintw(w, "%lld", cycle-finish);
+  wattroff(w, A_BOLD);
 }
+
+void Memory_t::show_as_port(WINDOW* w)
+{
+  if (! active())
+    return;
+
+  wprintw(w, "[%ld]", mem_bank(addr));
+  if (is_store_buffer(rd))
+    wprintw(w, "sb%d", rd-max_phy_regs);
+  else
+    wprintw(w, "r%d", rd);
+  wprintw(w, "+%lld", finish);
+}
+
  
 void display_memory(WINDOW* w, int y, int x)
 {
   const int fieldwidth = 12;
-  wclear(w);
   wmove(w, y, x);
   wprintw(w, "Channel");
   for (int k=0; k<memory_banks; ++k) {
@@ -179,13 +178,24 @@ void display_memory(WINDOW* w, int y, int x)
     wprintw(w, "bank[%d]", k);
   }
   for (int j=0; j<memory_channels; ++j) {
-    wprintw(w, "%d ", j);
-    display_membank(w, y+j+1, 3, &memport[j]);
-    for (int k=0; k<memory_banks; ++k)
-      display_membank(w, y+j+1, x+4+(k+1)*fieldwidth, &memory[j][k]);
+    wmove(w, y+j+1, 3);
+    port[j].show_as_port(w);
+    for (int k=0; k<memory_banks; ++k) {
+      wmove(w, y+j+1, 0);
+      wprintw(w, "%d ", j);
+      wmove(w, y+j+1, x+4+(k+1)*fieldwidth);
+      memory[j][k].display(w);
+    }
   }
-  //wnoutrefresh(w);
 }
+
+
+
+
+
+
+// leftover junk
+#if 0
 
 
 /*
@@ -201,7 +211,7 @@ static void LocalExceptionHandler(int signum) {
 
 static struct sigaction localAction = { &LocalExceptionHandler, };
 
-static void fastrun_without_display(core_t* cpu)
+static void fastrun_without_display(Core_t* cpu)
 {
   struct sigaction sigsegv_buf, sigbus_buf, sigint_buf;
   // new actions
@@ -226,9 +236,6 @@ static void fastrun_without_display(core_t* cpu)
     sigaction(SIGSEGV, &sigsegv_buf, 0);
     sigaction(SIGBUS,  &sigbus_buf,  0);
     sigaction(SIGINT,  &sigint_buf,  0);
-
-    refresh();
-    wrefresh(winbuf[frontwin]);
     return;
   }
   endwin();
@@ -238,13 +245,25 @@ static void fastrun_without_display(core_t* cpu)
     WINDOW* w = winbuf[frontwin];
     wclear(w);
     display_memory(w, 0, 0);
-    display_header(w, 2, 0);
-    cpu->display_history(w, 3, 0, LINES-3);
+    cpu->display_history(w, 2, 0, LINES-2);
     fprintf(stderr, "\r\33[2K%ld %ld", cycle, cpu->insns);
   } // infinite loop
 }
 
+
+
+
 #define remember_cycle() { frontwin=(frontwin+1)%window_buffers; WINDOW* w=winbuf[frontwin]; wclear(w); display_memory(w, 0, 0); display_header(w, 2, 0); display_history(w, 3, 0, LINES-5); wrefresh(w); }
+
+void core_t::safe_cycle()
+{
+  hart_t* h = this;
+  single_step();		// use uspike state
+  expected = i->rd()==NOREG ? ~0 : h->s.xrf[i->rd()];
+  
+  simulate_cycle();
+  remember_cycle();
+}
 
 
 void core_t::interactive()
@@ -274,8 +293,7 @@ void core_t::interactive()
  infinite_loop:
   while ((ch=getch()) == ERR) {
     if (freerun && cycle < stop_cycle) {
-      simulate_cycle();
-      remember_cycle();
+      safe_cycle();
       wrefresh(winbuf[frontwin]);
     }
     if (framerate)
@@ -296,13 +314,21 @@ void core_t::interactive()
     while ((ch=getch()) == ERR)
       usleep(100000);
     break;
+      
+  case 'f':
+    if (behind > 0) {
+      --behind;
+      overwrite(winbuf[ (frontwin-behind+window_buffers) % window_buffers ], stdscr);
+      refresh();
+      goto infinite_loop;
+    }
+    // fall into single step!
   case 's':
     framerate = 20000;
     freerun = false;
     behind = 0;
     number = 0;
-    simulate_cycle();
-    remember_cycle();
+    safe_cycle();
     wrefresh(winbuf[frontwin]);
     break;
   case 'c':
@@ -335,22 +361,10 @@ void core_t::interactive()
     overwrite(winbuf[ (frontwin-behind+window_buffers) % window_buffers ], stdscr);
     refresh();
     goto infinite_loop;
-      
-  case 'f':
-    if (behind > 0)
-      --behind;
-    else
-      beep();
-    overwrite(winbuf[ (frontwin-behind+window_buffers) % window_buffers ], stdscr);
-    refresh();
-    goto infinite_loop;
   }
   goto infinite_loop;
 }
 
-  
-// leftover junk
-#if 0
 
 void show_number_vertical(WINDOW* w, int y, int x, int n, int digits)
 {

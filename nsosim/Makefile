@@ -8,15 +8,18 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
+# comment this out to disable instruction-by-instruction verification
+V := -DVERIFY
+
 B := $(RVTOOLS)/riscv-isa-sim
 
 MINUS_O := -g -O0
 
 #CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include/cava -I$(CAVA)/include/softfloat -I/../spike
 #CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include/softfloat -I../caveat -I../spike -DDEBUG
-CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include/softfloat -I../caveat -I../spike
+CXXFLAGS := $(MINUS_O) $V -I$(CAVA)/include/softfloat -I../caveat -I../spike
 
-BINS := display.o core.o perform.o nsosim.o
+BINS := memory.o core.o display.o perform.o nsosim.o 
 LIBS := $(CAVA)/lib/libcava.a ~/lib/libsoftfloat.a
 LDFLAGS := -Wl,-Ttext=70000000 -lncurses
 
@@ -26,7 +29,7 @@ nsosim:  $(BINS) $(LIBS)
 
 #perform.o: ~/include/cava/caveat.h ~/include/cava/hart.h
 
-display.o core.o perform.o nsosim.o:  core.h
+memory.o core.o display.o perform.onsosim.o:  core.h memory.h
 
 install:  nsosim
 	cp nsosim $(CAVA)/bin/.

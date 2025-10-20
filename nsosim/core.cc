@@ -1,3 +1,7 @@
+/*
+  Copyright (c) 2025 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+*/
+
 #include <cassert>
 #include <unistd.h>
 #include <ncurses.h>
@@ -6,85 +10,26 @@
 #include "hart.h"
 
 #include "core.h"
+#include "memory.h"
+
+thread_local long long cycle;
 
 
-
-thread_local long unsigned cycle;
-thread_local membank_t memory[memory_channels][memory_banks];
-thread_local membank_t memport[memory_channels];
-
-void core_t::init_simulator() {
-  memset(busy, 0, sizeof busy);
-  memset(regmap, 0, sizeof regmap);
-  // initialize register map and freelist
-  for (int k=0; k<64; ++k) {
-    regmap[k] = k;
-    uses[k] = 1;
-  }
-  numfree = 0;
-  for (int k=64; k<max_phy_regs; ++k) {
-    freelist[numfree++] = k;
-    uses[k] = 0;
-  }
-  regmap[NOREG] = NOREG;
-  uses[NOREG] = 0;
-  // initialize pipelines and issue queue
-  memset(wheel, 0, sizeof wheel);
-  last = 0;
-  nextstb = 0;
-  outstanding = 0;
-  
-  memset(&s.reg, 0, sizeof s.reg);
-
-  // get started
-  pc = get_state();
-  bb = find_bb(pc);
-  i = insnp(bb+1);
-
-  rob[insns % dispatch_history] = { 0, pc, *i, cycle, History_t::STATUS_dispatch };
-}
-
-void core_t::simulate_cycle() {
-  // retire memory operations
-  for (int j=0; j<memory_channels; ++j) {
-    for (int k=0; k<memory_banks; ++k) {
-      membank_t* m = &memory[j][k];
-      if (m->active() && m->finish==cycle) {
-	busy[m->rd] = false;
-	m->rd = NOREG;		  // indicate not active
-      }
-    }
-  }
-
-  // initiate new memory operation
-  for (int j=0; j<memory_channels; ++j) {
-    membank_t& port = memport[j];
-    if (port.active()) {
-      membank_t* m = &memory[0][ (port.addr>>3) % memory_banks ];
-      if (! m->active()) {
-	port.finish += cycle;	// previously held latency
-	*m = port;
-	port.rd = NOREG;	// indicate is free
-      }
-    }
-  }
+bool Core_t::clock_pipeline() {
   
   // retire pipelined instruction(s)
   for (int k=0; k<num_write_ports; ++k) {
     History_t* h = wheel[k][index(0)];
     wheel[k][index(0)] = 0;
-    if (h) {
-      busy[h->insn.rd()] = false;	// destination register now available
-      --outstanding;		// for serializing pipeline
-      h->status = History_t::STATUS_retired;
-    }
+    if (h)			  // note loads and stores do not use wheel
+      retire_insn(h);
   }
 
   Insn_t ir = *i;
   ATTR_bv_t attr = attributes[ir.opcode()];
-  History_t* h = &rob[insns % dispatch_history];
+  History_t* h = nextrob();
   uint16_t& flags = cycle_flags[cycle % cycle_history];
-  uintptr_t addr;
+  Addr_t addr;
   bool mem_checker_used = false;
 
   rename_input_regs(ir);
@@ -110,24 +55,19 @@ void core_t::simulate_cycle() {
 
   // commit instruction for dispatch
   acquire_reg(ir.rs1());
-  if (!ir.longimmed()) {
-    acquire_reg(ir.rs2());
-    acquire_reg(ir.rs3());
-  }
+  acquire_reg(ir.rs2());
+  acquire_reg(ir.rs3());
   rename_output_reg(ir);
 
   if (attr & ATTR_st) {
     assert(!stbuf_full());
     // allocate store buffer entry
     addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
-    s.reg[stbuf(0)].a = addr;
     if (ir.rd() == NOREG) {	// use busy bit of store buffer "register"
       ir.op_rd = stbuf(0);
       acquire_reg(ir.rd());
       busy[ir.rd()];
     }
-    nextstb = (nextstb+1) % store_buffer_length;
-
     // search for write-after-write dependency
     for (int k=1; k<store_buffer_length; ++k) {
       if (s.reg[stbuf(k)].a == addr) {        // add dependency
@@ -137,13 +77,19 @@ void core_t::simulate_cycle() {
 	break;
       }
     }
+    // fill store buffer
+    s.reg[stbuf(0)].a = addr;
+    busy[stbuf(0)] = true;
+    nextstb = (nextstb+1) % store_buffer_length;
+    
     mem_checker_used = true; // prevent issuing loads
   }
   
   // enter into phantom ROB
-  *h = { i, pc, ir, cycle, History_t::STATUS_queue };
-  ++insns;
-  ++outstanding;
+  //*h = { cycle, ir, pc, i, History_t::Queued };
+  *h = make_history(cycle, ir, pc, i, History_t::Queued);
+  _insns++;
+  _inflight++;
 
   // advance pc sequentially, but taken branch will override
   pc += ir.compressed() ? 2 : 4;
@@ -164,12 +110,19 @@ void core_t::simulate_cycle() {
  issue_from_queue:
 
   // find first ready instruction
-  h = 0;			// important!
   for (int k=0; k<last; ++k) {
-    if (ready_insn(queue[k]->insn)) {
-      h = queue[k];
+    h = queue[k];
+    if (ready_insn(h->insn)) {
       ir = h->insn;
       attr = attributes[ir.opcode()];
+      // memory operations have extra conditions
+      if (attr & (ATTR_ld|ATTR_st)) {
+	int channel = 0;
+	if (port[channel].active())
+	  continue;
+	if ((attr & ATTR_ld) && mem_checker_used)
+	  continue;
+      }
       // remove from queue
       for (int j=k+1; j<last; ++j)
 	queue[j-1] = queue[j];
@@ -178,14 +131,23 @@ void core_t::simulate_cycle() {
     }
   }
   // if here then there was no ready instruction
+  h = 0;			// important!
 
  execute_instruction:
   if (h) {  // instruction is in ir but pc is in h->pc
+
+    // simulate reading register file
+    release_reg(ir.rs1());
+    release_reg(ir.rs2());
+    release_reg(ir.rs3());
     
-    // loads check store buffer for dependency
     if (attr & (ATTR_ld|ATTR_st)) {
+      int channel = 0;
+      assert(!port[channel].active());
+      
+      // loads check store buffer for dependency
       if (attr & ATTR_ld) {
-	//mem_checker_used = true;
+	assert(mem_checker_used == false);
 	for (int k=1; k<store_buffer_length; ++k) {
 	  addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
 	  if (s.reg[stbuf(k)].a == addr) {
@@ -195,32 +157,15 @@ void core_t::simulate_cycle() {
 	  }
 	}
       }
-      int channel = 0;
-      memport[channel].addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
-      memport[channel].rd = ir.rd();
-      memport[channel].finish = latency[ir.opcode()];
-    }
-
-    // simulate reading register file
-    release_reg(ir.rs1());
-    if (! ir.longimmed()) {
-      release_reg(ir.rs2());
-      release_reg(ir.rs3());
+      port[channel] = make_mem_descr((s.reg[ir.rs1()].x + ir.immed()) & ~0x7L,
+				     (long long)latency[ir.opcode()],
+				     (Reg_t)ir.rd(),
+				     (h-rob)%dispatch_history);
+      if (is_store_buffer(ir.rd())) {
+	port[channel].check(s.reg[ir.rd()].a);
+      }
     }
     
-    // stores are actually "throws" because address already
-    //   computed and available in store buffer
-    if (is_store_buffer(ir.rd())) {
-      busy[ir.rd()] = false;
-      release_reg(ir.rd());
-      h->status = History_t::STATUS_retired;
-      --outstanding;
-    }
-    else {
-      wheel[0][ index(latency[ir.opcode()]) ] = h;
-      h->status = History_t::STATUS_execute;
-    }
-
     // Tricky code here:  pc is actually associated with dispatched
     // instruction, whereas if we issued from queue ir and h->pc are
     // associated with instruction just dequeued.  Therefore if we
@@ -231,6 +176,13 @@ void core_t::simulate_cycle() {
       bb = find_bb(pc);
       i = insnp(bb+1);
     }
+    
+    // Stores are actually "throws" because address already
+    // computed and available in store buffer.
+    // Loads and stores do not use wheel.
+    h->status = History_t::Executing;
+    if ((attr & (ATTR_ld|ATTR_st)) == 0)
+      wheel[0][ index(latency[ir.opcode()]) ] = h;
   }
 
  finish_cycle:
@@ -239,19 +191,19 @@ void core_t::simulate_cycle() {
   // following code just for display, gets rewritten next iteration
   ir = *i;
   rename_input_regs(ir);
-  rob[insns % dispatch_history] = { i, pc, ir, cycle, History_t::STATUS_dispatch };
+  *nextrob() = make_history(cycle, ir, pc, i, History_t::Dispatch);
+
+  return h != 0;		// was instruction dispatched?
 }
 
-void core_t::rename_input_regs(Insn_t& ir)
+void Core_t::rename_input_regs(Insn_t& ir)
 {
   if (ir.rs1()!=NOREG) ir.op_rs1 = regmap[ir.rs1()];
-  if (!ir.longimmed()) {
-    if (ir.rs2()!=NOREG) ir.op.rs2 = regmap[ir.rs2()];
-    if (ir.rs3()!=NOREG) ir.op.rs3 = regmap[ir.rs3()];
-  }
+  if (ir.rs2()!=NOREG) ir.op.rs2 = regmap[ir.rs2()];
+  if (ir.rs3()!=NOREG) ir.op.rs3 = regmap[ir.rs3()];
 }
 
-void core_t::rename_output_reg(Insn_t& ir)
+void Core_t::rename_output_reg(Insn_t& ir)
 {
   uint8_t old_rd = ir.rd();
   if (old_rd!=0 && old_rd!=NOREG) {
@@ -259,11 +211,13 @@ void core_t::rename_output_reg(Insn_t& ir)
     ir.op_rd = freelist[--numfree];
     regmap[old_rd] = ir.rd();
     acquire_reg(ir.rd());
+    // now model getting register for in flight
+    acquire_reg(ir.rd());
     busy[ir.rd()] = true;
   }
 }
 
-bool core_t::ready_insn(Insn_t ir)
+bool Core_t::ready_insn(Insn_t ir)
 {
   if (busy[ir.rs1()]) return false;
   if (!ir.longimmed()) {
@@ -273,14 +227,28 @@ bool core_t::ready_insn(Insn_t ir)
   return true;
 }
 
-void core_t::acquire_reg(uint8_t r)
+void Core_t::retire_insn(History_t* h)
+{
+  Insn_t ir = h->insn;
+  h->status = History_t::Retired;
+#ifdef VERIFY
+  if (ir.rd()!=NOREG && !is_store_buffer(ir.rd())) {
+    if (s.reg[ir.rd()].a != h->expected_rd)
+      h->status = History_t::Mismatch;
+  }
+#endif
+  release_reg(ir.rd());
+  --_inflight;
+}
+
+void Core_t::acquire_reg(uint8_t r)
 {
   if (r==0 || r==NOREG)
     return;
   ++uses[r];
 }
 
-void core_t::release_reg(uint8_t r)
+void Core_t::release_reg(uint8_t r)
 {
   if (r==0 || r==NOREG)
     return;
@@ -288,9 +256,18 @@ void core_t::release_reg(uint8_t r)
   if (--uses[r] == 0 && r < max_phy_regs)
     freelist[numfree++] = r;
 }
+  
+History_t make_history(long long c, Insn_t ir, Addr_t p, Insn_t* i, History_t::Status_t s) {
+  History_t h;
+  h.clock=c;
+  h.insn=ir;
+  h.pc=p;
+  h.ref=i;
+  h.status=s;
+  return h;
+}
 
-
-uintptr_t core_t::get_state()
+uintptr_t Core_t::get_state()
 {
   hart_t* h = this;
   for (int k=1; k<32; k++)
@@ -302,7 +279,7 @@ uintptr_t core_t::get_state()
   return h->pc;
 }
 
-void core_t::put_state(uintptr_t pc)
+void Core_t::put_state(uintptr_t pc)
 {
   hart_t* h = this;
   for (int k=0; k<32; k++)
@@ -318,7 +295,7 @@ void core_t::put_state(uintptr_t pc)
 
 long ooo_riscv_syscall(hart_t* h, long a0)
 {
-  core_t* c = (core_t*)h;
+  Core_t* c = (Core_t*)h;
   long a1 = c->s.reg[c->regmap[11]].x;
   long a2 = c->s.reg[c->regmap[12]].x;
   long a3 = c->s.reg[c->regmap[13]].x;
@@ -331,29 +308,47 @@ long ooo_riscv_syscall(hart_t* h, long a0)
 
 int clone_proxy(hart_t* h)
 {
-  core_t* parent = (core_t*)h;
+  Core_t* parent = (Core_t*)h;
   parent->put_state(parent->pc);
-  core_t* child = new core_t(parent);
+  Core_t* child = new Core_t(parent);
   return clone_thread(child);
 }
 
-void core_t::run_fast()
-{
-  for (;;) {
-    uintptr_t jumped = perform(i, pc);
-    if (jumped) {
-      pc = jumped;
-      bb = find_bb(pc);
-      i = insnp(bb+1);
-    }
-    else {
-      pc += i->compressed() ? 2 : 4;
-      if (++i >= insnp(bb+1)+bb->count) {
-	bb = find_bb(pc);
-	i = insnp(bb+1);
-      }
-    }
-    ++insns;
-    ++cycle;
+static void null_simulator(class hart_t* h, Header_t* bb, uintptr_t* ap) { }
+
+void Core_t::reset() {
+  simulator = null_simulator;	// in hart_t
+  
+  memset(busy, 0, sizeof busy);
+  memset(regmap, 0, sizeof regmap);
+  // initialize register map and freelist
+  for (int k=0; k<64; ++k) {
+    regmap[k] = k;
+    uses[k] = 1;
   }
+  numfree = 0;
+  for (int k=64; k<max_phy_regs; ++k) {
+    freelist[numfree++] = k;
+    uses[k] = 0;
+  }
+  regmap[NOREG] = NOREG;
+  uses[NOREG] = 0;
+  // initialize pipelines and issue queue
+  memset(wheel, 0, sizeof wheel);
+  memset(memory, 0, sizeof memory);
+  last = 0;
+  nextstb = 0;
+  _inflight = 0;
+  
+  memset(&s.reg, 0, sizeof s.reg);
+  memset(rob, 0, sizeof rob);
+  memset(cycle_flags, 0, sizeof cycle_flags);
+
+  // get started
+  pc = get_state();
+  bb = find_bb(pc);
+  i = insnp(bb+1);
+
+  *nextrob() = make_history(cycle, *i, pc, 0, History_t::Dispatch);
 }
+

@@ -49,8 +49,8 @@ public:
   Opcode_t opcode() const { return op_code; }
   uint rd()  const { return op_rd; }
   uint rs1() const { return op_rs1; }
-  uint rs2() const { return op.rs2; }
-  uint rs3() const { return op.rs3; }
+  uint rs2() const { return longimmed() ? NOREG : op.rs2; }
+  uint rs3() const { return longimmed() ? NOREG : op.rs3; }
   bool compressed() const { return op_code <= Last_Compressed_Opcode; }
 
   friend Insn_t decoder(uintptr_t pc);

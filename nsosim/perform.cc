@@ -42,7 +42,7 @@ inline double m64(freg_t x) { union { freg_t r; double f; } cv; cv.r=x; return c
 inline float32_t n32(float  x)  { union { float32_t t; float  f; } cv; cv.f=x; return cv.t; }
 inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; return cv.t; }
 
-uintptr_t core_t::perform(Insn_t* i, uintptr_t pc)
+Addr_t Core_t::perform(Insn_t* i, Addr_t pc)
 {
   uintptr_t addrbuf[100];
   uintptr_t* ap = addrbuf;
@@ -70,7 +70,11 @@ uintptr_t core_t::perform(Insn_t* i, uintptr_t pc)
 #define w64(e)	s.reg[i->rd()].f = freg(n64(e))
 	
 #define LOAD(T, a)     *(T*)(*ap++=a)
+#ifndef VERIFY
+#define STORE(T, a, v)
+#else
 #define STORE(T, a, v) *(T*)(*ap++=a)=(v)
+#endif
       
 #define fence(x)
 #define fence_i(x)

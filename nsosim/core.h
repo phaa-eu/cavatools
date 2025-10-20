@@ -11,11 +11,7 @@ const int dispatch_history = 128;
 // timing wheel for simulating pipelines
 const int num_write_ports = 1;
 const int max_latency = 32;	// for timing wheel
-
-const int memory_channels = 1;
-const int memory_banks = 8;
-
-extern thread_local long unsigned cycle;	// count number of processor cycles
+extern uint8_t latency[];	// for each opcode
 
 
 // Unified physical register file + store buffer.
@@ -28,6 +24,12 @@ const int regfile_size = max_phy_regs + store_buffer_length;
 inline bool is_store_buffer(uint8_t r) {
   return max_phy_regs<=r && r<max_phy_regs+store_buffer_length;
 }
+
+
+
+typedef uintptr_t Addr_t;
+typedef uint8_t Reg_t;
+
 
 union simreg_t {
   reg_t x;			// for integer
@@ -42,78 +44,46 @@ struct simulator_state_t {
   unsigned frm;
 };
 
-// Two structures for visual debugging:
-//   1.  Per cycle flags indicating what happend on that cycle
-//   2.  Per instruction dispatched to show renaming, etc.
-//       Like a phantom reorder buffer.
 
-#define FLAG_busy	0x001	// instruction has busy registers
-#define FLAG_qfull	0x002	// issue queue is full
-#define FLAG_stuaddr	0x004	// store address not yet available
-#define FLAG_stbfull	0x008	// store buffer is full
-#define FLAG_serialize	0x010	// waiting for pipeline to flush
-#define FLAG_nofree	0x020	// register free list is empty
-
-// Phantom reorder buffer for visual debugging
-struct History_t {
-  Insn_t* ref;			// original instruction
-  uintptr_t pc;			// at this PC
+struct History_t {		// dispatched instruction
+  long long clock;		// at this time
   Insn_t insn;			// with renamed registers
-  unsigned long cycle;		// dispatch time
-  enum { STATUS_retired, STATUS_execute, STATUS_queue, STATUS_dispatch } status;
-  void display(WINDOW* w, bool busy[], unsigned uses[]);
-private:
-  void show_opcode(WINDOW* w, bool executing);
-  void show_reg(WINDOW* w, char sep, int orig, int phys, bool busy[], unsigned uses[]);
+  Addr_t pc;			// at this PC
+  Insn_t* ref;			// original instruction (for display)
+#ifdef VERIFY
+  uintptr_t expected_rd;	// for checking against uspike
+#endif
+  enum Status_t { Retired, Executing, Queued, Dispatch, Mismatch } status;
+  
+  void display(WINDOW* w, class Core_t*);
 };
 
-
-// Memory bank descriptor
-
-struct membank_t {
-  uintptr_t addr;		// working on this address
-  long unsigned finish;		// cycle number
-  //History_t* h;			// for accessing flags
-  uint8_t rd;			// destination register or associated store buffer
-  bool active() { return rd != NOREG; }
-  membank_t()
-  { rd = NOREG; }
-};
+History_t make_history(long long c, Insn_t ir, Addr_t p, Insn_t* i, History_t::Status_t s);
 
 
-// Memory system modelled outside of processor core
+extern thread_local long long cycle;        // count number of processor cycles
 
-extern thread_local long unsigned cycle;	// count number of processor cycles
-extern thread_local membank_t memory[memory_channels][memory_banks];
-extern thread_local membank_t memport[memory_channels];
 
-// one simulation thread
-class core_t : public hart_t {
-public:
+
+
+
+class Core_t : public hart_t {
   simulator_state_t s;		// replaces uspike state
-  long unsigned insns;		// count number of instructions executed
-  long outstanding;		// number of instructions in flight
+  long long _insns;		// count number of instructions executed
+  long long _inflight;		// number of instructions in flight
 
-  Header_t* bb;			// current basic blocka
-  Insn_t* i;			// current decoded instruction
-  uintptr_t pc;			// at this address
-
-  // renaming register file
+  // physical register file map
   uint8_t regmap[256];		// architectural to physical
-  
-  bool busy[regfile_size];	// register waiting to be filled
-  unsigned uses[regfile_size];	// number of readers
-  
+  bool busy[regfile_size];	// register waiting for execution value
+  unsigned uses[regfile_size];	// reference count
   uint8_t freelist[max_phy_regs];
   int numfree;			// maintained as stack
-  bool no_free_reg(Insn_t ir) { return !ir.rd() || ir.rd()==NOREG || numfree==max_phy_regs-64; };
+  
 
-  // store buffer (within physical register file)
-  int nextstb;	       // next store position in circular store buffer
+  // store buffer (within physical register file above max_phy_regs)
+  int nextstb;			// next entry in circular store buffer
   int stbuf(int k) { assert(0<=k && k<store_buffer_length);
     return (nextstb-k+store_buffer_length)%store_buffer_length + max_phy_regs; }
-  //bool stbuf_full() { return uses[stbuf(0)] > 0; }
-  bool stbuf_full() { return busy[stbuf(0)]; }
 
   // issue queue
   History_t* queue[issue_queue_length];
@@ -123,48 +93,63 @@ public:
   History_t* wheel[num_write_ports][max_latency+1];
   int index(unsigned k) { assert(k<=max_latency); return (cycle+k)%(max_latency+1); }
 
+  // Structures for visual debugging
+  History_t rob[dispatch_history];     // phantom reorder buffer
+      
+  uint16_t cycle_flags[cycle_history]; // what happend this cycle
+#define FLAG_busy	0x001	// instruction has busy registers
+#define FLAG_qfull	0x002	// issue queue is full
+#define FLAG_stuaddr	0x004	// store address not yet available
+#define FLAG_stbfull	0x008	// store buffer is full
+#define FLAG_serialize	0x010	// waiting for pipeline to flush
+#define FLAG_nofree	0x020	// register free list is empty
 
-  // what happened on this cycle
-  uint16_t cycle_flags[cycle_history];
+  // Current instruction waiting for dispatch
+  Header_t* bb;			// current basic blocka
+  Insn_t* i;			// current decoded instruction
+  Addr_t pc;			// at this address
 
-  // phantom reorder buffer for visual debugging
-  // rob indexed by [executed() % history_depth]
-  History_t rob[dispatch_history];
+  friend long ooo_riscv_syscall(hart_t* h, long a0);
+  friend int clone_proxy(hart_t* h);
+
+public:
+  void reset();
+  Core_t(hart_t* from) :hart_t(from) { reset(); }
+  Core_t(int argc, const char* argv[], const char* envp[]) :hart_t(argc, argv, envp) { reset(); }
+
+  long long inflight() { return _inflight; }
+  History_t* nextrob() { return &rob[_insns % dispatch_history]; }
+
+  bool clock_pipeline();
+  
+  bool no_free_reg(Insn_t ir) { return numfree==max_phy_regs-64; };
+  bool stbuf_full() { return busy[stbuf(0)]; }
+  
+  void show_reg(WINDOW* w, Reg_t n, char sep, int ref);
   
   void rename_input_regs(Insn_t& ir);
   void rename_output_reg(Insn_t& ir);
   bool ready_insn(Insn_t ir);
+  void retire_insn(History_t* h);
   void acquire_reg(uint8_t r);
   void release_reg(uint8_t r);
   
   uintptr_t get_state();
   void put_state(uintptr_t pc);
+  uintptr_t get_rd_from_spike() { return ((hart_t*)this)->s.xrf[i->rd()]; }
 
-  uintptr_t perform(Insn_t* i, uintptr_t pc);
+  Addr_t perform(Insn_t* i, Addr_t pc);
+
+  static Core_t* list() { return (Core_t*)hart_t::list(); }
+  Core_t* next() { return (Core_t*)hart_t::next(); }
+
+  long long insns() { return _insns; }
   
-public:
-  core_t(hart_t* from) :hart_t(from) { }
-  core_t(int argc, const char* argv[], const char* envp[]) :hart_t(argc, argv, envp) { }
-
-  long unsigned cpu_cycles() { return cycle; }
-  
-  friend long ooo_riscv_syscall(hart_t* h, long a0);
-  friend int clone_proxy(hart_t* h);
-  friend void simulator(hart_t* h);
-
-  void init_simulator();
-  void simulate_cycle();
-  void fini_simulator();
-
-  static core_t* list() { return (core_t*)hart_t::list(); }
-  core_t* next() { return (core_t*)hart_t::next(); }
-
-  void display_history(WINDOW*w, int y, int x, int lines);
-  void interactive();
-  void run_fast();
+  friend void display_history(WINDOW* w, int y, int x, Core_t* c, int lines);
+  friend void interactive(Core_t* cpu);
 };
 
 long ooo_riscv_syscall(hart_t* h, long a0);
 int clone_proxy(hart_t* h);
 
-extern uint8_t latency[];
+void display_history(WINDOW* w, int y, int x, Core_t* c, int lines);
