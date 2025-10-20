@@ -94,11 +94,13 @@ void interactive(Core_t* cpu)
   while ((ch=getch()) == ERR) {
     if (cycle < stop_cycle) {
 #ifdef VERIFY
+      clock_memory_system();
       if (cpu->clock_pipeline()) {
 	cpu->single_step();
 	cpu->nextrob()->expected_rd = cpu->get_rd_from_spike();
       }
 #else
+      clock_memory_system();
       (void) cpu->clock_pipeline();
 #endif
 
@@ -156,17 +158,18 @@ void interactive(Core_t* cpu)
     goto infinite_loop;
     
   case 'c':
-    stop_cycle = number ? number : cycle+1;
+    stop_cycle = number ? number : LLONG_MAX;
     number = 0;
     behind = 0;
     goto infinite_loop;
   case 'C':
-    stop_cycle = number ? number : cycle+1;
+    stop_cycle = number ? number : LLONG_MAX;
     number = 0;
     behind = 0;
     framerate = 0;
     goto infinite_loop;
   }
+  stop_cycle = cycle;
   goto infinite_loop;
 }
 
@@ -210,11 +213,13 @@ int main(int argc, const char* argv[], const char* envp[])
     cpu->reset();
     for (;;) {
 #ifdef VERIFY
+      clock_memory_system();
       if (cpu->clock_pipeline()) {
 	cpu->single_step();
 	cpu->nextrob()->expected_rd = cpu->get_rd_from_spike();
       }
 #else
+      clock_memory_system();
       (void) cpu->clock_pipeline();
 #endif
     }

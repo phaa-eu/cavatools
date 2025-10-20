@@ -48,8 +48,11 @@ void Core_t::show_reg(WINDOW* w, Reg_t n, char sep, int ref)
 
 void History_t::display(WINDOW* w, Core_t* c)
 {
-  if (status == History_t::Retired)  wattron(w, A_DIM);
-  if (status == History_t::Dispatch) wattron(w, A_UNDERLINE);
+  switch (status) {
+  case History_t::Mismatch:	wattron(w, A_REVERSE|A_BLINK); break;
+  case History_t::Retired:	wattron(w, A_DIM); break;
+  case History_t::Dispatch:	wattron(w, A_UNDERLINE); break;
+  }
   
   char buf[256];;
   slabelpc(buf, pc);
@@ -76,8 +79,11 @@ void History_t::display(WINDOW* w, Core_t* c)
     wprintw(w, "%c%ld", sep, insn.immed());
   }
 
-  if (status == History_t::Dispatch) wattroff(w, A_UNDERLINE);
-  if (status == History_t::Retired)  wattroff(w, A_DIM);
+  switch (status) {
+  case History_t::Mismatch:	wattroff(w, A_REVERSE|A_BLINK); break;
+  case History_t::Retired:	wattroff(w, A_DIM); break;
+  case History_t::Dispatch:	wattroff(w, A_UNDERLINE); break;
+  }
 }
 
 void help_screen()

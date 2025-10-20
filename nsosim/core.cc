@@ -19,10 +19,9 @@ bool Core_t::clock_pipeline() {
   
   // retire pipelined instruction(s)
   for (int k=0; k<num_write_ports; ++k) {
-    History_t* h = wheel[k][index(0)];
+    if (wheel[k][index(0)])
+      retire_insn(wheel[k][index(0)]);
     wheel[k][index(0)] = 0;
-    if (h)			  // note loads and stores do not use wheel
-      retire_insn(h);
   }
 
   Insn_t ir = *i;
@@ -177,12 +176,16 @@ bool Core_t::clock_pipeline() {
       i = insnp(bb+1);
     }
     
-    // Stores are actually "throws" because address already
-    // computed and available in store buffer.
-    // Loads and stores do not use wheel.
-    h->status = History_t::Executing;
-    if ((attr & (ATTR_ld|ATTR_st)) == 0)
+    if (attr & (ATTR_uj|ATTR_cj) || is_store_buffer(ir.rd())) {
+      // Stores are actually "throws" because address already
+      // computed and available in store buffer.
+      // Loads and AMO exchanges use wheel.  Stores retire immediately.
+      retire_insn(h);
+    }
+    else {
+      h->status = History_t::Executing;
       wheel[0][ index(latency[ir.opcode()]) ] = h;
+    }
   }
 
  finish_cycle:
@@ -237,6 +240,7 @@ void Core_t::retire_insn(History_t* h)
       h->status = History_t::Mismatch;
   }
 #endif
+  busy[ir.rd()] = false;
   release_reg(ir.rd());
   --_inflight;
 }
