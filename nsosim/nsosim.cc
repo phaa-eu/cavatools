@@ -234,6 +234,9 @@ int main(int argc, const char* argv[], const char* envp[])
     }
     start_time();
     cpu->reset();
+
+    cpu->test_run();
+    
     for (;;) {
 #ifdef VERIFY
       History_t* h = cpu->nextrob();

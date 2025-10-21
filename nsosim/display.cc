@@ -132,7 +132,7 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
 {
   wmove(w, y, 0);
   wprintw(w, "sb[");
-  for (int k=0; k<store_buffer_length; ++k) {
+  for (int k=0; k<lsq_length; ++k) {
     if (c->busy[k+max_phy_regs]) wattron(w, A_REVERSE);
     wprintw(w, " ");
     if (c->busy[k+max_phy_regs]) wattroff(w, A_REVERSE);

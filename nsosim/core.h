@@ -3,7 +3,7 @@
 */
 
 const int issue_queue_length = 16;
-const int store_buffer_length = 8;
+const int lsq_length = 8;	// load-store queue
 
 const int dispatch_history = 4096;
 const int cycle_history = 4*dispatch_history;
@@ -14,15 +14,15 @@ const int max_latency = 32;	// for timing wheel
 extern uint8_t latency[];	// for each opcode
 
 
-// Unified physical register file + store buffer.
+// Unified physical register file + load-store queue
 //   First part holds physical registers with a free list.
-//   Second part holds store buffer entries.
+//   Second part holds lsq entries.
 //
 const int max_phy_regs = 128;
-const int regfile_size = max_phy_regs + store_buffer_length;
+const int regfile_size = max_phy_regs + lsq_length;
 
 inline bool is_store_buffer(uint8_t r) {
-  return max_phy_regs<=r && r<max_phy_regs+store_buffer_length;
+  return max_phy_regs<=r && r<max_phy_regs+lsq_length;
 }
 
 
@@ -55,6 +55,7 @@ struct History_t {		// dispatched instruction
   uintptr_t actual_rd;		// for display
 #endif
   enum Status_t { Retired, Executing, Queued, Queued_stbchk, Dispatch } status;
+  Reg_t lsqpos;			// address in register here
   
   void display(WINDOW* w, class Core_t*);
 };
@@ -63,9 +64,6 @@ struct History_t {		// dispatched instruction
 
 
 extern thread_local long long cycle;        // count number of processor cycles
-
-
-
 
 
 class Core_t : public hart_t {
@@ -79,12 +77,15 @@ class Core_t : public hart_t {
   unsigned uses[regfile_size];	// reference count
   uint8_t freelist[max_phy_regs];
   int numfree;			// maintained as stack
-  
 
-  // store buffer (within physical register file above max_phy_regs)
-  int nextstb;			// next entry in circular store buffer
-  int stbuf(int k) { assert(0<=k && k<store_buffer_length);
-    return (nextstb-k+store_buffer_length)%store_buffer_length + max_phy_regs; }
+  // Store buffer implemented within physical register file structure to share code.
+  // It consists of a range of registers with their busy[] and uses[] entries.
+  // The register value s.reg[].a holds the address.
+  
+  int lsqtail;			// first available entry in circular store buffer
+  bool lsq_active(Reg_t r);	// this lsq entry is in use
+  bool lsqbuf_full();
+  Reg_t allocate_lsq_entry(uintptr_t addr, bool is_store);
 
   // issue queue
   History_t* queue[issue_queue_length];
@@ -124,11 +125,7 @@ public:
   //History_t* nextrob(int k =0) { return &rob[(_insns+k+dispatch_history) % dispatch_history]; }
 
   bool clock_pipeline();
-  
   bool no_free_reg(Insn_t ir) { return numfree==max_phy_regs-64; };
-  //bool stbuf_full() { return busy[stbuf(0)]; }
-  bool stbuf_full() { return busy[stbuf(0)] || uses[stbuf(0)]>0; }
-  
   void show_reg(WINDOW* w, Reg_t n, char sep, int ref);
   
   void rename_input_regs(Insn_t& ir);
@@ -136,7 +133,8 @@ public:
   bool ready_insn(Insn_t ir);
   void acquire_reg(uint8_t r);
   void release_reg(uint8_t r);
-  Reg_t check_store_buffer(uintptr_t addr, Reg_t start);
+  Reg_t check_store_buffer(uintptr_t addr, Reg_t k =NOREG); // k=start+1 position
+  bool lsq_full();
   
   uintptr_t get_state();
   void put_state(uintptr_t pc);
@@ -148,6 +146,7 @@ public:
   Core_t* next() { return (Core_t*)hart_t::next(); }
 
   long long insns() { return _insns; }
+  void test_run();
   
   friend void clock_memory_system(Core_t* cpu);
   friend void display_history(WINDOW* w, int y, int x, Core_t* c, int lines);
