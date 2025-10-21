@@ -16,13 +16,17 @@ thread_local long long cycle;
 
 
 bool Core_t::clock_pipeline() {
-  
+  uint16_t& flags = cycle_flags[cycle % cycle_history];
+  flags = 0;
+
   // Retire pipelined instruction(s)
   for (int k=0; k<num_write_ports; ++k) {
     History_t* h = wheel[k][index(0)];
     if (h) {
       Insn_t ir = h->insn;
       h->status = History_t::Retired;
+      if (attributes[ir.opcode()] & ATTR_ld) flags |= RETIRE_ld;
+      if (attributes[ir.opcode()] & ATTR_st) flags |= RETIRE_st;
       busy[ir.rd()] = false;
       release_reg(ir.rd());
       if (h->lsqpos != NOREG) {
@@ -38,7 +42,6 @@ bool Core_t::clock_pipeline() {
   History_t* h = nextrob();
   Insn_t ir = *i;
   ATTR_bv_t attr = attributes[ir.opcode()];
-  uint16_t& flags = cycle_flags[cycle % cycle_history];
   Addr_t addr;
   bool mem_checker_used = false;
   bool dispatched = false;
@@ -142,7 +145,6 @@ bool Core_t::clock_pipeline() {
       for (int j=k+1; j<last; ++j)
 	queue[j-1] = queue[j];
       --last;
-      ir = h->insn;
       goto execute_instruction;
     }
   }
@@ -154,10 +156,7 @@ bool Core_t::clock_pipeline() {
   if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) {
     int channel = 0;
     assert(!port[channel].active());
-    port[channel] = make_mem_descr((s.reg[ir.rs1()].x + ir.immed()) & ~0x7L,
-				   (long long)latency[ir.opcode()],
-				   (Reg_t)ir.rd(),
-				   (h-rob)%dispatch_history);
+    port[channel] = make_mem_descr(s.reg[h->lsqpos].a, latency[ir.opcode()], h);
   }
     
   // simulate reading register file
@@ -172,16 +171,20 @@ bool Core_t::clock_pipeline() {
     
   addr = perform(&ir, h->pc);
 #ifdef VERIFY
-  h->actual_rd = (ir.rd()<max_phy_regs) ? s.reg[ir.rd()].a : 0;
+  h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
 #endif
   if (addr) {		// if no taken branch pc already incremented
     pc = addr;
     bb = find_bb(pc);
     i = insnp(bb+1);
   }
+  
+  wheel[0][ index(latency[ir.opcode()]) ] = h;
+  h->status = History_t::Executing;
 
+#if 0
   // stores retire immediately
-  if ((attr & ATTR_st) & !(attr & ATTR_amo)) {
+  if ((attr & ATTR_st) && !(attr & ATTR_amo)) {
     h->status = History_t::Retired;
     busy[ir.rd()] = false;
     release_reg(ir.rd());
@@ -193,6 +196,7 @@ bool Core_t::clock_pipeline() {
     wheel[0][ index(latency[ir.opcode()]) ] = h;
     h->status = History_t::Executing;
   }
+#endif
 
  finish_cycle:
   ++cycle;
@@ -279,6 +283,7 @@ Reg_t Core_t::allocate_lsq_entry(uintptr_t addr, bool is_store)
 {
   Reg_t n = lsqtail + max_phy_regs;
   lsqtail = (lsqtail+1) % lsq_length;
+  assert(is_store_buffer(n));
   s.reg[n].a = addr;		// mark in use
   busy[n] = is_store;
   acquire_reg(n);

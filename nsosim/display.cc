@@ -86,6 +86,14 @@ void History_t::display(WINDOW* w, Core_t* c)
       if (insn.rs3() != NOREG) { c->show_reg(w, insn.rs3(), sep, ref.rs3()), sep=','; }
     }
     wprintw(w, "%c%ld", sep, insn.immed());
+
+    if (lsqpos != NOREG) {
+    //if (attributes[insn.opcode()] & (ATTR_ld|ATTR_st)) {
+      if (c->busy[lsqpos]) wattron(w,  A_REVERSE);
+      wprintw(w, "\tsb%d=%d", lsqpos-max_phy_regs, c->uses[lsqpos]);
+      if (c->busy[lsqpos]) wattroff(w,  A_REVERSE);
+      wprintw(w, "[%16lx]", c->s.reg[lsqpos].a);
+    }
   }
 
   if (mismatch) wattroff(w, A_REVERSE);
@@ -125,6 +133,9 @@ static void show_flags(WINDOW* w, unsigned flags)
   wprintw(w, "%c", (flags&FLAG_nofree)		? 'f' : ' ');
   wprintw(w, "%c", (flags&FLAG_serialize)	? '!' : ' ');
   wprintw(w, "%c", (flags&FLAG_stbhit)		? 'h' : ' ');
+  
+  wprintw(w, "%c", (flags&RETIRE_ld)		? 'L' : ' ');
+  wprintw(w, "%c", (flags&RETIRE_st)		? 'S' : ' ');
   wprintw(w, "\t");
 }
 

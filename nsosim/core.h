@@ -18,7 +18,8 @@ extern uint8_t latency[];	// for each opcode
 //   First part holds physical registers with a free list.
 //   Second part holds lsq entries.
 //
-const int max_phy_regs = 128;
+//const int max_phy_regs = 128;
+const int max_phy_regs = 68;
 const int regfile_size = max_phy_regs + lsq_length;
 
 inline bool is_store_buffer(uint8_t r) {
@@ -67,17 +68,18 @@ extern thread_local long long cycle;        // count number of processor cycles
 
 
 class Core_t : public hart_t {
-  simulator_state_t s;		// replaces uspike state
   long long _insns;		// count number of instructions executed
   long long _inflight;		// number of instructions in flight
-
+public:
+  simulator_state_t s;		// replaces uspike state
   // physical register file map
   uint8_t regmap[256];		// architectural to physical
   bool busy[regfile_size];	// register waiting for execution value
   unsigned uses[regfile_size];	// reference count
+private:
   uint8_t freelist[max_phy_regs];
   int numfree;			// maintained as stack
-
+  
   // Store buffer implemented within physical register file structure to share code.
   // It consists of a range of registers with their busy[] and uses[] entries.
   // The register value s.reg[].a holds the address.
@@ -106,6 +108,9 @@ class Core_t : public hart_t {
 #define FLAG_serialize	0x010	// waiting for pipeline to flush
 #define FLAG_nofree	0x020	// register free list is empty
 #define FLAG_stbhit	0x040	// load store buffer check hit
+
+#define RETIRE_ld	0x1000	// retired a load
+#define RETIRE_st	0x2000	// retired a store
 
   // Current instruction waiting for dispatch
   Header_t* bb;			// current basic blocka

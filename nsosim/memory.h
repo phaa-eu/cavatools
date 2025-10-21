@@ -14,7 +14,7 @@ class Memory_t {		// Model memory bank operation
   long long finish;		// cycle when finished
   Reg_t rd;			// to this register (or free store buffer)
   bool _active;
-  short name;			// of history entry that generated this
+  History_t* h;			// instruction this belongs to
  public:
   bool active() { return _active; }
   //void check(Addr_t a) { assert(a == addr); }
@@ -22,11 +22,11 @@ class Memory_t {		// Model memory bank operation
   void display(WINDOW* w);
   void show_as_port(WINDOW* w);
   friend void clock_memory_system(Core_t* cpu);
-  friend Memory_t make_mem_descr(Addr_t a, long long f, Reg_t rd, short n);
+  friend Memory_t make_mem_descr(Addr_t a, long long f, History_t* h);
 };
 
 void clock_memory_system();
-Memory_t make_mem_descr(Addr_t a, long long f, Reg_t rd, short n);
+Memory_t make_mem_descr(Addr_t a, long long f, History_t* h);
 void display_memory(WINDOW* w, int y, int x);
 
 extern thread_local Memory_t memory[memory_channels][memory_banks];

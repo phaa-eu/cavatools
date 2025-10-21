@@ -22,11 +22,16 @@ void clock_memory_system(Core_t* cpu)
     for (int k=0; k<memory_banks; ++k) {
       Memory_t* m = &memory[j][k];
       if (m->active() && m->finish==cycle) {
-	if (m->rd != NOREG) {
-	  cpu->busy[m->rd] = false;
-	  if (! is_store_buffer(m->rd))
-	    cpu->release_reg(m->rd);
+	History_t* h = m->h;
+	if (h->insn.rd() != NOREG) {
+	  cpu->busy[h->insn.rd()] = false;
+	  cpu->release_reg(h->insn.rd());
 	}
+	if (h->lsqpos != NOREG) {
+	  cpu->busy[h->lsqpos] = false;
+	  cpu->release_reg(h->lsqpos);
+	}
+	h->status = History_t::Retired;
 	m->_active = false;
       }
     }
@@ -46,13 +51,12 @@ void clock_memory_system(Core_t* cpu)
   }
 }
 
-Memory_t make_mem_descr(Addr_t a, long long f, Reg_t rd, short n) {
+Memory_t make_mem_descr(Addr_t a, long long f, History_t* h) {
   Memory_t m;
   m.addr = a;
   m.finish = f;
-  m.rd = rd;
+  m.h = h;
   m._active = true;
-  m.name = n;
   return m;
 }
 
