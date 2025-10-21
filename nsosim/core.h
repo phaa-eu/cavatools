@@ -18,8 +18,7 @@ extern uint8_t latency[];	// for each opcode
 //   First part holds physical registers with a free list.
 //   Second part holds lsq entries.
 //
-//const int max_phy_regs = 128;
-const int max_phy_regs = 68;
+const int max_phy_regs = 128;
 const int regfile_size = max_phy_regs + lsq_length;
 
 inline bool is_store_buffer(uint8_t r) {
@@ -64,8 +63,10 @@ struct History_t {		// dispatched instruction
 //History_t make_history(long long c, Insn_t ir, Addr_t p, Insn_t* i, History_t::Status_t s);
 
 
-extern thread_local long long cycle;        // count number of processor cycles
-
+extern thread_local long long cycle;      // count number of processor cycles
+#ifdef VERIFY
+extern thread_local long long mismatches; // count number of mismatches
+#endif
 
 class Core_t : public hart_t {
   long long _insns;		// count number of instructions executed
@@ -108,9 +109,7 @@ private:
 #define FLAG_serialize	0x010	// waiting for pipeline to flush
 #define FLAG_nofree	0x020	// register free list is empty
 #define FLAG_stbhit	0x040	// load store buffer check hit
-
-#define RETIRE_ld	0x1000	// retired a load
-#define RETIRE_st	0x2000	// retired a store
+#define FLAG_endmem	0x100	// retired a memory operation
 
   // Current instruction waiting for dispatch
   Header_t* bb;			// current basic blocka

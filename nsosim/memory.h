@@ -12,7 +12,6 @@
 class Memory_t {		// Model memory bank operation
   Addr_t addr;			// at this address
   long long finish;		// cycle when finished
-  Reg_t rd;			// to this register (or free store buffer)
   bool _active;
   History_t* h;			// instruction this belongs to
  public:

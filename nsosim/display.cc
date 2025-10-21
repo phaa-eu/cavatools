@@ -133,9 +133,7 @@ static void show_flags(WINDOW* w, unsigned flags)
   wprintw(w, "%c", (flags&FLAG_nofree)		? 'f' : ' ');
   wprintw(w, "%c", (flags&FLAG_serialize)	? '!' : ' ');
   wprintw(w, "%c", (flags&FLAG_stbhit)		? 'h' : ' ');
-  
-  wprintw(w, "%c", (flags&RETIRE_ld)		? 'L' : ' ');
-  wprintw(w, "%c", (flags&RETIRE_st)		? 'S' : ' ');
+  wprintw(w, "%c", (flags&FLAG_endmem)		? 'm' : ' ');
   wprintw(w, "\t");
 }
 
@@ -144,9 +142,11 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
   wmove(w, y, 0);
   wprintw(w, "sb[");
   for (int k=0; k<lsq_length; ++k) {
-    if (c->busy[k+max_phy_regs]) wattron(w, A_REVERSE);
+    if (c->s.reg[k+max_phy_regs].a) wattron(w, A_REVERSE);
+    //if (c->busy[k+max_phy_regs]) wattron(w, A_REVERSE);
     wprintw(w, " ");
-    if (c->busy[k+max_phy_regs]) wattroff(w, A_REVERSE);
+    if (c->s.reg[k+max_phy_regs].a) wattroff(w, A_REVERSE);
+    //if (c->busy[k+max_phy_regs]) wattroff(w, A_REVERSE);
   }
   wprintw(w, "]    busy[");
   for (int k=0; k<max_phy_regs; ++k) {
@@ -165,7 +165,14 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
   wprintw(w, "\t     Expected\t\tActual\t");
 #endif
   wprintw(w, "\tpc label\t       pc  hex insn  opcode\t\treg(renamed=uses), [stbuf]");
-  wprintw(w, "%ld\n", number);
+  wprintw(w, "  inflight=%lld", c->inflight());
+#ifdef VERIFY
+  if (mismatches > 0) {
+    wattron(w, A_REVERSE|A_BLINK);
+    wprintw(w, " mismatched=%lld", mismatches);
+    wattroff(w, A_REVERSE|A_BLINK);
+  }
+#endif
   wattroff(w, A_UNDERLINE);
   --lines;			    // account for header line
   ++y;
@@ -193,19 +200,30 @@ void Memory_t::display(WINDOW* w)
     wprintw(w, "-");
     return;
   }
-  if (is_store_buffer(rd)) wattron(w, A_BOLD|A_REVERSE);
-  else                     wattron(w,  A_BOLD);
-  if (is_store_buffer(rd))
-    wprintw(w, "[sb%d]", rd-max_phy_regs);
-  else
-    wprintw(w, "(r%d)", rd);
+
+  int win_attr = 0;
+  if (attributes[h->insn.opcode()] & ATTR_ld)
+    win_attr |= A_BOLD;
+  if (attributes[h->insn.opcode()] & ATTR_st)
+    win_attr |= A_REVERSE;
+  if (attributes[h->insn.opcode()] & ATTR_amo)
+    win_attr |= A_UNDERLINE;
+
+  wattron(w, win_attr);
+  
+  if (h->insn.rd() != NOREG)
+    wprintw(w, "(r%d)", h->insn.rd());
+  if (h->lsqpos != NOREG)
+    wprintw(w, "[sb%d]", h->lsqpos-max_phy_regs);
   wprintw(w, "%lld", cycle-finish);
-  if (is_store_buffer(rd)) wattroff(w, A_BOLD|A_REVERSE);
-  else                     wattroff(w,  A_BOLD);
+
+  wattroff(w, win_attr);
 }
 
 void Memory_t::show_as_port(WINDOW* w)
 {
+  display(w);
+#if 0
   if (! active())
     return;
   if (is_store_buffer(rd)) wattron(w, A_BOLD|A_REVERSE);
@@ -218,6 +236,7 @@ void Memory_t::show_as_port(WINDOW* w)
   wprintw(w, "+%lld", finish);
   if (is_store_buffer(rd)) wattroff(w, A_BOLD|A_REVERSE);
   else                     wattroff(w,  A_BOLD);
+#endif
 }
 
  

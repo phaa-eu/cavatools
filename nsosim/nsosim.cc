@@ -97,7 +97,7 @@ void interactive(Core_t* cpu)
   
  infinite_loop:
   while ((ch=getch()) == ERR) {
-    if (cycle < stop_cycle) {
+    if (cycle < stop_cycle && mismatches == 0) {
 #ifdef VERIFY
       History_t* h = cpu->nextrob();
       clock_memory_system(cpu);

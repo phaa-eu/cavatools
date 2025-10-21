@@ -13,11 +13,11 @@
 #include "memory.h"
 
 thread_local long long cycle;
+thread_local long long mismatches;
 
 
 bool Core_t::clock_pipeline() {
   uint16_t& flags = cycle_flags[cycle % cycle_history];
-  flags = 0;
 
   // Retire pipelined instruction(s)
   for (int k=0; k<num_write_ports; ++k) {
@@ -25,8 +25,10 @@ bool Core_t::clock_pipeline() {
     if (h) {
       Insn_t ir = h->insn;
       h->status = History_t::Retired;
-      if (attributes[ir.opcode()] & ATTR_ld) flags |= RETIRE_ld;
-      if (attributes[ir.opcode()] & ATTR_st) flags |= RETIRE_st;
+#ifdef VERIFY
+      if (h->actual_rd != h->expected_rd)
+	++mismatches;
+#endif
       busy[ir.rd()] = false;
       release_reg(ir.rd());
       if (h->lsqpos != NOREG) {
@@ -57,12 +59,19 @@ bool Core_t::clock_pipeline() {
     flags |= FLAG_busy;
     goto issue_from_queue;	// branch registers not ready
   }
-  if ((attr & ATTR_st) && (busy[ir.rs1()] || lsq_full())) {
-    if (busy[ir.rs1()]) flags |= FLAG_stuaddr;
-    if (lsq_full())     flags |= FLAG_stbfull;
-    goto issue_from_queue;	// unknown store address or SB full
+  if ((attr & ATTR_st) && busy[ir.rs1()]) {
+    flags |= FLAG_stuaddr;
+    goto issue_from_queue;	// unknown store address
   }
-  if ((attr & (ATTR_ex|ATTR_amo)) && last>0) {
+  if ((attr & (ATTR_ld|ATTR_st)) && lsq_full()) {
+    flags |= FLAG_stbfull;
+    goto issue_from_queue;	// lsq full
+  }
+  if ((attr & ATTR_ex) && last>0) {
+    flags |= FLAG_serialize;
+    goto issue_from_queue;	// waiting for pipeline flush
+  }
+  if ((attr & ATTR_amo) && (last>0 | port[0].active())) {
     flags |= FLAG_serialize;
     goto issue_from_queue;	// waiting for pipeline flush
   }
@@ -178,25 +187,10 @@ bool Core_t::clock_pipeline() {
     bb = find_bb(pc);
     i = insnp(bb+1);
   }
-  
-  wheel[0][ index(latency[ir.opcode()]) ] = h;
-  h->status = History_t::Executing;
 
-#if 0
-  // stores retire immediately
-  if ((attr & ATTR_st) && !(attr & ATTR_amo)) {
-    h->status = History_t::Retired;
-    busy[ir.rd()] = false;
-    release_reg(ir.rd());
-    busy[h->lsqpos] = false;
-    release_reg(h->lsqpos);
-    --_inflight;
-  }
-  else { // while everything else (including amo) use wheel
+  if (!(attr & (ATTR_ld|ATTR_st))) 
     wheel[0][ index(latency[ir.opcode()]) ] = h;
-    h->status = History_t::Executing;
-  }
-#endif
+  h->status = History_t::Executing;
 
  finish_cycle:
   ++cycle;

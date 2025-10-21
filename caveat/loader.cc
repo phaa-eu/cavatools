@@ -469,7 +469,7 @@ const char* elf_find_pc(long pc, long* offset)
 
 
 
-#if 0
+#if 1
 
 extern "C" {
 
@@ -489,8 +489,10 @@ void *malloc(size_t size)
     }
     rv = pooltop;
     newtop = (char*)((unsigned long)after & ~0xfL); /* always align to 16 bytes */
+    newtop += 8;				    /* put size before beginning */
   } while (!__sync_bool_compare_and_swap(&pooltop, rv, newtop));
-      
+  *(size_t*)rv = size;
+  rv += 8;
   return (void*)rv;
 }
 
@@ -506,11 +508,20 @@ void *calloc(size_t nmemb, size_t size)
 
 void *realloc(void *ptr, size_t size)
 {
-  return 0;
+  void* newptr = ptr;
+  fprintf(stderr, "realloc() called\n");
+  size_t old_size = *(size_t*)((char*)ptr-8);
+  if (old_size < size) {
+    newptr = malloc(size);
+    memcpy(newptr, ptr, old_size);
+    free(ptr);
+  }
+  return newptr;
 }
 
 void *reallocarray(void *ptr, size_t nmemb, size_t size)
 {
+  fprintf(stderr, "reallocarray() called\n");
   return 0;
 }
 

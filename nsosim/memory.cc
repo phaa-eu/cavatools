@@ -32,7 +32,13 @@ void clock_memory_system(Core_t* cpu)
 	  cpu->release_reg(h->lsqpos);
 	}
 	h->status = History_t::Retired;
+#ifdef VERIFY
+      if (h->actual_rd != h->expected_rd)
+	++mismatches;
+#endif
 	m->_active = false;
+	cpu->cycle_flags[cycle % cycle_history] |= FLAG_endmem;
+	cpu->_inflight--;
       }
     }
   }
