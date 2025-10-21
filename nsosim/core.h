@@ -5,7 +5,7 @@
 const int issue_queue_length = 16;
 const int store_buffer_length = 8;
 
-const int dispatch_history = 1024;
+const int dispatch_history = 4096;
 const int cycle_history = 4*dispatch_history;
 
 // timing wheel for simulating pipelines
@@ -54,7 +54,7 @@ struct History_t {		// dispatched instruction
   uintptr_t expected_rd;	// for checking against uspike
   uintptr_t actual_rd;		// for display
 #endif
-  enum Status_t { Retired, Executing, Queued, Dispatch } status;
+  enum Status_t { Retired, Executing, Queued, Queued_stbchk, Dispatch } status;
   
   void display(WINDOW* w, class Core_t*);
 };
@@ -104,6 +104,7 @@ class Core_t : public hart_t {
 #define FLAG_stbfull	0x008	// store buffer is full
 #define FLAG_serialize	0x010	// waiting for pipeline to flush
 #define FLAG_nofree	0x020	// register free list is empty
+#define FLAG_stbhit	0x040	// load store buffer check hit
 
   // Current instruction waiting for dispatch
   Header_t* bb;			// current basic blocka
@@ -125,7 +126,8 @@ public:
   bool clock_pipeline();
   
   bool no_free_reg(Insn_t ir) { return numfree==max_phy_regs-64; };
-  bool stbuf_full() { return busy[stbuf(0)]; }
+  //bool stbuf_full() { return busy[stbuf(0)]; }
+  bool stbuf_full() { return busy[stbuf(0)] || uses[stbuf(0)]>0; }
   
   void show_reg(WINDOW* w, Reg_t n, char sep, int ref);
   
@@ -134,6 +136,7 @@ public:
   bool ready_insn(Insn_t ir);
   void acquire_reg(uint8_t r);
   void release_reg(uint8_t r);
+  Reg_t check_store_buffer(uintptr_t addr, Reg_t start);
   
   uintptr_t get_state();
   void put_state(uintptr_t pc);

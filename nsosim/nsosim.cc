@@ -71,7 +71,8 @@ void exitfunc()
 
 
 
-const int window_buffers = 100;
+//const int window_buffers = 100;
+const int window_buffers = dispatch_history;
 WINDOW* winbuf[window_buffers];
 int frontwin = 0;
 int behind = 0;
@@ -123,6 +124,12 @@ void interactive(Core_t* cpu)
 	fprintf(stderr, "\r\33[2K%lld cycles, %lld instructions executed", cycle, cpu->insns());
       }
     }
+#if 0
+    else {
+      overwrite(winbuf[frontwin], stdscr);
+      refresh();
+    }
+#endif
   }
   wrefresh(winbuf[frontwin]);
   framerate = 20000;
@@ -203,10 +210,11 @@ int main(int argc, const char* argv[], const char* envp[])
   for (int k=0; k<Number_of_Opcodes; ++k) {
     Opcode_t op = (Opcode_t)k;
     ATTR_bv_t a = attributes[op];
-    if      (a & ATTR_fp) latency[op] = conf_fp();
-    else if (a & ATTR_ld) latency[op] = conf_ld();
-    else if (a & ATTR_st) latency[op] = conf_st();
-    else                  latency[op] = conf_alu();
+    if      (a & ATTR_fp)	latency[op] = conf_fp();
+    else if (a & ATTR_amo)	latency[op] = conf_st() + conf_ld();
+    else if (a & ATTR_ld)	latency[op] = conf_ld();
+    else if (a & ATTR_st)	latency[op] = conf_st();
+    else			latency[op] = conf_alu();
   }
   
   Core_t* cpu = new Core_t(argc, argv, envp);

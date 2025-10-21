@@ -70,31 +70,35 @@ bool Core_t::clock_pipeline() {
     assert(!stbuf_full());
     // allocate store buffer entry
     addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
+
+    // Does not apply to AMO because serialize empties store buffer 
     if (ir.rd() == NOREG) {	// use busy bit of store buffer "register"
       ir.op_rd = stbuf(0);
       acquire_reg(ir.rd());
       busy[ir.rd()];
-    }
-    // search for write-after-write dependency
-    for (int k=1; k<store_buffer_length; ++k) {
-      if (s.reg[stbuf(k)].a == addr) {        // add dependency
-	// note this depends on all stores having short immediates
-	ir.op.rs3 = stbuf(k);
+      // search for write-after-write dependency
+      assert(ir.rs3()==NOREG);
+      ir.op.rs3 = check_store_buffer(addr, nextstb);
+      if (ir.rs3() != NOREG)
 	acquire_reg(ir.rs3());
-	break;
-      }
+      mem_checker_used = true; // prevent issuing loads
+      
+      // fill store buffer
+      s.reg[stbuf(0)].a = addr;
+      if (! (attr & ATTR_amo))	// AMO execute immediately so we use store buffer
+	busy[stbuf(0)] = true;	// but it immediately becomes free again
+      nextstb = (nextstb+1) % store_buffer_length;
     }
-    // fill store buffer
-    s.reg[stbuf(0)].a = addr;
-    busy[stbuf(0)] = true;
-    nextstb = (nextstb+1) % store_buffer_length;
-    
-    mem_checker_used = true; // prevent issuing loads
   }
+  if ((attr & ATTR_ld) && !(attr & ATTR_amo)) {
+    ir.op.rs3 = stbuf(0);	// this is where we begin check
+    h->status = History_t::Queued_stbchk;
+  }
+  else
+    h->status = History_t::Queued;
   
   // enter into phantom ROB
   h->insn = ir;
-  h->status = History_t::Queued;
   _insns++;
   _inflight++;
   dispatched = true;
@@ -106,8 +110,8 @@ bool Core_t::clock_pipeline() {
     i = insnp(bb+1);
   }
 
-  // branches execute immediately
-  if (attr & (ATTR_uj|ATTR_cj)) {
+  // branches and AMO execute immediately
+  if (attr & (ATTR_uj|ATTR_cj|ATTR_amo)) {
     assert(ready_insn(ir));
     goto execute_instruction;
   }
@@ -121,20 +125,32 @@ bool Core_t::clock_pipeline() {
   for (int k=0; k<last; ++k) {
     h = queue[k];
     if (ready_insn(h->insn)) {
-      ir = h->insn;
-      attr = attributes[ir.opcode()];
       // memory operations have extra conditions
-      if (attr & (ATTR_ld|ATTR_st)) {
+      if (attributes[h->insn.opcode()] & (ATTR_ld|ATTR_st)) {
 	int channel = 0;
 	if (port[channel].active())
 	  continue;
-	if ((attr & ATTR_ld) && mem_checker_used)
+	if (h->status==History_t::Queued_stbchk && mem_checker_used)
 	  continue;
+
+	if (h->status == History_t::Queued_stbchk) {
+	  assert(is_store_buffer(ir.rs3()));
+	  h->status = History_t::Queued;
+	  assert(h->insn.rs3() != NOREG);
+	  h->insn.op.rs3 = check_store_buffer((s.reg[ir.rs1()].x+ir.immed())&~0x7L, ir.rs3());
+	  if (h->insn.rs3() != NOREG) {
+	    acquire_reg(h->insn.rs3());
+	    flags |= FLAG_stbhit;
+	    goto finish_cycle;	// cycle "used up" by store buffer check
+	  }
+	}
       }
+      
       // remove from queue
       for (int j=k+1; j<last; ++j)
 	queue[j-1] = queue[j];
       --last;
+      ir = h->insn;
       goto execute_instruction;
     }
   }
@@ -143,35 +159,19 @@ bool Core_t::clock_pipeline() {
 
  execute_instruction:
   if (h) {  // instruction is in ir but pc is in h->pc
-
+    attr = attributes[ir.opcode()];
     // simulate reading register file
     release_reg(ir.rs1());
     release_reg(ir.rs2());
     release_reg(ir.rs3());
-    
+
     if (attr & (ATTR_ld|ATTR_st)) {
       int channel = 0;
       assert(!port[channel].active());
-      
-      // loads check store buffer for dependency
-      if (attr & ATTR_ld) {
-	assert(mem_checker_used == false);
-	for (int k=1; k<store_buffer_length; ++k) {
-	  addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
-	  if (s.reg[stbuf(k)].a == addr) {
-	    h->insn.op.rs3 = stbuf(k); // add dependency to this store
-	    acquire_reg(stbuf(k));
-	    break;
-	  }
-	}
-      }
       port[channel] = make_mem_descr((s.reg[ir.rs1()].x + ir.immed()) & ~0x7L,
 				     (long long)latency[ir.opcode()],
 				     (Reg_t)ir.rd(),
 				     (h-rob)%dispatch_history);
-      if (is_store_buffer(ir.rd())) {
-	port[channel].check(s.reg[ir.rd()].a);
-      }
     }
     
     // Tricky code here:  pc is actually associated with dispatched
@@ -191,13 +191,9 @@ bool Core_t::clock_pipeline() {
     
     //if ((attr & (ATTR_uj|ATTR_cj)) || is_store_buffer(ir.rd())) {
 
-    if (attr & (ATTR_uj|ATTR_cj|ATTR_ld|ATTR_st)) {
-      if ((attr & (ATTR_uj|ATTR_cj)) || is_store_buffer(ir.rd())) {
-	if (ir.rd() != NOREG) {
-	  busy[ir.rd()] = false;
-	  release_reg(ir.rd());
-	}
-      }
+    if (is_store_buffer(ir.rd())) {
+      busy[ir.rd()] = false;
+      release_reg(ir.rd());
       h->status = History_t::Retired;
       --_inflight;
     }
@@ -272,6 +268,18 @@ void Core_t::release_reg(uint8_t r)
   if (--uses[r] == 0 && r < max_phy_regs)
     freelist[numfree++] = r;
 }
+
+Reg_t Core_t::check_store_buffer(uintptr_t addr, Reg_t start)
+{
+  int k = start - max_phy_regs;
+  while ((k=(k-1+store_buffer_length)%store_buffer_length) != nextstb) {
+    Reg_t r = k + max_phy_regs;
+    if (busy[r] && s.reg[r].a == addr)
+      return r;
+  }
+  return NOREG;
+}
+  
 
 uintptr_t Core_t::get_state()
 {

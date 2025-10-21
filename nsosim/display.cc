@@ -118,12 +118,13 @@ void help_screen()
 
 static void show_flags(WINDOW* w, unsigned flags)
 {
-  wprintw(w, "%c", (flags&FLAG_busy)	? 'b' : ' ');
-  wprintw(w, "%c", (flags&FLAG_qfull)	? 'f' : ' ');
-  wprintw(w, "%c", (flags&FLAG_stuaddr)	? 'a' : ' ');
-  wprintw(w, "%c", (flags&FLAG_stbfull)	? 's' : ' ');
-  wprintw(w, "%c", (flags&FLAG_nofree)	? 'f' : ' ');
+  wprintw(w, "%c", (flags&FLAG_busy)		? 'b' : ' ');
+  wprintw(w, "%c", (flags&FLAG_qfull)		? 'f' : ' ');
+  wprintw(w, "%c", (flags&FLAG_stuaddr)		? 'a' : ' ');
+  wprintw(w, "%c", (flags&FLAG_stbfull)		? 's' : ' ');
+  wprintw(w, "%c", (flags&FLAG_nofree)		? 'f' : ' ');
   wprintw(w, "%c", (flags&FLAG_serialize)	? '!' : ' ');
+  wprintw(w, "%c", (flags&FLAG_stbhit)		? 'h' : ' ');
   wprintw(w, "\t");
 }
 
