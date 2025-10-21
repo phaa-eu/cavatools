@@ -70,7 +70,7 @@ Addr_t Core_t::perform(Insn_t* i, Addr_t pc)
 #define w64(e)	s.reg[i->rd()].f = freg(n64(e))
 	
 #define LOAD(T, a)     *(T*)(*ap++=a)
-#ifndef VERIFY
+#ifdef VERIFY
 #define STORE(T, a, v)
 #else
 #define STORE(T, a, v) *(T*)(*ap++=a)=(v)

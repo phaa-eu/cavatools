@@ -18,7 +18,7 @@
 option<long> conf_report("report", 1, "Status report per second");
 option<bool> conf_visual("visual", true, false, "Interactive visual mode");
 
-#if 1
+#if 0
 option<int> conf_fp("fp", 3, "Latency floating point");
 option<int> conf_ld("ld", 4, "Latency loads");
 option<int> conf_st("st", 20, "Latency stores");
@@ -97,8 +97,8 @@ void interactive(Core_t* cpu)
   
  infinite_loop:
   while ((ch=getch()) == ERR) {
-    if (cycle < stop_cycle && mismatches == 0) {
 #ifdef VERIFY
+    if (cycle < stop_cycle && mismatches == 0) {
       History_t* h = cpu->nextrob();
       clock_memory_system(cpu);
       if (cpu->clock_pipeline()) {
@@ -106,7 +106,8 @@ void interactive(Core_t* cpu)
 	h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
       }
 #else
-      clock_memory_system();
+    if (cycle < stop_cycle) {
+      clock_memory_system(cpu);
       (void) cpu->clock_pipeline();
 #endif
 
@@ -247,7 +248,7 @@ int main(int argc, const char* argv[], const char* envp[])
 	  h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
       }
 #else
-      clock_memory_system();
+      clock_memory_system(cpu);
       (void) cpu->clock_pipeline();
 #endif
     }

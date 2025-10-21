@@ -96,7 +96,9 @@ void History_t::display(WINDOW* w, Core_t* c)
     }
   }
 
+#ifdef VERIFY
   if (mismatch) wattroff(w, A_REVERSE);
+#endif
   switch (status) {
   case History_t::Retired:	wattroff(w, A_DIM); break;
   case History_t::Dispatch:	wattroff(w, A_UNDERLINE); break;
@@ -173,6 +175,7 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
     wattroff(w, A_REVERSE|A_BLINK);
   }
 #endif
+  wprintw(w, "\n");
   wattroff(w, A_UNDERLINE);
   --lines;			    // account for header line
   ++y;
