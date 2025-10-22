@@ -18,11 +18,11 @@
 option<long> conf_report("report", 1, "Status report per second");
 option<bool> conf_visual("visual", true, false, "Interactive visual mode");
 
-#if 0
+#if 1
 option<int> conf_fp("fp", 3, "Latency floating point");
 option<int> conf_ld("ld", 4, "Latency loads");
 option<int> conf_st("st", 20, "Latency stores");
-option<int> conf_alu("alu", 1, "Latency ALU");
+option<int> conf_alu("alu", 2, "Latency ALU");
 #else
 option<int> conf_fp("fp", 1, "Latency floating point");
 option<int> conf_ld("ld", 1, "Latency loads");
@@ -96,20 +96,20 @@ void interactive(Core_t* cpu)
   long long stop_cycle = cycle;
   long long number = 0;
   int ch;
-  
+  bool last_cycle_dispatched = true;
+
  infinite_loop:
   while ((ch=getch()) == ERR) {
-#ifdef VERIFY
     if (cycle < stop_cycle && mismatches == 0) {
+#ifdef VERIFY
       History_t* h = cpu->nextrob();
-      cpu->single_step();
-      h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
-      do
-	clock_memory_system(cpu);
-      while (! cpu->clock_pipeline());
+      if (last_cycle_dispatched) {
+	cpu->single_step();
+	h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
+      }
+      clock_memory_system(cpu);
+      last_cycle_dispatched = cpu->clock_pipeline();
 #else
-    if (cycle < stop_cycle) {
-      //History_t* h = cpu->nextrob();
       clock_memory_system(cpu);
       (void) cpu->clock_pipeline();
 #endif
@@ -127,12 +127,6 @@ void interactive(Core_t* cpu)
 	fprintf(stderr, "\r\33[2K%lld cycles, %lld instructions executed", cycle, cpu->insns());
       }
     }
-#if 0
-    else {
-      overwrite(winbuf[frontwin], stdscr);
-      refresh();
-    }
-#endif
   }
   wrefresh(winbuf[frontwin]);
   framerate = 20000;

@@ -64,9 +64,7 @@ struct History_t {		// dispatched instruction
 
 
 extern thread_local long long cycle;      // count number of processor cycles
-#ifdef VERIFY
 extern thread_local long long mismatches; // count number of mismatches
-#endif
 
 class Core_t : public hart_t {
   long long _insns;		// count number of instructions executed
