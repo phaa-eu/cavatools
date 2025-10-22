@@ -144,7 +144,7 @@ public:
   void put_state(uintptr_t pc);
   uintptr_t get_rd_from_spike(Reg_t n);
 
-  Addr_t perform(Insn_t* i, Addr_t pc);
+  Addr_t perform(Insn_t* i, Addr_t pc, History_t* h);
 
   static Core_t* list() { return (Core_t*)hart_t::list(); }
   Core_t* next() { return (Core_t*)hart_t::next(); }
@@ -155,6 +155,15 @@ public:
   friend void clock_memory_system(Core_t* cpu);
   friend void display_history(WINDOW* w, int y, int x, Core_t* c, int lines);
   friend void interactive(Core_t* cpu);
+
+#ifdef VERIFY
+  template<typename op>	int32_t amo_int32(uintptr_t a, op f, uintptr_t*& ap) {
+    return rob[cycle % dispatch_history].expected_rd;
+  }
+  template<typename op>	int64_t amo_int64(uintptr_t a, op f, uintptr_t*& ap) {
+    return rob[cycle % dispatch_history].expected_rd;
+  }
+#endif
 };
 
 long ooo_riscv_syscall(hart_t* h, long a0);

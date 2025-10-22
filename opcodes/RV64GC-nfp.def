@@ -144,8 +144,8 @@
 
 # RV32A Standard Extension
 
-   lr.w		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 010   ..... 01011 11"		w[11:7],l[19:15],-,-			"wrd(LOAD(int32_t, r1))"
-   sc.w		d,t,0(s)	A,amo,st,>	"00011 {1:0} ..... ..... 010   ..... 01011 11"		l[11:7],l[19:15],w[24:20],-		"STORE(int32_t, r1, r2); wrd(0)"
+   lr.w		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 010   ..... 01011 11"		w[11:7],l[19:15],-,-			"wrd(load_reserved(int32_t, r1))"
+   sc.w		d,t,0(s)	A,amo,st,>	"00011 {1:0} ..... ..... 010   ..... 01011 11"		l[11:7],l[19:15],w[24:20],-		"wrd(store_conditional(int32_t, r1, r2))"
    amoswap.w	d,t,0(s)	A,amo,ld,st,>	"00001 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return       r2; }, ap))"
    amoadd.w	d,t,0(s)	A,amo,ld,st,>	"00000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return lhs + r2; }, ap))"
    amoxor.w	d,t,0(s)	A,amo,ld,st,>	"00100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd(amo_int32(r1, [&](int32_t lhs) { return lhs ^ r2; }, ap))"
@@ -156,8 +156,8 @@
    amominu.w	d,t,0(s)	A,amo,ld,st,>	"11000 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd((uint32_t)amo_int32(r1, [&](uint32_t lhs) { return std::min(lhs, uint32_t(r2)); }, ap))"
    amomaxu.w	d,t,0(s)	A,amo,ld,st,>	"11100 {1:0} ..... ..... 010   ..... 01011 11"		w[11:7],l[19:15],w[24:20],-		"wrd((uint32_t)amo_int32(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); }, ap))"
 
-   lr.d		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 011   ..... 01011 11"		l[11:7],l[19:15],-,-			"wrd(LOAD(int64_t,  r1))"
-   sc.d		d,t,0(s)	A,amo,st,>	"00011 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"STORE(int64_t, r1, r2); wrd(0)"
+   lr.d		d,0(s)		A,amo,ld	"00010 {1:0} 00000 ..... 011   ..... 01011 11"		l[11:7],l[19:15],-,-			"wrd(load_reserved(int64_t,  r1))"
+   sc.d		d,t,0(s)	A,amo,st,>	"00011 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(store_conditional(int64_t, r1, r2))"
    amoswap.d	d,t,0(s)	A,amo,ld,st,>	"00001 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t lhs) { return       r2; }, ap))"
    amoadd.d	d,t,0(s)	A,amo,ld,st,>	"00000 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t lhs) { return lhs + r2; }, ap))"
    amoxor.d	d,t,0(s)	A,amo,ld,st,>	"00100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](int64_t lhs) { return lhs ^ r2; }, ap))"
@@ -169,8 +169,8 @@
    amomaxu.d	d,t,0(s)	A,amo,ld,st,>	"11100 {1:0} ..... ..... 011   ..... 01011 11"		l[11:7],l[19:15],l[24:20],-		"wrd(amo_int64(r1, [&](uint32_t lhs) { return std::max(lhs, uint32_t(r2)); }, ap))"
 
 # Internal instructions to emulate Compare-And-Swap
-   cas.w	d,t,0(s),r	A,amo,ld,st,>	"..... 11    ..... ..... 111   ..... 11111 11"		w[11:7],l[19:15],w[24:20],w[31:27]	"wrd(cas<int32_t>(r1, r2, r3, ap))"
-   cas.d	d,t,0(s),r	A,amo,ld,st,>	"..... 11    ..... ..... 111   ..... 11111 11"		l[11:7],l[19:15],l[24:20],l[31:27]	"wrd(cas<int64_t>(r1, r2, r3, ap))"
+   cas.w	d,t,0(s),r	A,amo,ld,st,>	"..... 10    ..... ..... 111   ..... 11111 11"		w[11:7],l[19:15],w[24:20],w[31:27]	"wrd(cas32(r1, r2, r3, ap))"
+   cas.d	d,t,0(s),r	A,amo,ld,st,>	"..... 11    ..... ..... 111   ..... 11111 11"		l[11:7],l[19:15],l[24:20],l[31:27]	"wrd(cas64(r1, r2, r3, ap))"
 
 # RV32F Standard Extension
 

@@ -148,6 +148,12 @@ void hart_t::default_interpreter()
 	
 #define LOAD(T, a)     *(T*)(*ap++=a)
 #define STORE(T, a, v) *(T*)(*ap++=a)=(v)
+
+#define load_reserved(T, a)         *(T*)(*ap++=a)
+#define store_conditional(T, a, v)  wrd( (*(T*)(*ap++=a)=(v), 0) )
+
+#define cas32(a, b, c, d) cas<int32_t>(a, b, c, d)
+#define cas64(a, b, c, d) cas<int64_t>(a, b, c, d)
       
 #define fence(x)
 #define fence_i(x)

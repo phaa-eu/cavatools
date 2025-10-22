@@ -469,7 +469,7 @@ const char* elf_find_pc(long pc, long* offset)
 
 
 
-#if 1
+#if 0
 
 extern "C" {
 

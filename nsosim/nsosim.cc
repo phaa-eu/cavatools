@@ -61,6 +61,7 @@ void* status_thread(void* arg)
 
 void exitfunc()
 {
+  endwin();
   fprintf(stderr, "\nNormal exit\n");
   status_report();
   fprintf(stderr, "\n");
@@ -84,7 +85,8 @@ void interactive(Core_t* cpu)
   nonl();
   cbreak();                     /* Line buffering disabled */
   noecho();
-  nodelay(stdscr, true);
+  nodelay(stdscr
+, true);
   //start_color();
 
   for (int k=0; k<window_buffers; ++k)
@@ -100,17 +102,17 @@ void interactive(Core_t* cpu)
 #ifdef VERIFY
     if (cycle < stop_cycle && mismatches == 0) {
       History_t* h = cpu->nextrob();
-      clock_memory_system(cpu);
-      if (cpu->clock_pipeline()) {
-	cpu->single_step();
-	h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
-      }
+      cpu->single_step();
+      h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
+      do
+	clock_memory_system(cpu);
+      while (! cpu->clock_pipeline());
 #else
     if (cycle < stop_cycle) {
+      //History_t* h = cpu->nextrob();
       clock_memory_system(cpu);
       (void) cpu->clock_pipeline();
 #endif
-
       frontwin=(frontwin+1)%window_buffers;
       WINDOW* w=winbuf[frontwin];
       wclear(w);
@@ -235,18 +237,15 @@ int main(int argc, const char* argv[], const char* envp[])
     }
     start_time();
     cpu->reset();
-
-    cpu->test_run();
     
     for (;;) {
 #ifdef VERIFY
       History_t* h = cpu->nextrob();
-      clock_memory_system(cpu);
-      if (cpu->clock_pipeline()) {
-	cpu->single_step();
-	if (h->ref.rd() != NOREG)
-	  h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
-      }
+      cpu->single_step();
+      h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
+      do
+	clock_memory_system(cpu);
+      while (! cpu->clock_pipeline());
 #else
       clock_memory_system(cpu);
       (void) cpu->clock_pipeline();

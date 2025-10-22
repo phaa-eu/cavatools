@@ -42,7 +42,7 @@ inline double m64(freg_t x) { union { freg_t r; double f; } cv; cv.r=x; return c
 inline float32_t n32(float  x)  { union { float32_t t; float  f; } cv; cv.f=x; return cv.t; }
 inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; return cv.t; }
 
-Addr_t Core_t::perform(Insn_t* i, Addr_t pc)
+Addr_t Core_t::perform(Insn_t* i, Addr_t pc, History_t* h)
 {
   uintptr_t addrbuf[100];
   uintptr_t* ap = addrbuf;
@@ -69,11 +69,31 @@ Addr_t Core_t::perform(Insn_t* i, Addr_t pc)
 #define w32(e)	s.reg[i->rd()].f = freg(n32(e)) 
 #define w64(e)	s.reg[i->rd()].f = freg(n64(e))
 	
-#define LOAD(T, a)     *(T*)(*ap++=a)
+
 #ifdef VERIFY
+  
+#define LOAD(T, a)     *(T*)(*ap++=a)
 #define STORE(T, a, v)
+
+#define load_reserved(T, a)         h->expected_rd
+#define store_conditional(T, a, v)  h->expected_rd
+#define cas32(a, b, c, d)   h->expected_rd
+#define cas64(a, b, c, d)   h->expected_rd
+#define amo_int32(a, b, c)  h->expected_rd
+#define amo_int64(a, b, c)  h->expected_rd
+#define riscv_syscall(a, b) h->expected_rd
+  
 #else
+  
+#define LOAD(T, a)     *(T*)(*ap++=a)
 #define STORE(T, a, v) *(T*)(*ap++=a)=(v)
+  
+#define load_reserved(T, a)         *(T*)(*ap++=a)
+#define store_conditional(T, a, v)  wrd( (*(T*)(*ap++=a)=(v), 0) )
+
+#define cas32(a, b, c, d) cas<int32_t>(a, b, c, d)
+#define cas64(a, b, c, d) cas<int64_t>(a, b, c, d)
+  
 #endif
       
 #define fence(x)

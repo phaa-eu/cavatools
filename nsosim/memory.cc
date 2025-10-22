@@ -27,7 +27,8 @@ void clock_memory_system(Core_t* cpu)
 	  cpu->busy[h->insn.rd()] = false;
 	  cpu->release_reg(h->insn.rd());
 	}
-	if (h->lsqpos != NOREG) {
+	if (attributes[h->insn.opcode()] & ATTR_st) {
+	  //if (h->lsqpos != NOREG) {
 	  cpu->busy[h->lsqpos] = false;
 	  cpu->release_reg(h->lsqpos);
 	}

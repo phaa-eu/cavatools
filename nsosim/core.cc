@@ -55,7 +55,7 @@ bool Core_t::clock_pipeline() {
     flags |= FLAG_qfull;
     goto issue_from_queue;	// issue queue is full
   }
-  if ((attr & (ATTR_uj|ATTR_cj)) && !ready_insn(ir)) {
+  if ((attr & (ATTR_uj|ATTR_cj|ATTR_amo)) && !ready_insn(ir)) {
     flags |= FLAG_busy;
     goto issue_from_queue;	// branch registers not ready
   }
@@ -89,11 +89,14 @@ bool Core_t::clock_pipeline() {
 
     // search for write-after-write dependency
     if (attr & ATTR_st) {
-      ir.op.rs3 = check_store_buffer(addr);
+      // special hack for internally substituted CAS instruction
+      if (! (attr & ATTR_amo))
+	ir.op.rs3 = check_store_buffer(addr);
+      h->lsqpos = allocate_lsq_entry(addr, (attr & ATTR_st)==true);
       mem_checker_used = true; // prevent issuing loads
     }
-
-    h->lsqpos = allocate_lsq_entry(addr, (attr & ATTR_st)==true);
+    else
+      h->lsqpos = lsqtail + max_phy_regs;
     if (attr & ATTR_ld & !(attr & ATTR_amo))
       h->status = History_t::Queued_stbchk;
   }
@@ -139,7 +142,11 @@ bool Core_t::clock_pipeline() {
 	  if (mem_checker_used)
 	    continue;
 	  h->status = History_t::Queued;
-	  ir.op.rs3 = check_store_buffer((s.reg[ir.rs1()].x+ir.immed())&~0x7L, h->lsqpos);
+
+	  // special hack for internally substituted CAS instruction
+	  if (! (attr & ATTR_amo))
+	    ir.op.rs3 = check_store_buffer((s.reg[ir.rs1()].x+ir.immed())&~0x7L, h->lsqpos);
+	  
 	  if (ir.rs3() != NOREG) {
 	    acquire_reg(ir.rs3());
 	    flags |= FLAG_stbhit;
@@ -178,15 +185,15 @@ bool Core_t::clock_pipeline() {
   // associated with instruction just dequeued.  Therefore if we
   // jumped it must have been a branch being dispatched this cycle.
     
-  addr = perform(&ir, h->pc);
-#ifdef VERIFY
-  h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
-#endif
+  addr = perform(&ir, h->pc, h);
   if (addr) {		// if no taken branch pc already incremented
     pc = addr;
     bb = find_bb(pc);
     i = insnp(bb+1);
   }
+#ifdef VERIFY
+  h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
+#endif
 
   if (!(attr & (ATTR_ld|ATTR_st))) 
     wheel[0][ index(latency[ir.opcode()]) ] = h;
@@ -290,8 +297,10 @@ Reg_t Core_t::check_store_buffer(uintptr_t addr, Reg_t k)
     k = lsqtail + max_phy_regs;
   while ((k=(k-1+lsq_length)%lsq_length) != lsqtail) {
     Reg_t r = k + max_phy_regs;
-    if (busy[r] && s.reg[r].a == addr)
+    if (busy[r] && s.reg[r].a == addr) {
+      acquire_reg(r);
       return r;
+    }
   }
   return NOREG;
 }
@@ -357,7 +366,7 @@ int clone_proxy(hart_t* h)
 void Core_t::test_run()
 {
   while (1) {
-    uintptr_t jumped = perform(i, pc);
+    uintptr_t jumped = perform(i, pc, &rob[0]);
     if (jumped) {
       pc = jumped;
       bb = find_bb(pc);
