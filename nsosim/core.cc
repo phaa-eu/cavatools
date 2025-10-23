@@ -110,6 +110,8 @@ bool Core_t::clock_pipeline() {
   _inflight++;
   dispatched = true;
 
+  memset(&rob[insns() % dispatch_history], 0, sizeof(History_t));
+
   // advance pc sequentially, but taken branch will override
   pc += ir.compressed() ? 2 : 4;
   if (++i >= insnp(bb+1)+bb->count) {
@@ -197,7 +199,10 @@ bool Core_t::clock_pipeline() {
     i = insnp(bb+1);
   }
 #ifdef VERIFY
-  h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
+  if (attributes[ir.opcode()] & ATTR_ld)
+    h->actual_rd = h->expected_rd;
+  else
+    h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
 #endif
 
   if (!(attr & (ATTR_ld|ATTR_st))) 
@@ -441,21 +446,4 @@ void Core_t::reset() {
   h->status = History_t::Dispatch;
   h->lsqpos = NOREG;
 }
-
-
-#if 0
-// leftover stuff
-
-History_t make_history(long long c, Insn_t ir, Addr_t p, Insn_t* i, History_t::Status_t s) {
-  History_t h;
-  h.clock = c;
-  h.insn = ir;
-  h.pc = p;
-  h.ref = i;
-  h.status = s;
-  h.lsqpos = NOREG;
-  return h;
-}
-
-#endif
 
