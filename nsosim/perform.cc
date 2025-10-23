@@ -47,7 +47,7 @@ Addr_t Core_t::perform(Insn_t* i, Addr_t pc, History_t* h)
   uintptr_t addrbuf[100];
   uintptr_t* ap = addrbuf;
   count_insn();
-  WRITE_REG(0, 0);
+  //WRITE_REG(0, 0);
 #if 0
   debug.insert(pc, *i);
   labelpc(pc);
@@ -104,7 +104,8 @@ Addr_t Core_t::perform(Insn_t* i, Addr_t pc, History_t* h)
       
 
   //#define stop debug.addval(s.reg[i->rd()].x); goto end_bb
-#define stop        return pc
+  //#define stop        return pc
+#define stop        goto jumped;
 
 #define branch(test, taken, fall)  { pc=(test)?(taken):(fall); stop; }
 #define jump(npc)  { pc=(npc); stop; }
@@ -117,5 +118,10 @@ Addr_t Core_t::perform(Insn_t* i, Addr_t pc, History_t* h)
   case Op_UNKNOWN:  die("Op_UNKNOWN opcode, i=%08x, pc=%lx", *(unsigned*)pc, pc);
   }
   //debug.addval(i->rd()!=NOREG ? s.reg[i->rd()].x : s.reg[i->rs2()].x);
-  return 0;
+  //return 0;
+  pc = 0;			// no jump
+
+ jumped:
+  WRITE_REG(0, 0);
+  return pc;
 }

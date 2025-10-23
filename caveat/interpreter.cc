@@ -94,7 +94,7 @@ void hart_t::default_interpreter()
     //
     for (const Insn_t* i=insnp(bb+1); i<insnp(bb+1)+bb->count; i++) {
       _executed++;
-      WRITE_REG(0, 0);
+      //WRITE_REG(0, 0);
       debug.insert(pc, *i);
 #if 0
       labelpc(pc);
@@ -179,6 +179,7 @@ void hart_t::default_interpreter()
     } // if loop exits there was no branch
     target = (Header_t**)(insnp(bb+1) + bb->count);
   end_bb:
+    WRITE_REG(0, 0);
     simulator(this, bb, addresses);
   }
 }
@@ -258,7 +259,7 @@ bool hart_t::single_step()
   if (i->opcode()==Op_sc_w || i->opcode()==Op_sc_d)
     substitute_cas(pc, i);
    
-  WRITE_REG(0, 0);
+  //WRITE_REG(0, 0);
   debug.insert(pc, *i);
 #if 0
   labelpc(pc);
@@ -272,10 +273,12 @@ bool hart_t::single_step()
   case Op_ILLEGAL:  die("Op_ILLEGAL opcode");
   case Op_UNKNOWN:  die("Op_UNKNOWN opcode");
   }
-    
   debug.addval(i->rd()!=NOREG ? s.xrf[i->rd()] : s.xrf[i->rs2()]);
+  
  end_bb: // at this point pc=target basic block but i still points to last instruction.
   debug.addval(s.xrf[i->rd()]);
+  WRITE_REG(0, 0);
+
   if (conf_show()) {
     print(oldpc, i, stdout);
   }

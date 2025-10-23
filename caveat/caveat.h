@@ -27,7 +27,9 @@ extern const uint64_t stop_after[];
 #define FPREG	(GPREG+32)
 #define VPREG	(FPREG+32)
 #define VMREG	(VPREG+32)
-#define NOREG	0xFF
+
+//#define NOREG	0xFF
+#define NOREG	0		// big overhaul to streamline code
 
 struct alignas(8) Insn_t {
   Opcode_t op_code;
@@ -49,8 +51,12 @@ public:
   Opcode_t opcode() const { return op_code; }
   uint rd()  const { return op_rd; }
   uint rs1() const { return op_rs1; }
-  uint rs2() const { return longimmed() ? NOREG : op.rs2; }
-  uint rs3() const { return longimmed() ? NOREG : op.rs3; }
+  
+  //uint rs2() const { return longimmed() ? NOREG : op.rs2; }
+  //uint rs3() const { return longimmed() ? NOREG : op.rs3; }
+  uint rs2() const { return op.rs2; } // resume previous
+  uint rs3() const { return op.rs3; }
+  
   bool compressed() const { return op_code <= Last_Compressed_Opcode; }
 
   friend Insn_t decoder(uintptr_t pc);

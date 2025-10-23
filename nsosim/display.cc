@@ -67,6 +67,8 @@ void History_t::display(WINDOW* w, Core_t* c)
   slabelpc(buf, pc);
   wprintw(w, "%s", buf);
 
+  wprintw(w, "=?%8lx: ", expected_pc);
+
   if (status == History_t::Retired) {
     sdisasm(buf, pc, &ref);
     wprintw(w, "%s", buf);

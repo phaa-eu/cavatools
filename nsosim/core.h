@@ -53,6 +53,7 @@ struct History_t {		// dispatched instruction
 #ifdef VERIFY
   uintptr_t expected_rd;	// for checking against uspike
   uintptr_t actual_rd;		// for display
+  uintptr_t expected_pc;
 #endif
   enum Status_t { Retired, Executing, Queued, Queued_stbchk, Dispatch } status;
   Reg_t lsqpos;			// address in register here
@@ -141,6 +142,7 @@ public:
   uintptr_t get_state();
   void put_state(uintptr_t pc);
   uintptr_t get_rd_from_spike(Reg_t n);
+  uintptr_t get_pc_from_spike();
 
   Addr_t perform(Insn_t* i, Addr_t pc, History_t* h);
 

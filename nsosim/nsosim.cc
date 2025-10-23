@@ -18,7 +18,7 @@
 option<long> conf_report("report", 1, "Status report per second");
 option<bool> conf_visual("visual", true, false, "Interactive visual mode");
 
-#if 1
+#if 0
 option<int> conf_fp("fp", 3, "Latency floating point");
 option<int> conf_ld("ld", 4, "Latency loads");
 option<int> conf_st("st", 20, "Latency stores");
@@ -104,8 +104,10 @@ void interactive(Core_t* cpu)
 #ifdef VERIFY
       History_t* h = cpu->nextrob();
       if (last_cycle_dispatched) {
+	h->expected_pc = cpu->get_pc_from_spike();
 	cpu->single_step();
-	h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
+	//h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
+	h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
       }
       clock_memory_system(cpu);
       last_cycle_dispatched = cpu->clock_pipeline();
@@ -166,6 +168,17 @@ void interactive(Core_t* cpu)
       number = 0;
     }
     goto infinite_loop;
+
+
+    
+  case 'X':
+    stop_cycle = cycle + 1;
+    number = 0;
+    mismatches = 0;
+    goto infinite_loop;
+
+
+
     
   case 'c':
     stop_cycle = number ? number : LLONG_MAX;
@@ -235,8 +248,9 @@ int main(int argc, const char* argv[], const char* envp[])
     for (;;) {
 #ifdef VERIFY
       History_t* h = cpu->nextrob();
+      h->expected_pc = cpu->get_pc_from_spike();
       cpu->single_step();
-      h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
+      h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
       do
 	clock_memory_system(cpu);
       while (! cpu->clock_pipeline());

@@ -26,7 +26,8 @@ bool Core_t::clock_pipeline() {
       Insn_t ir = h->insn;
       h->status = History_t::Retired;
 #ifdef VERIFY
-      if (h->actual_rd != h->expected_rd)
+      //if (h->actual_rd != h->expected_rd)
+      if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
 	++mismatches;
 #endif
       busy[ir.rd()] = false;
@@ -78,8 +79,10 @@ bool Core_t::clock_pipeline() {
 
   // commit instruction for dispatch
   acquire_reg(ir.rs1());
-  acquire_reg(ir.rs2());
-  acquire_reg(ir.rs3());
+  if (!ir.longimmed()) {
+    acquire_reg(ir.rs2());
+    acquire_reg(ir.rs3());
+  }
   rename_output_reg(ir);
   h->status = History_t::Queued;
 
@@ -177,8 +180,10 @@ bool Core_t::clock_pipeline() {
     
   // simulate reading register file
   release_reg(ir.rs1());
-  release_reg(ir.rs2());
-  release_reg(ir.rs3());
+  if (!ir.longimmed()) {
+    release_reg(ir.rs2());
+    release_reg(ir.rs3());
+  }
   
   // Tricky code here:  pc is actually associated with dispatched
   // instruction, whereas if we issued from queue ir and h->pc are
@@ -222,8 +227,10 @@ bool Core_t::clock_pipeline() {
 void Core_t::rename_input_regs(Insn_t& ir)
 {
   if (ir.rs1()!=NOREG) ir.op_rs1 = regmap[ir.rs1()];
-  if (ir.rs2()!=NOREG) ir.op.rs2 = regmap[ir.rs2()];
-  if (ir.rs3()!=NOREG) ir.op.rs3 = regmap[ir.rs3()];
+  if (! ir.longimmed()) {
+    if (ir.rs2()!=NOREG) ir.op.rs2 = regmap[ir.rs2()];
+    if (ir.rs3()!=NOREG) ir.op.rs3 = regmap[ir.rs3()];
+  }
 }
 
 void Core_t::rename_output_reg(Insn_t& ir)
@@ -309,7 +316,7 @@ Reg_t Core_t::check_store_buffer(uintptr_t addr, Reg_t k)
 uintptr_t Core_t::get_state()
 {
   hart_t* h = this;
-  for (int k=1; k<32; k++)
+  for (int k=0; k<32; k++)
     s.reg[regmap[k]].x = h->s.xrf[k];
   for (int k=0; k<32; k++)
     s.reg[regmap[k+32]].f = h->s.frf[k];
@@ -331,12 +338,17 @@ void Core_t::put_state(uintptr_t pc)
 }
 
 uintptr_t Core_t::get_rd_from_spike(Reg_t n) {
-  if (n == NOREG)
-    return 0;
-  else if (n < 32)
+  //if (n == NOREG)
+  //  return 0;
+  //else if (n < 32)
+  if (n < 32)
     return ((hart_t*)this)->s.xrf[n];
   else
     return (uintptr_t)((hart_t*)this)->s.frf[n].v[0];
+}
+
+uintptr_t Core_t::get_pc_from_spike() {
+  return ((hart_t*)this)->pc;
 }
 
 
@@ -403,8 +415,8 @@ void Core_t::reset() {
     freelist[numfree++] = k;
     uses[k] = 0;
   }
-  regmap[NOREG] = NOREG;
-  uses[NOREG] = 0;
+  //regmap[NOREG] = NOREG; overhaul now NOREG==0
+  //uses[NOREG] = 0;
   // initialize pipelines and issue queue
   memset(wheel, 0, sizeof wheel);
   memset(memory, 0, sizeof memory);
