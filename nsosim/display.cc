@@ -61,6 +61,8 @@ void History_t::display(WINDOW* w, Core_t* c)
   switch (status) {
   case History_t::Retired:	wattron(w, A_DIM); break;
   case History_t::Dispatch:	wattron(w, A_UNDERLINE); break;
+    //  case History_t::Executing:	wattron(w, COLOR_PAIR(1));
+    //  default:			wattron(w, COLOR_PAIR(2));
   }
 
 #ifdef VERIFY
@@ -117,7 +119,11 @@ void History_t::display(WINDOW* w, Core_t* c)
   switch (status) {
   case History_t::Retired:	wattroff(w, A_DIM); break;
   case History_t::Dispatch:	wattroff(w, A_UNDERLINE); break;
+    //  case History_t::Executing:	wattroff(w, COLOR_PAIR(1));
+    //  default:			wattroff(w, COLOR_PAIR(2));
   }
+  //wattron(w, COLOR_PAIR(0));
+  //wprintw(w, "\n");
 }
 
 void help_screen()
@@ -177,11 +183,20 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
   wprintw(w, "]\n");
   --lines;			    // account for register busy line
   ++y;
-  
+
+  wmove(w, y, 0);
+  wprintw(w, "wheel=[");
+  for (int k=0; k<max_latency+1; ++k) {
+    wprintw(w, "%c", c->wheel[k] ? '*' : '.');
+  }
+  wprintw(w, "]\n");
+  --lines;
+  ++y;
+
   wmove(w, y, x);
   wattron(w, A_UNDERLINE);
   wprintw(w, "  cycle\tflags\t");
-#ifdef VERIFY
+#ifdef VERIFYf
   wprintw(w, "\t     Expected\t\tActual\t");
 #endif
   wprintw(w, "\tpc label\t       pc  hex insn  opcode\t\treg(renamed=uses), [stbuf]");
@@ -225,7 +240,7 @@ void Memory_t::display(WINDOW* w, int y, int x)
 
   History_t* h = history();
   Insn_t ir = h->insn;
-  unsigned win_attr;
+  unsigned win_attr = 0;
   if (attributes[ir.opcode()] & ATTR_ld)           win_attr |= A_BOLD;
   if (attributes[ir.opcode()] & ATTR_st)           win_attr |= A_REVERSE;
   if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) win_attr |= A_UNDERLINE;
@@ -235,7 +250,6 @@ void Memory_t::display(WINDOW* w, int y, int x)
     wprintw(w, "(r%d)", ir.rd());
   if (h->lsqpos != NOREG)
     wprintw(w, "[sb%d]", h->lsqpos-max_phy_regs);
-  //wprintw(w, "%lld", cycle-finish());
   wprintw(w, "%d", -(int)((finish()-cycle)));
 
   wattroff(w, win_attr);
@@ -255,7 +269,8 @@ void Port_t::display(WINDOW* w, int y, int x, Core_t* c)
   //wprintw(w, "r%d", ir.rd());
   c->show_reg(w, ir.rd(), ' ', h->ref.rd());
   if (h->lsqpos != NOREG)
-    wprintw(w, "[sb%d]", h->lsqpos-max_phy_regs);
+    wprintw(w, ",sb%d", h->lsqpos-max_phy_regs);
+  wprintw(w, "[%d]", mem_bank(addr()));
   wprintw(w, "+%d", latency());
   return;
 
@@ -299,7 +314,7 @@ void display_memory_system(WINDOW* w, int y, int x)
 #if 0
 
 
-/*
+f/*
  * Exception catching
  */
 

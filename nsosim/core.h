@@ -4,8 +4,8 @@
 
 #define thread_local
 
-const int issue_queue_length = 4;
-const int lsq_length = 2;	// load-store queue
+const int issue_queue_length = 1;
+const int lsq_length = 1;	// load-store queue
 
 const int dispatch_history = 4096;
 const int cycle_history = 4*dispatch_history;

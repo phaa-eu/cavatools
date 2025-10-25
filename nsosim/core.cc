@@ -28,29 +28,16 @@ void Core_t::clock_port() {
   
   if (memory[mem_channel(port.addr())][mem_bank(port.addr())].active())
     return;			// memory bank is busy
-  if (h->insn.rd() != NOREG && wheel[index(port.latency())] != 0)
-    return;			// register bus not available
-  
-  // schedule register write bus (if needed)ff
-  if (h->insn.rd() != NOREG)
-    wheel[index(port.latency())] = h;
-  else // stores retire immediately it enters memory system
-    h->status = History_t::Retired;
-
-#if 0
-  // release store buffer
-  assert(h->lsqpos != NOREG);
-  if (busy[h->lsqpos]) {
-    busy[h->lsqpos] = false;
-    release_reg(h->lsqpos);
-  }
-  if (is_store_buffer(h->insn.rd())) {
-    busy[h->insn.rd()] = false;
-    release_reg(h->insn.rd());
-  }
-#endif
 
   memory[mem_channel(port.addr())][mem_bank(port.addr())].activate(cycle+port.latency(), h);
+  if (h->insn.rd() == NOREG)	// stores retire immediately
+    h->status = History_t::Retired;
+  else {
+    if (wheel[index(port.latency())] != 0)
+      return;
+    wheel[index(port.latency())] = h;
+    h->status = History_t::Executing;
+  }
   port.deactivate();
 }
   
@@ -72,7 +59,7 @@ bool Core_t::clock_pipeline() {
 #endif
     busy[ir.rd()] = false;
     release_reg(ir.rd());
-    --_inflight;
+    //--_inflight;
     wheel[index(0)] = 0;
   }
 
@@ -85,14 +72,18 @@ bool Core_t::clock_pipeline() {
   bool dispatched = false;
   unsigned tmpflags = 0;
 
-  rename_input_regs(ir);
-  
   // conditions that prevent dispatch into issue queue
-  
+
+  if (numfree == 0) {
+    flags |= FLAG_nofree;
+    goto issue_from_queue;
+  }
   if (last == issue_queue_length) {
     flags |= FLAG_qfull;
     goto issue_from_queue;	// issue queue is full
   }
+  
+  rename_input_regs(ir);
 
   // branches execute immediately
   if (attr & (ATTR_uj|ATTR_cj)) {
@@ -153,14 +144,7 @@ bool Core_t::clock_pipeline() {
     if ((attr & ATTR_ld) & !(attr & ATTR_amo))
       h->status = History_t::Queued_stbchk;
   }
-  
-  // enter into phantom ROB
   h->insn = ir;
-  _insns++;
-  _inflight++;
-  dispatched = true;
-
-  memset(&rob[insns() % dispatch_history], 0, sizeof(History_t));
 
   // advance pc sequentially, but taken branch will override
   pc += ir.compressed() ? 2 : 4;
@@ -172,17 +156,30 @@ bool Core_t::clock_pipeline() {
   // branches, AMO execute immediately
   if (attr & (ATTR_uj|ATTR_cj|ATTR_amo|ATTR_ex)) {
     assert(ready_insn(ir));
-    goto execute_instruction;
+    //    goto execute_instruction;
+    for (int k=last; k>0; --k)
+      queue[k] = queue[k-1];
+    queue[0] = h;
+    ++last;
   }
-
-  // everything else goes into queue
-  queue[last++] = h;
+  else // everything else goes in back of queue
+    queue[last++] = h;
+  
+  // enter into phantom ROB
+  dispatched = true;
+  _inflight++;
+  _insns++;
+  memset(&rob[insns() % dispatch_history], 0, sizeof(History_t));
 
  issue_from_queue:
 
   // find first ready instruction
   for (int k=0; k<last; ++k) {
     h = queue[k];
+    
+    if (h->status == History_t::Queued_noport || h->status == History_t::Queued_nochk)
+      h->status = History_t::Queued;
+      
     ir = h->insn;
     attr = attributes[ir.opcode()];
     if (ready_insn(ir)) {
@@ -194,6 +191,7 @@ bool Core_t::clock_pipeline() {
 	  continue;
 	}
       }
+      
       // memory operations have extra conditions
       if (attr & (ATTR_ld|ATTR_st)) {
 	if (h->status == History_t::Queued_stbchk) {
@@ -241,6 +239,7 @@ bool Core_t::clock_pipeline() {
  execute_instruction:
   // Note instruction is in ir but pc is in h->pc.
 
+  ir = h->insn;
   if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) {
     int channel = 0;
     assert(!port.active());
@@ -280,6 +279,8 @@ bool Core_t::clock_pipeline() {
   if (!(attr & (ATTR_ld|ATTR_st))) 
     wheel[index(latency[ir.opcode()])] = h;
   h->status = History_t::Executing;
+  
+  --_inflight;
 
  finish_cycle:
   ++cycle;
@@ -316,7 +317,9 @@ void Core_t::rename_output_reg(Insn_t& ir)
   if (old_rd == NOREG)
     return;
   release_reg(regmap[old_rd]);
+  assert(numfree > 0);
   ir.op_rd = freelist[--numfree];
+  assert(ir.rd() != 0);
   regmap[old_rd] = ir.rd();
   acquire_reg(ir.rd());
   // now model getting register for in flight

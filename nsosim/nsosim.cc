@@ -89,9 +89,15 @@ void interactive(Core_t* cpu)
   nonl();
   cbreak();                     /* Line buffering disabled */
   noecho();
-  nodelay(stdscr
-, true);
-  //start_color();
+  nodelay(stdscr, true);
+
+#if 0
+  start_color();
+  init_pair(0, COLOR_WHITE,	COLOR_BLACK);
+  init_pair(1, COLOR_GREEN,	COLOR_BLACK);
+  init_pair(2, COLOR_RED,	COLOR_BLACK);
+  //  attron(COLOR_PAIR(0));
+#endif
 
   for (int k=0; k<window_buffers; ++k)
     winbuf[k] = newwin(LINES, COLS, 0, 0);
@@ -122,17 +128,9 @@ void interactive(Core_t* cpu)
       frontwin=(frontwin+1)%window_buffers;
       WINDOW* w=winbuf[frontwin];
       wclear(w);
+      display_history(w, 3, 0, cpu, LINES-3);
       display_memory_system(w, 0, 0);
       cpu->port.display(w, 2, 0, cpu);
-      display_history(w, 3, 0, cpu, LINES-3);
-      
-      wmove(w, 0, 0);
-      wprintw(w, "wheel=[");
-      for (int k=0; k<max_latency+1; ++k) {
-	wprintw(w, "%c", cpu->wheel[k] ? '*' : '.');
-      }
-      wprintw(w, "]\n");
-      
       if (framerate >= 0) {
 	wrefresh(w);
 	if (framerate > 0)
