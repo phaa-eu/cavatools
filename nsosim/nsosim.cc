@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2025 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
+ Copyright (c) 2025 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
 #include <cassert>
@@ -18,11 +18,11 @@
 option<long> conf_report("report", 1, "Status report per second");
 option<bool> conf_visual("visual", true, false, "Interactive visual mode");
 
-#if 0
+#if 1
 option<int> conf_fp("fp", 3, "Latency floating point");
 option<int> conf_ld("ld", 4, "Latency loads");
 option<int> conf_st("st", 20, "Latency stores");
-option<int> conf_alu("alu", 2, "Latency ALU");
+option<int> conf_alu("alu", 1, "Latency ALU");
 #else
 option<int> conf_fp("fp", 1, "Latency floating point");
 option<int> conf_ld("ld", 1, "Latency loads");
@@ -35,14 +35,18 @@ uint8_t latency[Number_of_Opcodes];
 
 void status_report()
 {
+  long long total = 0;
+  for (Core_t* p=Core_t::list(); p; p=p->next())
+    total += p->insns();
   double realtime = elapse_time();
-  fprintf(stderr, "\r\33[2K%12llud insns %3.1fs CPS=%3.1f IPC=", cycle, realtime, cycle/1e6/realtime);
+  
+  fprintf(stderr, "\r\33[2K%12lld cycles %12lld insns %3.1fs CPS=%3.1f IPC=", cycle, total, realtime, cycle/1e6/realtime);
 
   if (hart_t::num_harts() <= 16) {
     char separator = '(';
     for (Core_t* p=Core_t::list(); p; p=p->next()) {
       fprintf(stderr, "%c", separator);
-      fprintf(stderr, "%5.3f", (double)p->executed()/cycle);
+      fprintf(stderr, "%5.3f", (double)p->insns()/cycle);
       separator = ',';
     }
     fprintf(stderr, ")");
@@ -109,17 +113,26 @@ void interactive(Core_t* cpu)
 	//h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
 	h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
       }
-      clock_memory_system(cpu);
+      clock_memory_system();
       last_cycle_dispatched = cpu->clock_pipeline();
 #else
-      clock_memory_system(cpu);
+      clock_memory_system();
       (void) cpu->clock_pipeline();
 #endif
       frontwin=(frontwin+1)%window_buffers;
       WINDOW* w=winbuf[frontwin];
       wclear(w);
-      display_memory(w, 0, 0);
-      display_history(w, 2, 0, cpu, LINES-3);
+      display_memory_system(w, 0, 0);
+      cpu->port.display(w, 2, 0, cpu);
+      display_history(w, 3, 0, cpu, LINES-3);
+      
+      wmove(w, 0, 0);
+      wprintw(w, "wheel=[");
+      for (int k=0; k<max_latency+1; ++k) {
+	wprintw(w, "%c", cpu->wheel[k] ? '*' : '.');
+      }
+      wprintw(w, "]\n");
+      
       if (framerate >= 0) {
 	wrefresh(w);
 	if (framerate > 0)
@@ -252,7 +265,7 @@ int main(int argc, const char* argv[], const char* envp[])
       cpu->single_step();
       h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
       do
-	clock_memory_system(cpu);
+	clock_memory_system();
       while (! cpu->clock_pipeline());
 #else
       clock_memory_system(cpu);

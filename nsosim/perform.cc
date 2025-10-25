@@ -71,29 +71,28 @@ Addr_t Core_t::perform(Insn_t* i, Addr_t pc, History_t* h)
 	
 
 #ifdef VERIFY
-  
-#define LOAD(T, a)     *(T*)(*ap++=a)
-#define STORE(T, a, v)
 
-#define load_reserved(T, a)         h->expected_rd
-#define store_conditional(T, a, v)  h->expected_rd
-#define cas32(a, b, c, d)   h->expected_rd
-#define cas64(a, b, c, d)   h->expected_rd
-#define amo_int32(a, b, c)  h->expected_rd
-#define amo_int64(a, b, c)  h->expected_rd
-#define riscv_syscall(a, b) h->expected_rd
-  
+  // these instructions cannot execute twice, so just use uspike value  
+#define LOAD(T, a)			h->expected_rd
+#define STORE(T, a, v)			/* nothing in this case */
+#define load_reserved(T, a)         	h->expected_rd
+#define store_conditional(T, a, v)  	h->expected_rd
+#define cas32(a, b, c, d)   		h->expected_rd
+#define cas64(a, b, c, d)   		h->expected_rd
+#define amo_int32(a, b, c)  		h->expected_rd
+#define amo_int64(a, b, c)  		h->expected_rd
+#define riscv_syscall(a, b) 		h->expected_rd
+
 #else
   
-#define LOAD(T, a)     *(T*)(*ap++=a)
-#define STORE(T, a, v) *(T*)(*ap++=a)=(v)
-  
-#define load_reserved(T, a)         *(T*)(*ap++=a)
-#define store_conditional(T, a, v)  wrd( (*(T*)(*ap++=a)=(v), 0) )
+#define LOAD(T, a)			*(T*)(*ap++=a)
+#define STORE(T, a, v)			*(T*)(*ap++=a)=(v)
+#define load_reserved(T, a)		*(T*)(*ap++=a)
+#define store_conditional(T, a, v)	wrd( (*(T*)(*ap++=a)=(v), 0) )
+#define cas32(a, b, c, d)		cas<int32_t>(a, b, c, d)
+#define cas64(a, b, c, d)		cas<int64_t>(a, b, c, d)
+  // remaining have preexisting definitions
 
-#define cas32(a, b, c, d) cas<int32_t>(a, b, c, d)
-#define cas64(a, b, c, d) cas<int64_t>(a, b, c, d)
-  
 #endif
       
 #define fence(x)

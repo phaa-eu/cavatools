@@ -20,13 +20,21 @@ unsigned long number = 0;
 
 
 // show opcode highlighting execution status
-static void show_opcode(WINDOW* w, Opcode_t op, bool executing)
+//static void show_opcode(WINDOW* w, Opcode_t op, bool executing)
+static void show_opcode(WINDOW* w, Opcode_t op, History_t::Status_t status)
 {
   extern const char* op_name[];
+  bool executing = status==History_t::Executing;
   if (executing) wattron(w,  A_REVERSE);
   int len = strlen(op_name[op]);
   wprintw(w, "%s", op_name[op]);
   if (executing) wattroff(w,  A_REVERSE);
+  
+  switch (status) {
+  case History_t::Queued_stbchk:  wprintw(w, "?"); ++len; break;
+  case History_t::Queued_noport:  wprintw(w, "*"); ++len; break;
+  case History_t::Queued_nochk:   wprintw(w, "@"); ++len; break;
+  }
   wprintw(w, "%*s", 23-len, "");
 }
 
@@ -35,6 +43,8 @@ static void show_opcode(WINDOW* w, Opcode_t op, bool executing)
 void Core_t::show_reg(WINDOW* w, Reg_t n, char sep, int ref)
 {
   extern const char* reg_name[];
+  if (ref == NOREG)
+    return;
   wprintw(w, "%c", sep);
   if (busy[n]) wattron(w,  A_REVERSE);
   if (is_store_buffer(n))
@@ -66,8 +76,10 @@ void History_t::display(WINDOW* w, Core_t* c)
   char buf[256];;
   slabelpc(buf, pc);
   wprintw(w, "%s", buf);
-
+  
+#ifdef VERIFY
   wprintw(w, "=?%8lx: ", expected_pc);
+#endif
 
   if (status == History_t::Retired) {
     sdisasm(buf, pc, &ref);
@@ -79,13 +91,14 @@ void History_t::display(WINDOW* w, Core_t* c)
       wprintw(w, "    %04x  ", b&0xFFFF);
     else
       wprintw(w, "%08x  ",     b);
-    show_opcode(w, insn.opcode(), status==History_t::Executing);
+    //show_opcode(w, insn.opcode(), status==History_t::Executing);
+    show_opcode(w, insn.opcode(), status);
     char sep = ' ';
-    if (insn.rd()  != NOREG)   { c->show_reg(w, insn.rd(),  sep, ref.rd()),  sep=','; }
-    if (insn.rs1() != NOREG)   { c->show_reg(w, insn.rs1(), sep, ref.rs1()), sep=','; }
+    c->show_reg(w, insn.rd(),  sep, ref.rd()),  sep='=';
+    c->show_reg(w, insn.rs1(), sep, ref.rs1()), sep=',';
     if (! insn.longimmed()) {
-      if (insn.rs2() != NOREG) { c->show_reg(w, insn.rs2(), sep, ref.rs2()), sep=','; }
-      if (insn.rs3() != NOREG) { c->show_reg(w, insn.rs3(), sep, ref.rs3()), sep=','; }
+      c->show_reg(w, insn.rs2(), sep, ref.rs2()), sep=',';
+      c->show_reg(w, insn.rs3(), sep, ref.rs3()), sep=',';
     }
     wprintw(w, "%c%ld", sep, insn.immed());
 
@@ -131,6 +144,7 @@ void help_screen()
 static void show_flags(WINDOW* w, unsigned flags)
 {
   wprintw(w, "%c", (flags&FLAG_busy)		? 'b' : ' ');
+  wprintw(w, "%c", (flags&FLAG_regbus)		? 'r' : ' ');
   wprintw(w, "%c", (flags&FLAG_qfull)		? 'f' : ' ');
   wprintw(w, "%c", (flags&FLAG_stuaddr)		? 'a' : ' ');
   wprintw(w, "%c", (flags&FLAG_stbfull)		? 's' : ' ');
@@ -138,6 +152,8 @@ static void show_flags(WINDOW* w, unsigned flags)
   wprintw(w, "%c", (flags&FLAG_serialize)	? '!' : ' ');
   wprintw(w, "%c", (flags&FLAG_stbhit)		? 'h' : ' ');
   wprintw(w, "%c", (flags&FLAG_endmem)		? 'm' : ' ');
+  wprintw(w, "%c", (flags&FLAG_noport)		? 'p' : ' ');
+  wprintw(w, "%c", (flags&FLAG_stbchk)		? 'c' : ' ');
   wprintw(w, "\t");
 }
 
@@ -199,70 +215,78 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
   }
 }
 
-void Memory_t::display(WINDOW* w)
+void Memory_t::display(WINDOW* w, int y, int x)
 {
+  wmove(w, y, x);
   if (! active()) {
     wprintw(w, "-");
     return;
   }
 
-  int win_attr = 0;
-  if (attributes[h->insn.opcode()] & ATTR_ld)
-    win_attr |= A_BOLD;
-  if (attributes[h->insn.opcode()] & ATTR_st)
-    win_attr |= A_REVERSE;
-  if (attributes[h->insn.opcode()] & ATTR_amo)
-    win_attr |= A_UNDERLINE;
-
+  History_t* h = history();
+  Insn_t ir = h->insn;
+  unsigned win_attr;
+  if (attributes[ir.opcode()] & ATTR_ld)           win_attr |= A_BOLD;
+  if (attributes[ir.opcode()] & ATTR_st)           win_attr |= A_REVERSE;
+  if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) win_attr |= A_UNDERLINE;
   wattron(w, win_attr);
-  
-  if (h->insn.rd() != NOREG)
-    wprintw(w, "(r%d)", h->insn.rd());
+
+  if (ir.rd() != NOREG)
+    wprintw(w, "(r%d)", ir.rd());
   if (h->lsqpos != NOREG)
     wprintw(w, "[sb%d]", h->lsqpos-max_phy_regs);
-  wprintw(w, "%lld", cycle-finish);
+  //wprintw(w, "%lld", cycle-finish());
+  wprintw(w, "%d", -(int)((finish()-cycle)));
 
   wattroff(w, win_attr);
 }
 
-void Memory_t::show_as_port(WINDOW* w)
+void Port_t::display(WINDOW* w, int y, int x, Core_t* c)
 {
-  display(w);
-#if 0
-  if (! active())
+  wmove(w, y, x);
+  if (!active()) {
+    wprintw(w, "(nothing)");
     return;
-  if (is_store_buffer(rd)) wattron(w, A_BOLD|A_REVERSE);
-  else                     wattron(w,  A_BOLD);
-  wprintw(w, "[%ld]", mem_bank(addr));
-  if (is_store_buffer(rd))
-    wprintw(w, "sb%d", rd-max_phy_regs);
-  else
-    wprintw(w, "r%d", rd);
-  wprintw(w, "+%lld", finish);
-  if (is_store_buffer(rd)) wattroff(w, A_BOLD|A_REVERSE);
-  else                     wattroff(w,  A_BOLD);
-#endif
+  }
+  
+  History_t* h = history();
+  Insn_t ir = h->insn;
+
+  //wprintw(w, "r%d", ir.rd());
+  c->show_reg(w, ir.rd(), ' ', h->ref.rd());
+  if (h->lsqpos != NOREG)
+    wprintw(w, "[sb%d]", h->lsqpos-max_phy_regs);
+  wprintw(w, "+%d", latency());
+  return;
+
+  unsigned win_attr;
+  if (attributes[ir.opcode()] & ATTR_ld)           win_attr |= A_BOLD;
+  if (attributes[ir.opcode()] & ATTR_st)           win_attr |= A_REVERSE;
+  if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) win_attr |= A_UNDERLINE;
+  wattron(w, win_attr);
+  
+  if (h->lsqpos != NOREG) {
+    wprintw(w, "[sb%d]", h->lsqpos-max_phy_regs);
+    wprintw(w, "+%d", latency());
+  }
+  wattroff(w, win_attr);
 }
 
  
-void display_memory(WINDOW* w, int y, int x)
+void display_memory_system(WINDOW* w, int y, int x)
 {
-  const int fieldwidth = 12;
+  const int fieldwidth = 20;
   wmove(w, y, x);
   wprintw(w, "Channel");
   for (int k=0; k<memory_banks; ++k) {
-    wmove(w, y, x+4+(k+1)*fieldwidth);
+    wmove(w, y, x+8+k*fieldwidth);
     wprintw(w, "bank[%d]", k);
   }
   for (int j=0; j<memory_channels; ++j) {
-    wmove(w, y+j+1, 3);
-    port[j].show_as_port(w);
-    for (int k=0; k<memory_banks; ++k) {
-      wmove(w, y+j+1, 0);
-      wprintw(w, "%d ", j);
-      wmove(w, y+j+1, x+4+(k+1)*fieldwidth);
-      memory[j][k].display(w);
-    }
+    wmove(w, y+j+1, 0);
+    wprintw(w, "%7d ", j);
+    for (int k=0; k<memory_banks; ++k)
+      memory[j][k].display(w, y+1+j, x+8+k*fieldwidth);
   }
 }
 
@@ -321,8 +345,9 @@ static void fastrun_without_display(Core_t* cpu)
     frontwin = (frontwin+1) % window_buffers;
     WINDOW* w = winbuf[frontwin];
     wclear(w);
-    display_memory(w, 0, 0);
-    cpu->display_history(w, 2, 0, LINES-2);
+    display_memory_system(w, 0, 0);
+    cpu->port.display(w, 2, 0, cpu);
+    cpu->display_history(w, 3, 0, LINES-2);
     fprintf(stderr, "\r\33[2K%ld %ld", cycle, cpu->insns);
   } // infinite loop
 }

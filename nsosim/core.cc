@@ -9,72 +9,122 @@
 #include "caveat.h"
 #include "hart.h"
 
-#include "core.h"
 #include "memory.h"
+#include "core.h"
 
-thread_local long long cycle;
+//thread_local long long cycle;
+long long cycle;
 thread_local long long mismatches;
 
+
+void Core_t::clock_port() {
+    // Launch new memory operation if:
+  //   valid request in port
+  //   register write bus avail (if needed)
+  //   memory bank is idle
+  if (!port.active())
+    return;			// idle
+  History_t* h = port.history();
+  
+  if (memory[mem_channel(port.addr())][mem_bank(port.addr())].active())
+    return;			// memory bank is busy
+  if (h->insn.rd() != NOREG && wheel[index(port.latency())] != 0)
+    return;			// register bus not available
+  
+  // schedule register write bus (if needed)ff
+  if (h->insn.rd() != NOREG)
+    wheel[index(port.latency())] = h;
+  else // stores retire immediately it enters memory system
+    h->status = History_t::Retired;
+
+#if 0
+  // release store buffer
+  assert(h->lsqpos != NOREG);
+  if (busy[h->lsqpos]) {
+    busy[h->lsqpos] = false;
+    release_reg(h->lsqpos);
+  }
+  if (is_store_buffer(h->insn.rd())) {
+    busy[h->insn.rd()] = false;
+    release_reg(h->insn.rd());
+  }
+#endif
+
+  memory[mem_channel(port.addr())][mem_bank(port.addr())].activate(cycle+port.latency(), h);
+  port.deactivate();
+}
+  
 
 bool Core_t::clock_pipeline() {
   uint16_t& flags = cycle_flags[cycle % cycle_history];
 
+  clock_port();
+
   // Retire pipelined instruction(s)
-  for (int k=0; k<num_write_ports; ++k) {
-    History_t* h = wheel[k][index(0)];
-    if (h) {
-      Insn_t ir = h->insn;
-      h->status = History_t::Retired;
+  History_t* h = wheel[index(0)];
+  if (h) {
+    Insn_t ir = h->insn;
+    h->status = History_t::Retired;
 #ifdef VERIFY
-      //if (h->actual_rd != h->expected_rd)
-      if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
-	++mismatches;
+    //if (h->actual_rd != h->expected_rd)
+    if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
+      ++mismatches;
 #endif
-      busy[ir.rd()] = false;
-      release_reg(ir.rd());
-      if (h->lsqpos != NOREG) {
-	busy[h->lsqpos] = false;
-	release_reg(h->lsqpos);
-      }
-      --_inflight;
-      wheel[k][index(0)] = 0;
-    }
+    busy[ir.rd()] = false;
+    release_reg(ir.rd());
+    --_inflight;
+    wheel[index(0)] = 0;
   }
 
   // Try to dispatch new instruction
-  History_t* h = nextrob();
+  h = nextrob();
   Insn_t ir = *i;
   ATTR_bv_t attr = attributes[ir.opcode()];
   Addr_t addr;
   bool mem_checker_used = false;
   bool dispatched = false;
+  unsigned tmpflags = 0;
 
   rename_input_regs(ir);
   
   // conditions that prevent dispatch into issue queue
+  
   if (last == issue_queue_length) {
     flags |= FLAG_qfull;
     goto issue_from_queue;	// issue queue is full
   }
-  if ((attr & (ATTR_uj|ATTR_cj|ATTR_amo)) && !ready_insn(ir)) {
-    flags |= FLAG_busy;
-    goto issue_from_queue;	// branch registers not ready
+
+  // branches execute immediately
+  if (attr & (ATTR_uj|ATTR_cj)) {
+    if (!ready_insn(ir)) {
+      flags |= FLAG_busy;
+      goto issue_from_queue;	// branch registers not ready
+    }
   }
-  if ((attr & ATTR_st) && busy[ir.rs1()]) {
-    flags |= FLAG_stuaddr;
-    goto issue_from_queue;	// unknown store address
-  }
-  if ((attr & (ATTR_ld|ATTR_st)) && lsq_full()) {
-    flags |= FLAG_stbfull;
-    goto issue_from_queue;	// lsq full
-  }
-  if ((attr & ATTR_ex) && last>0) {
-    flags |= FLAG_serialize;
-    goto issue_from_queue;	// waiting for pipeline flush
-  }
-  if ((attr & ATTR_amo) && (last>0 | port[0].active())) {
-    flags |= FLAG_serialize;
-    goto issue_from_queue;	// waiting for pipeline flush
+  else if (attr & (ATTR_st | ATTR_amo|ATTR_ex)) {
+    // stores need valid address and space in store buffer
+    if (attr & ATTR_st) {
+      if (lsq_full()) {
+	flags |= FLAG_stbfull;
+	goto issue_from_queue;	// lsq full
+      }
+      if (busy[ir.rs1()]) {
+	flags |= FLAG_stuaddr;
+	goto issue_from_queue;	// unknown store address
+      }
+    }
+    // atomic memory operations, ecalls and CSR instructions
+    if (attr & (ATTR_amo|ATTR_ex)) {
+      flags |= FLAG_serialize;
+      if (last > 0)		// issue all deferred instructions
+	goto issue_from_queue;
+      if (port.active())	// including pending memory operations
+	goto issue_from_queue;
+      for (int r=0; r<max_phy_regs; ++r) {
+	if (busy[r])
+	  goto issue_from_queue; // and flush pipelines
+      }
+    }
   }
 
   // commit instruction for dispatch
@@ -87,11 +137,11 @@ bool Core_t::clock_pipeline() {
   h->status = History_t::Queued;
 
   if (attr & (ATTR_ld|ATTR_st)) {
-    assert(!lsq_full());
     addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
 
     // search for write-after-write dependency
     if (attr & ATTR_st) {
+      assert(!lsq_full());
       // special hack for internally substituted CAS instruction
       if (! (attr & ATTR_amo))
 	ir.op.rs3 = check_store_buffer(addr);
@@ -100,7 +150,7 @@ bool Core_t::clock_pipeline() {
     }
     else
       h->lsqpos = lsqtail + max_phy_regs;
-    if (attr & ATTR_ld & !(attr & ATTR_amo))
+    if ((attr & ATTR_ld) & !(attr & ATTR_amo))
       h->status = History_t::Queued_stbchk;
   }
   
@@ -119,8 +169,8 @@ bool Core_t::clock_pipeline() {
     i = insnp(bb+1);
   }
 
-  // branches and AMO execute immediately
-  if (attr & (ATTR_uj|ATTR_cj|ATTR_amo)) {
+  // branches, AMO execute immediately
+  if (attr & (ATTR_uj|ATTR_cj|ATTR_amo|ATTR_ex)) {
     assert(ready_insn(ir));
     goto execute_instruction;
   }
@@ -136,30 +186,46 @@ bool Core_t::clock_pipeline() {
     ir = h->insn;
     attr = attributes[ir.opcode()];
     if (ready_insn(ir)) {
-      
+      // check register file write bus
+      if (ir.rd() != NOREG) {
+	if (wheel[index(latency[ir.opcode()])]) {
+	  tmpflags |= FLAG_regbus;
+	  flags |= FLAG_regbus;
+	  continue;
+	}
+      }
       // memory operations have extra conditions
       if (attr & (ATTR_ld|ATTR_st)) {
-	int channel = 0;
-	if (port[channel].active())
-	  continue;
-
 	if (h->status == History_t::Queued_stbchk) {
-	  if (mem_checker_used)
+	  if (mem_checker_used) {
+	    tmpflags |= FLAG_stbchk;
+	    flags |= FLAG_stbchk;
+	    //h->status = History_t::Queued_nochk;
 	    continue;
-	  h->status = History_t::Queued;
+	  }
+	  //h->status = History_t::Queued_stbchk;
 
 	  // special hack for internally substituted CAS instruction
-	  if (! (attr & ATTR_amo))
+	  if (! (attr & ATTR_amo)) {
 	    ir.op.rs3 = check_store_buffer((s.reg[ir.rs1()].x+ir.immed())&~0x7L, h->lsqpos);
-	  
-	  if (ir.rs3() != NOREG) {
-	    acquire_reg(ir.rs3());
-	    flags |= FLAG_stbhit;
-	    h->insn = ir;
-	    if (busy[h->insn.rs3()]) // store has not retired so we must wait
-	      goto finish_cycle; // cycle "used up" by store buffer check
+	    if (ir.rs3() != NOREG) {
+	      acquire_reg(ir.rs3());
+	      flags |= FLAG_stbhit;
+	      h->insn = ir;
+	      if (busy[h->insn.rs3()]) // store has not retired so we must wait
+		goto finish_cycle; // cycle "used up" by store buffer check
+	    }
 	  }
 	}
+	// memory operation cannot issue if port is busy
+	if (port.active()) {
+	  tmpflags |= FLAG_noport;
+	  flags |= FLAG_noport;
+	  h->status = History_t::Queued_noport;
+	  continue;
+	}
+	else
+	  h->status = History_t::Queued;
       }
       
       // remove from queue
@@ -169,6 +235,7 @@ bool Core_t::clock_pipeline() {
       goto execute_instruction;
     }
   }
+  flags |= tmpflags;		// reasons could not issue
   goto finish_cycle;		// no ready instruction in queue
 
  execute_instruction:
@@ -176,8 +243,13 @@ bool Core_t::clock_pipeline() {
 
   if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) {
     int channel = 0;
-    assert(!port[channel].active());
-    port[channel] = make_mem_descr(s.reg[h->lsqpos].a, latency[ir.opcode()], h);
+    assert(!port.active());
+    port.request(mem_addr(ir), latency[ir.opcode()], h);
+    if (attributes[ir.opcode()] & ATTR_st) {
+      assert(h->lsqpos != NOREG);
+      busy[h->lsqpos] = false;
+      release_reg(h->lsqpos);
+    }
   }
     
   // simulate reading register file
@@ -206,7 +278,7 @@ bool Core_t::clock_pipeline() {
 #endif
 
   if (!(attr & (ATTR_ld|ATTR_st))) 
-    wheel[0][ index(latency[ir.opcode()]) ] = h;
+    wheel[index(latency[ir.opcode()])] = h;
   h->status = History_t::Executing;
 
  finish_cycle:
@@ -231,25 +303,25 @@ bool Core_t::clock_pipeline() {
 
 void Core_t::rename_input_regs(Insn_t& ir)
 {
-  if (ir.rs1()!=NOREG) ir.op_rs1 = regmap[ir.rs1()];
+  if (ir.rs1() != NOREG) ir.op_rs1 = regmap[ir.rs1()];
   if (! ir.longimmed()) {
-    if (ir.rs2()!=NOREG) ir.op.rs2 = regmap[ir.rs2()];
-    if (ir.rs3()!=NOREG) ir.op.rs3 = regmap[ir.rs3()];
+    if (ir.rs2() != NOREG) ir.op.rs2 = regmap[ir.rs2()];
+    if (ir.rs3() != NOREG) ir.op.rs3 = regmap[ir.rs3()];
   }
 }
 
 void Core_t::rename_output_reg(Insn_t& ir)
 {
   uint8_t old_rd = ir.rd();
-  if (old_rd!=0 && old_rd!=NOREG) {
-    release_reg(regmap[old_rd]);
-    ir.op_rd = freelist[--numfree];
-    regmap[old_rd] = ir.rd();
-    acquire_reg(ir.rd());
-    // now model getting register for in flight
-    acquire_reg(ir.rd());
-    busy[ir.rd()] = true;
-  }
+  if (old_rd == NOREG)
+    return;
+  release_reg(regmap[old_rd]);
+  ir.op_rd = freelist[--numfree];
+  regmap[old_rd] = ir.rd();
+  acquire_reg(ir.rd());
+  // now model getting register for in flight
+  acquire_reg(ir.rd());
+  busy[ir.rd()] = true;
 }
 
 bool Core_t::ready_insn(Insn_t ir)
@@ -271,14 +343,16 @@ void Core_t::acquire_reg(uint8_t r)
 
 void Core_t::release_reg(uint8_t r)
 {
-  if (r==0 || r==NOREG)
+  if (r == NOREG)
     return;
   assert(uses[r] > 0);
   if (--uses[r] == 0) {
     if (is_store_buffer(r))
       s.reg[r].a = 0;		// mark as free
-    else
+    else {
+      assert(0 < r && r < max_phy_regs);
       freelist[numfree++] = r;
+    }
   }
 }
 
@@ -367,12 +441,15 @@ long ooo_riscv_syscall(hart_t* h, long a0)
   long a4 = c->s.reg[c->regmap[14]].x;
   long a5 = c->s.reg[c->regmap[15]].x;
   long rvnum = c->s.reg[c->regmap[17]].x;
-  long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, c);
+  long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, h);
   return rv;
 }
 
 int clone_proxy(hart_t* h)
 {
+  fprintf(stderr, "NOOOO clone_proxy()\n");
+  abort();
+  
   Core_t* parent = (Core_t*)h;
   parent->put_state(parent->pc);
   Core_t* child = new Core_t(parent);
@@ -446,4 +523,3 @@ void Core_t::reset() {
   h->status = History_t::Dispatch;
   h->lsqpos = NOREG;
 }
-

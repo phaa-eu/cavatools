@@ -8,62 +8,22 @@
 #include "caveat.h"
 #include "hart.h"
 
-#include "core.h"
 #include "memory.h"
+#include "core.h"
 
-thread_local Memory_t memory[memory_channels][memory_banks];
-thread_local Memory_t port[memory_channels];
+//thread_local Memory_t memory[memory_channels][memory_banks];
+Memory_t memory[memory_channels][memory_banks];
 
 
-void clock_memory_system(Core_t* cpu)
+void clock_memory_system()
 {
   // retire memory operations
   for (int j=0; j<memory_channels; ++j) {
     for (int k=0; k<memory_banks; ++k) {
       Memory_t* m = &memory[j][k];
-      if (m->active() && m->finish==cycle) {
-	History_t* h = m->h;
-	if (h->insn.rd() != NOREG) {
-	  cpu->busy[h->insn.rd()] = false;
-	  cpu->release_reg(h->insn.rd());
-	}
-	if (attributes[h->insn.opcode()] & ATTR_st) {
-	  //if (h->lsqpos != NOREG) {
-	  cpu->busy[h->lsqpos] = false;
-	  cpu->release_reg(h->lsqpos);
-	}
-	h->status = History_t::Retired;
-#ifdef VERIFY
-      if (h->actual_rd != h->expected_rd)
-	++mismatches;
-#endif
-	m->_active = false;
-	cpu->cycle_flags[cycle % cycle_history] |= FLAG_endmem;
-	cpu->_inflight--;
-      }
+      if (m->active() && m->finish()==cycle)
+	m->deactivate();
     }
   }
-
-  // initiate new memory operation from ports
-  for (int j=0; j<memory_channels; ++j) {
-    Memory_t* p = &port[j];
-    if (p->active()) {
-      Memory_t* m = &memory[j][mem_bank(p->addr)];
-      if (! m->active()) {
-	p->finish += cycle;	// previously held latency
-	*m = *p;		// activate memory bank
-	p->_active = 0;		// indicate is free
-      }
-    }
-  }
-}
-
-Memory_t make_mem_descr(Addr_t a, long long f, History_t* h) {
-  Memory_t m;
-  m.addr = a;
-  m.finish = f;
-  m.h = h;
-  m._active = true;
-  return m;
 }
 

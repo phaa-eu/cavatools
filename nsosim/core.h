@@ -2,8 +2,10 @@
   Copyright (c) 2025 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
-const int issue_queue_length = 16;
-const int lsq_length = 8;	// load-store queue
+#define thread_local
+
+const int issue_queue_length = 4;
+const int lsq_length = 2;	// load-store queue
 
 const int dispatch_history = 4096;
 const int cycle_history = 4*dispatch_history;
@@ -13,12 +15,15 @@ const int num_write_ports = 1;
 const int max_latency = 32;	// for timing wheel
 extern uint8_t latency[];	// for each opcode
 
+typedef uintptr_t Addr_t;
+typedef uint8_t Reg_t;
+
 
 // Unified physical register file + load-store queue
 //   First part holds physical registers with a free list.
 //   Second part holds lsq entries.
 //
-const int max_phy_regs = 128;
+const int max_phy_regs = 64 + issue_queue_length;
 const int regfile_size = max_phy_regs + lsq_length;
 
 inline bool is_store_buffer(uint8_t r) {
@@ -26,9 +31,6 @@ inline bool is_store_buffer(uint8_t r) {
 }
 
 
-
-typedef uintptr_t Addr_t;
-typedef uint8_t Reg_t;
 
 
 union simreg_t {
@@ -45,7 +47,8 @@ struct simulator_state_t {
 };
 
 
-struct History_t {		// dispatched instruction
+class History_t {		// dispatched instruction
+public:
   long long clock;		// at this time
   Insn_t insn;			// with renamed registers
   Addr_t pc;			// at this PC
@@ -55,16 +58,32 @@ struct History_t {		// dispatched instruction
   uintptr_t actual_rd;		// for display
   uintptr_t expected_pc;
 #endif
-  enum Status_t { Retired, Executing, Queued, Queued_stbchk, Dispatch } status;
+  enum Status_t { Retired, Executing, Queued, Queued_stbchk, Queued_noport, Queued_nochk, Dispatch } status;
   Reg_t lsqpos;			// address in register here
   
   void display(WINDOW* w, class Core_t*);
 };
 
-//History_t make_history(long long c, Insn_t ir, Addr_t p, Insn_t* i, History_t::Status_t s);
+
+class Port_t {
+  uintptr_t _addr;		// address of memory reference
+  int _latency;			// of operation
+  History_t* _history;		// on behalf of this instruction
+  bool _active;			// valid pending request
+public:
+  bool active() { return _active; }
+  int latency() { return _latency; }
+  uintptr_t addr() { return _addr; }
+  History_t* history() { return _history; }
+
+  void request(uintptr_t a, long long l, History_t* h) { _active=true; _addr=a; _latency=l; _history=h; }
+  void deactivate() { _active=false; }
+  void display(WINDOW* w, int y, int x, class Core_t* c);
+};
 
 
-extern thread_local long long cycle;      // count number of processor cycles
+extern long long cycle;		// count number of processor cycles
+//extern thread_local long long cycle;      // count number of processor cycles
 extern thread_local long long mismatches; // count number of mismatches
 
 class Core_t : public hart_t {
@@ -89,12 +108,14 @@ private:
   bool lsqbuf_full();
   Reg_t allocate_lsq_entry(uintptr_t addr, bool is_store);
 
+  Port_t port;			// memory port
+
   // issue queue
   History_t* queue[issue_queue_length];
   int last;			// queue depth
 
   // pipeline model for instruction finish time
-  History_t* wheel[num_write_ports][max_latency+1];
+  History_t* wheel[max_latency+1];
   int index(unsigned k) { assert(k<=max_latency); return (cycle+k)%(max_latency+1); }
 
   // Structures for visual debugging
@@ -109,6 +130,10 @@ private:
 #define FLAG_nofree	0x020	// register free list is empty
 #define FLAG_stbhit	0x040	// load store buffer check hit
 #define FLAG_endmem	0x100	// retired a memory operation
+#define FLAG_noport	0x200	// memory port busy
+#define FLAG_stbchk	0x400	// store buffer checker busy
+#define FLAG_regbus	0x1000	// register file write bus busy
+  
 
   // Current instruction waiting for dispatch
   Header_t* bb;			// current basic blocka
@@ -127,6 +152,16 @@ public:
   History_t* nextrob() { return &rob[_insns % dispatch_history]; }
   //History_t* nextrob(int k =0) { return &rob[(_insns+k+dispatch_history) % dispatch_history]; }
 
+  Addr_t mem_addr(Insn_t ir) {
+    assert(attributes[ir.opcode()] & (ATTR_ld|ATTR_st));
+    Addr_t a = s.reg[ir.rs1()].x;
+    if (! (attributes[ir.opcode()] & ATTR_amo))
+      a += ir.immed();
+    a &= ~0x7L;
+    return a;
+  }
+
+  void clock_port();
   bool clock_pipeline();
   bool no_free_reg(Insn_t ir) { return numfree==max_phy_regs-64; };
   void show_reg(WINDOW* w, Reg_t n, char sep, int ref);
