@@ -4,9 +4,7 @@
 
 extern long long cycle;		// count number of processor cycles
 
-extern long long cycle;		// count number of processor cycles
-
-const int issue_queue_length = 1;
+const int issue_queue_length = 8;
 
 const int dispatch_history = 4096;
 const int cycle_history = 4*dispatch_history;
@@ -14,7 +12,7 @@ const int cycle_history = 4*dispatch_history;
 typedef uintptr_t Addr_t;
 typedef uint8_t Reg_t;
 
-const int store_buffer_length = 1;
+const int store_buffer_length = 8;
 
 // timing wheel for simulating pipelines
 const int num_write_ports = 1;
@@ -92,17 +90,18 @@ public:
 
   bool no_free_reg() { return numfree==0; }
   bool bus_busy(int n) { return wheel[index(n)] != 0; }
+  History_t* simulate_write_reg() { History_t* h=wheel[index(0)]; wheel[index(0)]=0; return h; }
   
   void acquire_reg(uint8_t r) { if (r!=NOREG) ++_uses[r]; }
   void release_reg(uint8_t r);
   
   Reg_t rename_reg(Reg_t arch_reg);
-  bool reserve_bus(int latency, History_t* h);
+  //  bool reserve_bus(int latency, History_t* h);
+  void reserve_bus(int latency, History_t* h);
   
-  History_t* write_slot(int k =0) { return wheel[index(k)]; }
-  bool write_port_busy(int k =0) { return write_slot(k) != 0; }
-  void value_is_ready(Reg_t r) { _busy[r] = false; release_reg(r); }
-  void retire_pipelined_instruction();
+  //  History_t* write_slot(int k =0) { return wheel[index(k)]; }
+  //  bool write_port_busy(int k =0) { return write_slot(k) != 0; }
+  void value_is_ready(Reg_t r) { _busy[r] = false; }
 
   Reg_t stbuf(int k =0) { return (stbtail-k+store_buffer_length) % store_buffer_length + max_phy_regs; }
   bool store_buffer_full() { return _uses[stbuf()] > 0; }

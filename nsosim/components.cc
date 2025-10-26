@@ -32,28 +32,10 @@ void Remapping_Regfile_t::reset()
 }
 
 
-void Remapping_Regfile_t::retire_pipelined_instruction()
+void Remapping_Regfile_t::reserve_bus(int latency, History_t* h)
 {
-  
-  // Retire pipelined instruction(s)
-  History_t* h = wheel[index(0)];
-  if (h == 0)
-    return;
-  h->status = History_t::Retired;
-  value_is_ready(h->insn.rd());
-  wheel[index(0)] = 0;
-#ifdef VERIFY
-  if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
-    ++mismatches;
-#endif
-}
-
-bool Remapping_Regfile_t::reserve_bus(int latency, History_t* h)
-{
-  if (wheel[index(latency)])
-    return false;
+  assert(! bus_busy(latency));
   wheel[index(latency)] = h;
-  return true;
 }
 
 void Remapping_Regfile_t::release_reg(uint8_t r)

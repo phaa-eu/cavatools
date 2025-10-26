@@ -34,8 +34,9 @@ void Core_t::clock_port() {
   if (h->insn.rd() == NOREG)	// stores retire immediately
     h->status = History_t::Retired;
   else {
-    if (! regs.reserve_bus(port.latency(), h))
+    if (regs.bus_busy(port.latency()))
       return;
+    regs.reserve_bus(port.latency(), h);
     h->status = History_t::Executing;
   }
   port.deactivate();
@@ -46,10 +47,21 @@ bool Core_t::clock_pipeline() {
   uint16_t& flags = cycle_flags[cycle % cycle_history];
 
   clock_port();
-  regs.retire_pipelined_instruction();
+
+  // retire pipelined instruction
+  History_t* h = regs.simulate_write_reg();
+  if (h) {
+    regs.value_is_ready(h->insn.rd());
+    regs.release_reg(h->insn.rd());
+    h->status = History_t::Retired;
+#ifdef VERIFY
+    if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
+      ++mismatches;
+#endif
+  }  
 
   // Try to dispatch new instruction
-  History_t* h = nextrob();
+  h = nextrob();
   Insn_t ir = *i;
   ATTR_bv_t attr = attributes[ir.opcode()];
   Addr_t addr;
@@ -74,6 +86,10 @@ bool Core_t::clock_pipeline() {
   if (attr & (ATTR_uj|ATTR_cj)) {
     if (!ready_insn(ir)) {
       flags |= FLAG_busy;
+      goto issue_from_queue;	// branch registers not ready
+    }
+    if (ir.rd()!=NOREG && regs.bus_busy(latency[ir.opcode()])) {
+      flags |= FLAG_regbus;
       goto issue_from_queue;	// branch registers not ready
     }
   }
@@ -142,7 +158,7 @@ bool Core_t::clock_pipeline() {
   // branches, AMO execute immediately
   if (attr & (ATTR_uj|ATTR_cj|ATTR_amo|ATTR_ex)) {
     assert(ready_insn(ir));
-    //    goto execute_instruction;
+    // put at front of issue queue
     for (int k=last; k>0; --k)
       queue[k] = queue[k-1];
     queue[0] = h;
@@ -171,20 +187,22 @@ bool Core_t::clock_pipeline() {
     if (ready_insn(ir)) {
       // check register file write bus
       if (ir.rd() != NOREG) {
-	if (regs.write_port_busy(latency[ir.opcode()])) {
+	if (regs.bus_busy(latency[ir.opcode()])) {
 	  tmpflags |= FLAG_regbus;
-	  flags |= FLAG_regbus;
 	  continue;
 	}
       }
-      
       // memory operations have extra conditions
       if (attr & (ATTR_ld|ATTR_st)) {
+	// memory operation cannot issue if port is busy
+	if (port.active()) {
+	  tmpflags |= FLAG_noport;
+	  h->status = History_t::Queued_noport;
+	  continue;
+	}
 	if (h->status == History_t::Queued_stbchk) {
 	  if (mem_checker_used) {
 	    tmpflags |= FLAG_stbchk;
-	    flags |= FLAG_stbchk;
-	    //h->status = History_t::Queued_nochk;
 	    continue;
 	  }
 	  h->status = History_t::Queued;
@@ -201,15 +219,7 @@ bool Core_t::clock_pipeline() {
 	    }
 	  }
 	}
-	// memory operation cannot issue if port is busy
-	if (port.active()) {
-	  tmpflags |= FLAG_noport;
-	  flags |= FLAG_noport;
-	  h->status = History_t::Queued_noport;
-	  continue;
-	}
       }
-      
       // remove from queue
       for (int j=k+1; j<last; ++j)
 	queue[j-1] = queue[j];
@@ -225,7 +235,6 @@ bool Core_t::clock_pipeline() {
 
   ir = h->insn;
   if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) {
-    int channel = 0;
     assert(!port.active());
     port.request(mem_addr(ir), latency[ir.opcode()], h);
     if (attributes[ir.opcode()] & ATTR_st)
@@ -250,6 +259,7 @@ bool Core_t::clock_pipeline() {
     bb = find_bb(pc);
     i = insnp(bb+1);
   }
+  
 #ifdef VERIFY
   if (attributes[ir.opcode()] & ATTR_ld)
     h->actual_rd = h->expected_rd;
@@ -259,10 +269,14 @@ bool Core_t::clock_pipeline() {
     h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
 #endif
 
-  if (!(attr & (ATTR_ld|ATTR_st)))
-    regs.reserve_bus(latency[ir.opcode()], h);
-  h->status = History_t::Executing;
-  
+  if (ir.rd() == NOREG) {
+    h->status = (attributes[ir.opcode()] & ATTR_st) ? History_t::Executing :History_t::Retired;
+  }
+  else {
+    if (! (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)))
+      regs.reserve_bus(latency[ir.opcode()], h);
+    h->status = History_t::Executing;
+  }
   --_inflight;
 
  finish_cycle:
