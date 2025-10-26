@@ -4,7 +4,7 @@
 
 #define memory_word_size 	8	// in bytes
 #define memory_channels		1
-#define memory_banks 		8
+#define memory_banks 		16
 
 inline unsigned mem_channel(uintptr_t a)  { return (a/memory_word_size) % memory_channels; }
 inline unsigned mem_bank(uintptr_t a)  { return (a/memory_channels/memory_word_size) % memory_banks; }

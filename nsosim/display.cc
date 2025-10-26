@@ -67,6 +67,7 @@ void History_t::display(WINDOW* w, Core_t* c)
   }
 
 #ifdef VERIFY
+#ifdef WIDE
   extern const char* reg_name[];
   if (ref.rd() == NOREG) {
     if (attributes[ref.opcode()] & ATTR_st)
@@ -79,13 +80,16 @@ void History_t::display(WINDOW* w, Core_t* c)
   bool mismatch = status==History_t::Retired ? actual_rd != expected_rd : false;
   if (mismatch) wattron(w, A_REVERSE);
 #endif
+#endif
   
   char buf[256];;
   slabelpc(buf, pc);
   wprintw(w, "%s", buf);
   
 #ifdef VERIFY
+#ifdef WIDE
   wprintw(w, "=?%8lx: ", expected_pc);
+#endif
 #endif
 
   if (status == History_t::Retired) {
@@ -126,16 +130,17 @@ void History_t::display(WINDOW* w, Core_t* c)
     wprintw(w, "%c%ld", sep, insn.immed());
 
     if (stbpos != NOREG) {
-    //if (attributes[insn.opcode()] & (ATTR_ld|ATTR_st)) {
       if (c->regs.busy(stbpos)) wattron(w,  A_REVERSE);
-      wprintw(w, "\tsb%d=%d", stbpos-max_phy_regs, c->regs.uses(stbpos));
+      wprintw(w, ";  [sb%d=%d]", stbpos-max_phy_regs, c->regs.uses(stbpos));
       if (c->regs.busy(stbpos)) wattroff(w,  A_REVERSE);
+#ifdef WIDE
       wprintw(w, "[%16lx]", c->s.reg[stbpos].a);
+#endif
     }
   }
 
 #ifdef VERIFY
-  if (mismatch) wattroff(w, A_REVERSE);
+  if (mismatches) wattroff(w, A_REVERSE);
 #endif
   switch (status) {
   case History_t::Retired:	wattroff(w, A_DIM); break;
@@ -159,11 +164,16 @@ void help_screen()
   printw("\n");
   printw("Cycle Flags:\n");
   printw("  'b'\tsource register(s) busy\n");
+  printw("  'r'\tregister write bus unavailable\n");
   printw("  'f'\tissue queue full\n");
   printw("  'a'\tunknown store address\n");
   printw("  's'\tstore buffer full\n");
   printw("  'f'\tregister freelist empty\n");;
   printw("  '!'\tflushing pipeline\n");
+  printw("  'h'\tstore buffer hit\n");
+  printw("  'm'\tmemory bank finished\n");
+  printw("  'p'\tmemory port busy\n");
+  printw("  'c'\tstore buffer check\n");
   printw("\n");
   refresh();
 }
@@ -187,6 +197,7 @@ static void show_flags(WINDOW* w, unsigned flags)
 void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
 {
   wmove(w, y, 0);
+#ifdef WIDE
   wprintw(w, "sb[");
   for (int k=0; k<store_buffer_length; ++k) {
     if (c->regs.busy(k+max_phy_regs)) wattron(w, A_REVERSE);
@@ -215,6 +226,7 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
   wprintw(w, "]\n");
   --lines;
   ++y;
+#endif
 
   wmove(w, y, x);
   wattron(w, A_UNDERLINE);
@@ -223,7 +235,9 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
   wprintw(w, "\t     Expected\t\tActual\t");
 #endif
   wprintw(w, "\tpc label\t       pc  hex insn  opcode\t\treg(renamed=uses), [stbuf]");
+#ifdef WIDE
   wprintw(w, "  inflight=%lld, last=%d, stbtail=%d", c->inflight(), c->last, c->regs.stbtail);
+#endif
 #ifdef VERIFY
   if (mismatches > 0) {
     wattron(w, A_REVERSE|A_BLINK);
@@ -453,7 +467,7 @@ void core_t::interactive()
     help_screen();
     while ((ch=getch()) == ERR)
       usleep(100000);
-    break;
+    goto infinite_loop;
       
   case 'f':
     if (behind > 0) {

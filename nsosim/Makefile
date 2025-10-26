@@ -13,8 +13,8 @@ V := -DVERIFY
 
 B := $(RVTOOLS)/riscv-isa-sim
 
-MINUS_O := -g -O0
-#MINUS_O := -g -O3
+#MINUS_O := -g -O0
+MINUS_O := -g -O3
 
 #CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include/cava -I$(CAVA)/include/softfloat -I/../spike
 #CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include/softfloat -I../caveat -I../spike -DDEBUG

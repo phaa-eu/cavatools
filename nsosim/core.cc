@@ -42,6 +42,7 @@ void Core_t::clock_port() {
     regs.reserve_bus(port.latency(), h);
     h->status = History_t::Executing;
   }
+  _inflight--;
   port.deactivate();
 }
   
@@ -163,8 +164,15 @@ bool Core_t::clock_pipeline() {
   }
 
   // branches, AMO execute immediately
-  if (attr & (ATTR_uj|ATTR_cj|ATTR_amo|ATTR_ex)) {
-    assert(ready_insn(ir));
+
+  // also integers
+  //if ((attr==0) || (attr & (ATTR_uj|ATTR_cj|ATTR_amo|ATTR_ex))) {
+
+  if ((attr & (ATTR_uj|ATTR_cj|ATTR_amo|ATTR_ex)) ||
+      ir.opcode()==Op_addi   || ir.opcode()==Op_add ||
+      ir.opcode()==Op_c_addi || ir.opcode()==Op_c_add) {
+    
+    //assert(ready_insn(ir));
     // put at front of issue queue
     for (int k=last; k>0; --k)
       queue[k] = queue[k-1];
@@ -283,8 +291,9 @@ bool Core_t::clock_pipeline() {
     if (ir.rd()!=NOREG && !(attributes[ir.opcode()] & ATTR_ld))
       regs.reserve_bus(latency[ir.opcode()], h);
     h->status = History_t::Executing;
-    _inflight--;
   }
+  if (! (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)))
+    _inflight--;
 
  finish_cycle:
   ++cycle;
