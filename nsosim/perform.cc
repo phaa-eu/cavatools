@@ -19,6 +19,7 @@
 #include "hart.h"
 #include "arithmetic.h"
 
+#include "components.h"
 #include "core.h"
 	
 #ifdef SPIKE

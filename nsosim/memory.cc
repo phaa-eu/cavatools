@@ -9,6 +9,7 @@
 #include "hart.h"
 
 #include "memory.h"
+#include "components.h"
 #include "core.h"
 
 //thread_local Memory_t memory[memory_channels][memory_banks];

@@ -20,7 +20,7 @@ MINUS_O := -g -O0
 #CXXFLAGS := -g $(MINUS_O) -I$(CAVA)/include/softfloat -I../caveat -I../spike -DDEBUG
 CXXFLAGS := $(MINUS_O) $V -I$(CAVA)/include/softfloat -I../caveat -I../spike
 
-BINS := memory.o core.o display.o perform.o nsosim.o 
+BINS := memory.o components.o core.o display.o perform.o nsosim.o 
 LIBS := $(CAVA)/lib/libcava.a ~/lib/libsoftfloat.a
 LDFLAGS := -Wl,-Ttext=70000000 -lncurses
 
@@ -30,7 +30,8 @@ nsosim:  $(BINS) $(LIBS)
 
 #perform.o: ~/include/cava/caveat.h ~/include/cava/hart.h
 
-memory.o core.o display.o perform.o nsosim.o:  core.h memory.h
+#memory.o components.o core.o display.o perform.o nsosim.o:  core.h memory.h components.h
+$(BINS):  core.h memory.h components.h
 
 install:  nsosim
 	cp nsosim $(CAVA)/bin/.
@@ -39,5 +40,4 @@ clean:
 	rm -f *.o *~ ./#*# *.tmp
 	rm -f lru_fsm_?way.h
 	rm -f nsosim
-
 

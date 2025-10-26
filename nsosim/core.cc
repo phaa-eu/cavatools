@@ -10,11 +10,12 @@
 #include "hart.h"
 
 #include "memory.h"
+#include "components.h"
 #include "core.h"
 
 //thread_local long long cycle;
 long long cycle;
-thread_local long long mismatches;
+long long mismatches;
 
 
 void Core_t::clock_port() {
@@ -33,9 +34,8 @@ void Core_t::clock_port() {
   if (h->insn.rd() == NOREG)	// stores retire immediately
     h->status = History_t::Retired;
   else {
-    if (wheel[index(port.latency())] != 0)
+    if (! regs.reserve_bus(port.latency(), h))
       return;
-    wheel[index(port.latency())] = h;
     h->status = History_t::Executing;
   }
   port.deactivate();
@@ -46,25 +46,10 @@ bool Core_t::clock_pipeline() {
   uint16_t& flags = cycle_flags[cycle % cycle_history];
 
   clock_port();
-
-  // Retire pipelined instruction(s)
-  History_t* h = wheel[index(0)];
-  if (h) {
-    Insn_t ir = h->insn;
-    h->status = History_t::Retired;
-#ifdef VERIFY
-    //if (h->actual_rd != h->expected_rd)
-    if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
-      ++mismatches;
-#endif
-    busy[ir.rd()] = false;
-    release_reg(ir.rd());
-    //--_inflight;
-    wheel[index(0)] = 0;
-  }
+  regs.retire_pipelined_instruction();
 
   // Try to dispatch new instruction
-  h = nextrob();
+  History_t* h = nextrob();
   Insn_t ir = *i;
   ATTR_bv_t attr = attributes[ir.opcode()];
   Addr_t addr;
@@ -74,7 +59,7 @@ bool Core_t::clock_pipeline() {
 
   // conditions that prevent dispatch into issue queue
 
-  if (numfree == 0) {
+  if (regs.no_free_reg()) {
     flags |= FLAG_nofree;
     goto issue_from_queue;
   }
@@ -95,11 +80,11 @@ bool Core_t::clock_pipeline() {
   else if (attr & (ATTR_st | ATTR_amo|ATTR_ex)) {
     // stores need valid address and space in store buffer
     if (attr & ATTR_st) {
-      if (lsq_full()) {
+      if (regs.store_buffer_full()) {
 	flags |= FLAG_stbfull;
 	goto issue_from_queue;	// lsq full
       }
-      if (busy[ir.rs1()]) {
+      if (regs.busy(ir.rs1())) {
 	flags |= FLAG_stuaddr;
 	goto issue_from_queue;	// unknown store address
       }
@@ -112,19 +97,19 @@ bool Core_t::clock_pipeline() {
       if (port.active())	// including pending memory operations
 	goto issue_from_queue;
       for (int r=0; r<max_phy_regs; ++r) {
-	if (busy[r])
+	if (regs.busy(r))
 	  goto issue_from_queue; // and flush pipelines
       }
     }
   }
 
   // commit instruction for dispatch
-  acquire_reg(ir.rs1());
+  regs.acquire_reg(ir.rs1());
   if (!ir.longimmed()) {
-    acquire_reg(ir.rs2());
-    acquire_reg(ir.rs3());
+    regs.acquire_reg(ir.rs2());
+    regs.acquire_reg(ir.rs3());
   }
-  rename_output_reg(ir);
+  ir.op_rd = regs.rename_reg(ir.rd());
   h->status = History_t::Queued;
 
   if (attr & (ATTR_ld|ATTR_st)) {
@@ -132,15 +117,16 @@ bool Core_t::clock_pipeline() {
 
     // search for write-after-write dependency
     if (attr & ATTR_st) {
-      assert(!lsq_full());
+      assert(!regs.store_buffer_full());
       // special hack for internally substituted CAS instruction
-      if (! (attr & ATTR_amo))
+      if (! (attr & ATTR_amo)) 
 	ir.op.rs3 = check_store_buffer(addr);
-      h->lsqpos = allocate_lsq_entry(addr, (attr & ATTR_st)==true);
+      h->lsqpos = regs.allocate_store_buffer();
+      s.reg[h->lsqpos].a = addr;
       mem_checker_used = true; // prevent issuing loads
     }
     else
-      h->lsqpos = lsqtail + max_phy_regs;
+      h->lsqpos = regs.stbuf();
     if ((attr & ATTR_ld) & !(attr & ATTR_amo))
       h->status = History_t::Queued_stbchk;
   }
@@ -185,7 +171,7 @@ bool Core_t::clock_pipeline() {
     if (ready_insn(ir)) {
       // check register file write bus
       if (ir.rd() != NOREG) {
-	if (wheel[index(latency[ir.opcode()])]) {
+	if (regs.write_port_busy(latency[ir.opcode()])) {
 	  tmpflags |= FLAG_regbus;
 	  flags |= FLAG_regbus;
 	  continue;
@@ -201,17 +187,17 @@ bool Core_t::clock_pipeline() {
 	    //h->status = History_t::Queued_nochk;
 	    continue;
 	  }
-	  //h->status = History_t::Queued_stbchk;
+	  h->status = History_t::Queued;
 
 	  // special hack for internally substituted CAS instruction
 	  if (! (attr & ATTR_amo)) {
 	    ir.op.rs3 = check_store_buffer((s.reg[ir.rs1()].x+ir.immed())&~0x7L, h->lsqpos);
 	    if (ir.rs3() != NOREG) {
-	      acquire_reg(ir.rs3());
+	      regs.acquire_reg(ir.rs3());
 	      flags |= FLAG_stbhit;
 	      h->insn = ir;
-	      if (busy[h->insn.rs3()]) // store has not retired so we must wait
-		goto finish_cycle; // cycle "used up" by store buffer check
+	      if (regs.busy(h->insn.rs3())) // store not retired
+		goto finish_cycle;	    // cycle "used up"
 	    }
 	  }
 	}
@@ -222,8 +208,6 @@ bool Core_t::clock_pipeline() {
 	  h->status = History_t::Queued_noport;
 	  continue;
 	}
-	else
-	  h->status = History_t::Queued;
       }
       
       // remove from queue
@@ -244,18 +228,15 @@ bool Core_t::clock_pipeline() {
     int channel = 0;
     assert(!port.active());
     port.request(mem_addr(ir), latency[ir.opcode()], h);
-    if (attributes[ir.opcode()] & ATTR_st) {
-      assert(h->lsqpos != NOREG);
-      busy[h->lsqpos] = false;
-      release_reg(h->lsqpos);
-    }
+    if (attributes[ir.opcode()] & ATTR_st)
+      regs.release_reg(h->lsqpos);
   }
     
   // simulate reading register file
-  release_reg(ir.rs1());
+  regs.release_reg(ir.rs1());
   if (!ir.longimmed()) {
-    release_reg(ir.rs2());
-    release_reg(ir.rs3());
+    regs.release_reg(ir.rs2());
+    regs.release_reg(ir.rs3());
   }
   
   // Tricky code here:  pc is actually associated with dispatched
@@ -276,8 +257,8 @@ bool Core_t::clock_pipeline() {
     h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
 #endif
 
-  if (!(attr & (ATTR_ld|ATTR_st))) 
-    wheel[index(latency[ir.opcode()])] = h;
+  if (!(attr & (ATTR_ld|ATTR_st)))
+    regs.reserve_bus(latency[ir.opcode()], h);
   h->status = History_t::Executing;
   
   --_inflight;
@@ -304,104 +285,43 @@ bool Core_t::clock_pipeline() {
 
 void Core_t::rename_input_regs(Insn_t& ir)
 {
-  if (ir.rs1() != NOREG) ir.op_rs1 = regmap[ir.rs1()];
+  if (ir.rs1() != NOREG) ir.op_rs1 = regs.map(ir.rs1());
   if (! ir.longimmed()) {
-    if (ir.rs2() != NOREG) ir.op.rs2 = regmap[ir.rs2()];
-    if (ir.rs3() != NOREG) ir.op.rs3 = regmap[ir.rs3()];
+    if (ir.rs2() != NOREG) ir.op.rs2 = regs.map(ir.rs2());
+    if (ir.rs3() != NOREG) ir.op.rs3 = regs.map(ir.rs3());
   }
-}
-
-void Core_t::rename_output_reg(Insn_t& ir)
-{
-  uint8_t old_rd = ir.rd();
-  if (old_rd == NOREG)
-    return;
-  release_reg(regmap[old_rd]);
-  assert(numfree > 0);
-  ir.op_rd = freelist[--numfree];
-  assert(ir.rd() != 0);
-  regmap[old_rd] = ir.rd();
-  acquire_reg(ir.rd());
-  // now model getting register for in flight
-  acquire_reg(ir.rd());
-  busy[ir.rd()] = true;
 }
 
 bool Core_t::ready_insn(Insn_t ir)
 {
-  if (busy[ir.rs1()]) return false;
+  if (regs.busy(ir.rs1())) return false;
   if (!ir.longimmed()) {
-    if (busy[ir.rs2()]) return false;
-    if (busy[ir.rs3()]) return false;
+    if (regs.busy(ir.rs2())) return false;
+    if (regs.busy(ir.rs3())) return false;
   }
   return true;
 }
 
-void Core_t::acquire_reg(uint8_t r)
-{
-  if (r==0 || r==NOREG)
-    return;
-  ++uses[r];
-}
 
-void Core_t::release_reg(uint8_t r)
+Reg_t Core_t::check_store_buffer(uintptr_t addr, int k)
 {
-  if (r == NOREG)
-    return;
-  assert(uses[r] > 0);
-  if (--uses[r] == 0) {
-    if (is_store_buffer(r))
-      s.reg[r].a = 0;		// mark as free
-    else {
-      assert(0 < r && r < max_phy_regs);
-      freelist[numfree++] = r;
-    }
-  }
-}
-
-bool Core_t::lsq_active(Reg_t r)
-{
-  return busy[r] || uses[r] > 0 || s.reg[r].a != 0;
-}
-
-bool Core_t::lsq_full()
-{
-  return lsq_active(lsqtail + max_phy_regs);
-}
-
-Reg_t Core_t::allocate_lsq_entry(uintptr_t addr, bool is_store)
-{
-  Reg_t n = lsqtail + max_phy_regs;
-  lsqtail = (lsqtail+1) % lsq_length;
-  assert(is_store_buffer(n));
-  s.reg[n].a = addr;		// mark in use
-  busy[n] = is_store;
-  acquire_reg(n);
-  return n;
-}
-
-Reg_t Core_t::check_store_buffer(uintptr_t addr, Reg_t k)
-{
-  if (k == NOREG)
-    k = lsqtail + max_phy_regs;
-  while ((k=(k-1+lsq_length)%lsq_length) != lsqtail) {
-    Reg_t r = k + max_phy_regs;
-    if (busy[r] && s.reg[r].a == addr) {
-      acquire_reg(r);
+  for (int k=1; k<store_buffer_length; ++k) {
+    Reg_t r = regs.stbuf(k);
+    if (regs.busy(r) && s.reg[r].a == addr) {
+      regs.acquire_reg(r);	// create dependency
       return r;
     }
   }
   return NOREG;
 }
 
-
 uintptr_t Core_t::get_state()
 {
   hart_t* h = this;
   for (int k=0; k<32; k++)
-    s.reg[regmap[k]].x = h->s.xrf[k];
+    s.reg[regs.map(k)].x = h->s.xrf[k];
   for (int k=0; k<32; k++)
-    s.reg[regmap[k+32]].f = h->s.frf[k];
+    s.reg[regs.map(k+32)].f = h->s.frf[k];
   s.fflags = h->s.fflags;
   s.frm = h->s.frm;
   return h->pc;
@@ -411,9 +331,9 @@ void Core_t::put_state(uintptr_t pc)
 {
   hart_t* h = this;
   for (int k=0; k<32; k++)
-    h->s.xrf[k] = s.reg[regmap[k]].x;
+    h->s.xrf[k] = s.reg[regs.map(k)].x;
   for (int k=0; k<32; k++)
-    h->s.frf[k] = s.reg[regmap[k+32]].f;
+    h->s.frf[k] = s.reg[regs.map(k+32)].f;
   h->s.fflags = s.fflags;
   h->s.frm = s.frm;
   h->pc = pc;
@@ -438,12 +358,12 @@ uintptr_t Core_t::get_pc_from_spike() {
 long ooo_riscv_syscall(hart_t* h, long a0)
 {
   Core_t* c = (Core_t*)h;
-  long a1 = c->s.reg[c->regmap[11]].x;
-  long a2 = c->s.reg[c->regmap[12]].x;
-  long a3 = c->s.reg[c->regmap[13]].x;
-  long a4 = c->s.reg[c->regmap[14]].x;
-  long a5 = c->s.reg[c->regmap[15]].x;
-  long rvnum = c->s.reg[c->regmap[17]].x;
+  long a1 = c->s.reg[c->regs.map(11)].x;
+  long a2 = c->s.reg[c->regs.map(12)].x;
+  long a3 = c->s.reg[c->regs.map(13)].x;
+  long a4 = c->s.reg[c->regs.map(14)].x;
+  long a5 = c->s.reg[c->regs.map(15)].x;
+  long rvnum = c->s.reg[c->regs.map(17)].x;
   long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, h);
   return rv;
 }
@@ -487,26 +407,11 @@ static void null_simulator(class hart_t* h, Header_t* bb, uintptr_t* ap) { }
 
 void Core_t::reset() {
   simulator = null_simulator;	// in hart_t
-  
-  memset(busy, 0, sizeof busy);
-  memset(regmap, 0, sizeof regmap);
-  // initialize register map and freelist
-  for (int k=0; k<64; ++k) {
-    regmap[k] = k;
-    uses[k] = 1;
-  }
-  numfree = 0;
-  for (int k=64; k<max_phy_regs; ++k) {
-    freelist[numfree++] = k;
-    uses[k] = 0;
-  }
-  //regmap[NOREG] = NOREG; overhaul now NOREG==0
-  //uses[NOREG] = 0;
-  // initialize pipelines and issue queue
-  memset(wheel, 0, sizeof wheel);
+
+  regs.reset();
+
   memset(memory, 0, sizeof memory);
   last = 0;
-  lsqtail = 0;
   _inflight = 0;
   
   memset(&s.reg, 0, sizeof s.reg);
@@ -526,3 +431,6 @@ void Core_t::reset() {
   h->status = History_t::Dispatch;
   h->lsqpos = NOREG;
 }
+
+
+

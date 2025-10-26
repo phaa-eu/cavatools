@@ -12,8 +12,9 @@
 #include "caveat.h"
 #include "hart.h"
 
-#include "core.h"
 #include "memory.h"
+#include "components.h"
+#include "core.h"
 
 option<long> conf_report("report", 1, "Status report per second");
 option<bool> conf_visual("visual", true, false, "Interactive visual mode");

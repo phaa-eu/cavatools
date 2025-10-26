@@ -8,8 +8,9 @@
 #include "caveat.h"
 #include "hart.h"
 
-#include "core.h"
 #include "memory.h"
+#include "components.h"
+#include "core.h"
 
 const int msglines = 3;
 static WINDOW* msgwin;
@@ -46,12 +47,12 @@ void Core_t::show_reg(WINDOW* w, Reg_t n, char sep, int ref)
   if (ref == NOREG)
     return;
   wprintw(w, "%c", sep);
-  if (busy[n]) wattron(w,  A_REVERSE);
+  if (regs.busy(n)) wattron(w,  A_REVERSE);
   if (is_store_buffer(n))
-    wprintw(w, "[sb%d=%d]", n-max_phy_regs, uses[n]);
+    wprintw(w, "[sb%d=%d]", n-max_phy_regs, regs.uses(n));
   else
-    wprintw(w, "%s(r%d=%d)", reg_name[ref], n, uses[n]);
-  if (busy[n]) wattroff(w, A_REVERSE);
+    wprintw(w, "%s(r%d=%d)", reg_name[ref], n, regs.uses(n));
+  if (regs.busy(n)) wattroff(w, A_REVERSE);
 }
 
 
@@ -95,20 +96,36 @@ void History_t::display(WINDOW* w, Core_t* c)
       wprintw(w, "%08x  ",     b);
     //show_opcode(w, insn.opcode(), status==History_t::Executing);
     show_opcode(w, insn.opcode(), status);
-    char sep = ' ';
-    c->show_reg(w, insn.rd(),  sep, ref.rd()),  sep='=';
-    c->show_reg(w, insn.rs1(), sep, ref.rs1()), sep=',';
-    if (! insn.longimmed()) {
-      c->show_reg(w, insn.rs2(), sep, ref.rs2()), sep=',';
-      c->show_reg(w, insn.rs3(), sep, ref.rs3()), sep=',';
+
+    if (status == History_t::Dispatch) {
+      if (insn.rd()!=NOREG) wprintw(w, " %s", reg_name[ref.rd()]);
+    }
+    else {
+      c->show_reg(w, insn.rd(),  ' ', ref.rd());
+    }
+    char sep = '=';
+    
+    if (status == History_t::Executing) {
+      if (insn.rs1()!=NOREG) wprintw(w, "%c%s", sep, reg_name[ref.rs1()]), sep=',';
+      if (! insn.longimmed()) {
+	if (insn.rs2()!=NOREG) wprintw(w, "%c%s", sep, reg_name[ref.rs2()]), sep=',';
+	if (insn.rs3()!=NOREG) wprintw(w, "%c%s", sep, reg_name[ref.rs3()]), sep=',';
+      }
+    }
+    else {
+      c->show_reg(w, insn.rs1(), sep, ref.rs1()), sep=',';
+      if (! insn.longimmed()) {
+	c->show_reg(w, insn.rs2(), sep, ref.rs2()), sep=',';
+	c->show_reg(w, insn.rs3(), sep, ref.rs3()), sep=',';
+      }
     }
     wprintw(w, "%c%ld", sep, insn.immed());
 
     if (lsqpos != NOREG) {
     //if (attributes[insn.opcode()] & (ATTR_ld|ATTR_st)) {
-      if (c->busy[lsqpos]) wattron(w,  A_REVERSE);
-      wprintw(w, "\tsb%d=%d", lsqpos-max_phy_regs, c->uses[lsqpos]);
-      if (c->busy[lsqpos]) wattroff(w,  A_REVERSE);
+      if (c->regs.busy(lsqpos)) wattron(w,  A_REVERSE);
+      wprintw(w, "\tsb%d=%d", lsqpos-max_phy_regs, c->regs.uses(lsqpos));
+      if (c->regs.busy(lsqpos)) wattroff(w,  A_REVERSE);
       wprintw(w, "[%16lx]", c->s.reg[lsqpos].a);
     }
   }
@@ -167,18 +184,18 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
 {
   wmove(w, y, 0);
   wprintw(w, "sb[");
-  for (int k=0; k<lsq_length; ++k) {
-    if (c->s.reg[k+max_phy_regs].a) wattron(w, A_REVERSE);
-    //if (c->busy[k+max_phy_regs]) wattron(w, A_REVERSE);
+  for (int k=0; k<store_buffer_length; ++k) {
+    //if (c->s.reg[k+max_phy_regs].a) wattron(w, A_REVERSE);
+    if (c->regs.busy(k+max_phy_regs)) wattron(w, A_REVERSE);
     wprintw(w, " ");
-    if (c->s.reg[k+max_phy_regs].a) wattroff(w, A_REVERSE);
-    //if (c->busy[k+max_phy_regs]) wattroff(w, A_REVERSE);
+    //if (c->s.reg[k+max_phy_regs].a) wattroff(w, A_REVERSE);
+    if (c->regs.busy(k+max_phy_regs)) wattroff(w, A_REVERSE);
   }
   wprintw(w, "]    busy[");
   for (int k=0; k<max_phy_regs; ++k) {
-    if (c->busy[k]) wattron(w, A_REVERSE);
+    if (c->regs.busy(k)) wattron(w, A_REVERSE);
     wprintw(w, " ");
-    if (c->busy[k]) wattroff(w, A_REVERSE);
+    if (c->regs.busy(k)) wattroff(w, A_REVERSE);
   }
   wprintw(w, "]\n");
   --lines;			    // account for register busy line
@@ -187,7 +204,7 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
   wmove(w, y, 0);
   wprintw(w, "wheel=[");
   for (int k=0; k<max_latency+1; ++k) {
-    wprintw(w, "%c", c->wheel[k] ? '*' : '.');
+    wprintw(w, "%c", c->regs.wheel[k] ? '*' : '.');
   }
   wprintw(w, "]\n");
   --lines;

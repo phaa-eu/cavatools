@@ -2,37 +2,6 @@
   Copyright (c) 2025 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
-#define thread_local
-
-const int issue_queue_length = 1;
-const int lsq_length = 1;	// load-store queue
-
-const int dispatch_history = 4096;
-const int cycle_history = 4*dispatch_history;
-
-// timing wheel for simulating pipelines
-const int num_write_ports = 1;
-const int max_latency = 32;	// for timing wheel
-extern uint8_t latency[];	// for each opcode
-
-typedef uintptr_t Addr_t;
-typedef uint8_t Reg_t;
-
-
-// Unified physical register file + load-store queue
-//   First part holds physical registers with a free list.
-//   Second part holds lsq entries.
-//
-const int max_phy_regs = 64 + issue_queue_length;
-const int regfile_size = max_phy_regs + lsq_length;
-
-inline bool is_store_buffer(uint8_t r) {
-  return max_phy_regs<=r && r<max_phy_regs+lsq_length;
-}
-
-
-
-
 union simreg_t {
   reg_t x;			// for integer
   freg_t f;			// float and double
@@ -46,77 +15,21 @@ struct simulator_state_t {
   unsigned frm;
 };
 
-
-class History_t {		// dispatched instruction
-public:
-  long long clock;		// at this time
-  Insn_t insn;			// with renamed registers
-  Addr_t pc;			// at this PC
-  Insn_t ref;			// original instruction (for display)
-#ifdef VERIFY
-  uintptr_t expected_rd;	// for checking against uspike
-  uintptr_t actual_rd;		// for display
-  uintptr_t expected_pc;
-#endif
-  enum Status_t { Retired, Executing, Queued, Queued_stbchk, Queued_noport, Queued_nochk, Dispatch } status;
-  Reg_t lsqpos;			// address in register here
-  
-  void display(WINDOW* w, class Core_t*);
-};
-
-
-class Port_t {
-  uintptr_t _addr;		// address of memory reference
-  int _latency;			// of operation
-  History_t* _history;		// on behalf of this instruction
-  bool _active;			// valid pending request
-public:
-  bool active() { return _active; }
-  int latency() { return _latency; }
-  uintptr_t addr() { return _addr; }
-  History_t* history() { return _history; }
-
-  void request(uintptr_t a, long long l, History_t* h) { _active=true; _addr=a; _latency=l; _history=h; }
-  void deactivate() { _active=false; }
-  void display(WINDOW* w, int y, int x, class Core_t* c);
-};
-
-
-extern long long cycle;		// count number of processor cycles
-//extern thread_local long long cycle;      // count number of processor cycles
-extern thread_local long long mismatches; // count number of mismatches
+extern long long mismatches;	// count number of mismatches
 
 class Core_t : public hart_t {
   long long _insns;		// count number of instructions executed
   long long _inflight;		// number of instructions in flight
 public:
   simulator_state_t s;		// replaces uspike state
-  // physical register file map
-  uint8_t regmap[256];		// architectural to physical
-  bool busy[regfile_size];	// register waiting for execution value
-  unsigned uses[regfile_size];	// reference count
+  Remapping_Regfile_t regs;	// physical register file
 private:
-  uint8_t freelist[max_phy_regs];
-  int numfree;			// maintained as stack
   
-  // Store buffer implemented within physical register file structure to share code.
-  // It consists of a range of registers with their busy[] and uses[] entries.
-  // The register value s.reg[].a holds the address.
-  
-  int lsqtail;			// first available entry in circular store buffer
-  bool lsq_active(Reg_t r);	// this lsq entry is in use
-  bool lsqbuf_full();
-  Reg_t allocate_lsq_entry(uintptr_t addr, bool is_store);
-
   Port_t port;			// memory port
 
   // issue queue
   History_t* queue[issue_queue_length];
   int last;			// queue depth
-
-  // pipeline model for instruction finish time
-  History_t* wheel[max_latency+1];
-  int index(unsigned k) { assert(k<=max_latency); return (cycle+k)%(max_latency+1); }
 
   // Structures for visual debugging
   History_t rob[dispatch_history];     // phantom reorder buffer
@@ -163,16 +76,12 @@ public:
 
   void clock_port();
   bool clock_pipeline();
-  bool no_free_reg(Insn_t ir) { return numfree==max_phy_regs-64; };
   void show_reg(WINDOW* w, Reg_t n, char sep, int ref);
   
   void rename_input_regs(Insn_t& ir);
-  void rename_output_reg(Insn_t& ir);
+  //void rename_output_reg(Insn_t& ir);
   bool ready_insn(Insn_t ir);
-  void acquire_reg(uint8_t r);
-  void release_reg(uint8_t r);
-  Reg_t check_store_buffer(uintptr_t addr, Reg_t k =NOREG); // k=start+1 position
-  bool lsq_full();
+  Reg_t check_store_buffer(uintptr_t addr, int k =0); // from k-1 position
   
   uintptr_t get_state();
   void put_state(uintptr_t pc);
@@ -203,5 +112,3 @@ public:
 
 long ooo_riscv_syscall(hart_t* h, long a0);
 int clone_proxy(hart_t* h);
-
-void display_history(WINDOW* w, int y, int x, Core_t* c, int lines);
