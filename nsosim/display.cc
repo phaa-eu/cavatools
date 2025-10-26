@@ -68,8 +68,12 @@ void History_t::display(WINDOW* w, Core_t* c)
 
 #ifdef VERIFY
   extern const char* reg_name[];
-  if (ref.rd() == NOREG)
-    wprintw(w, "%40s", "");
+  if (ref.rd() == NOREG) {
+    if (attributes[ref.opcode()] & ATTR_st)
+      wprintw(w, "%4s[%16lx %16lx] ", "data", expected_rd, actual_rd);
+    else
+      wprintw(w, "%40s", "");
+  }
   else
     wprintw(w, "%4s[%16lx %16lx] ", reg_name[ref.rd()], expected_rd, actual_rd);
   bool mismatch = status==History_t::Retired ? actual_rd != expected_rd : false;

@@ -253,6 +253,8 @@ bool Core_t::clock_pipeline() {
 #ifdef VERIFY
   if (attributes[ir.opcode()] & ATTR_ld)
     h->actual_rd = h->expected_rd;
+  else if (attributes[ir.opcode()] & ATTR_st)
+    h->actual_rd = s.reg[ir.rs2()].a;
   else
     h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
 #endif

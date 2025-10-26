@@ -118,7 +118,10 @@ void interactive(Core_t* cpu)
 	h->expected_pc = cpu->get_pc_from_spike();
 	cpu->single_step();
 	//h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
-	h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
+	if (h->ref.rd()==NOREG && (attributes[h->ref.opcode()] & ATTR_st))
+	  h->expected_rd = cpu->get_rd_from_spike(h->ref.rs2());
+	else
+	  h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
       }
       clock_memory_system();
       last_cycle_dispatched = cpu->clock_pipeline();
@@ -267,7 +270,7 @@ int main(int argc, const char* argv[], const char* envp[])
 	clock_memory_system();
       while (! cpu->clock_pipeline());
 #else
-      clock_memory_system(cpu);
+      clock_memory_system();
       (void) cpu->clock_pipeline();
 #endif
     }
