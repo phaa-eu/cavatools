@@ -41,7 +41,7 @@ public:
   uintptr_t expected_pc;
 #endif
   enum Status_t { Retired, Executing, Queued, Queued_stbchk, Queued_noport, Queued_nochk, Dispatch } status;
-  Reg_t lsqpos;			// address in register here
+  Reg_t stbpos;			// store address in register here
   
   void display(WINDOW* w, class Core_t*);
 };
@@ -64,18 +64,16 @@ public:
 };
 
 
-  // Store buffer implemented within physical register file structure to share code.
-  // It consists of a range of registers with their busy[] and uses[] entries.
-  // The register value s.reg[].a holds the address.
+// Store buffer implemented within physical register file structure to share code.
+// It consists of a range of registers with their busy[] and uses[] entries.
+// The register value s.reg[].a holds the address.
 
 class Remapping_Regfile_t {
-  // physical register file map
   uint8_t regmap[256];		// architectural to physical
   bool _busy[regfile_size];	// register waiting for execution value
   unsigned _uses[regfile_size];	// reference count
   uint8_t freelist[max_phy_regs];
   int numfree;			// maintained as stack
-  
   int stbtail;			// first available entry in circular store buffer
 
   // pipeline model for instruction finish time
@@ -103,7 +101,10 @@ public:
   //  bool write_port_busy(int k =0) { return write_slot(k) != 0; }
   void value_is_ready(Reg_t r) { _busy[r] = false; }
 
-  Reg_t stbuf(int k =0) { return (stbtail-k+store_buffer_length) % store_buffer_length + max_phy_regs; }
+  Reg_t stbuf(int k =0) {
+    assert(0 <= stbtail && stbtail < store_buffer_length);
+    return (stbtail-k+store_buffer_length) % store_buffer_length + max_phy_regs;
+  }
   bool store_buffer_full() { return _uses[stbuf()] > 0; }
   Reg_t allocate_store_buffer();
   

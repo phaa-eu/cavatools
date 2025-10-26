@@ -22,7 +22,8 @@ option<bool> conf_visual("visual", true, false, "Interactive visual mode");
 #if 1
 option<int> conf_fp("fp", 3, "Latency floating point");
 option<int> conf_ld("ld", 4, "Latency loads");
-option<int> conf_st("st", 20, "Latency stores");
+//option<int> conf_st("st", 20, "Latency stores");
+option<int> conf_st("st", 10, "Latency stores");
 option<int> conf_alu("alu", 1, "Latency ALU");
 #else
 option<int> conf_fp("fp", 1, "Latency floating point");
@@ -33,6 +34,7 @@ option<int> conf_alu("alu", 1, "Latency ALU");
 
 uint8_t latency[Number_of_Opcodes];
 
+long long stop_cycle = -1;
 
 void status_report()
 {
@@ -66,7 +68,8 @@ void* status_thread(void* arg)
 
 void exitfunc()
 {
-  endwin();
+  if (cycle >= stop_cycle)
+    endwin();
   fprintf(stderr, "\nNormal exit\n");
   status_report();
   fprintf(stderr, "\n");
@@ -104,7 +107,6 @@ void interactive(Core_t* cpu)
     winbuf[k] = newwin(LINES, COLS, 0, 0);
   
   long framerate = 20000;
-  long long stop_cycle = cycle;
   long long number = 0;
   int ch;
   bool last_cycle_dispatched = true;

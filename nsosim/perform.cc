@@ -100,7 +100,11 @@ Addr_t Core_t::perform(Insn_t* i, Addr_t pc, History_t* h)
 #define fence_i(x)
       
   //#define ebreak() return true
+#ifdef VERIFY
+#define ebreak()
+#else
 #define ebreak() kill(tid(), SIGTRAP)
+#endif
       
 
   //#define stop debug.addval(s.reg[i->rd()].x); goto end_bb

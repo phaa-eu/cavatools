@@ -34,14 +34,17 @@ void Remapping_Regfile_t::reset()
 
 void Remapping_Regfile_t::reserve_bus(int latency, History_t* h)
 {
+  assert(0 <= stbtail && stbtail < store_buffer_length);
   assert(! bus_busy(latency));
   wheel[index(latency)] = h;
 }
 
 void Remapping_Regfile_t::release_reg(uint8_t r)
 {
+  assert(0 <= stbtail && stbtail < store_buffer_length);
   if (r == NOREG)
     return;
+  assert(_uses[r] > 0);
   if (--_uses[r] == 0) {
     _busy[r] = false;
     if (! is_store_buffer(r))
@@ -51,6 +54,7 @@ void Remapping_Regfile_t::release_reg(uint8_t r)
 
 Reg_t Remapping_Regfile_t::rename_reg(Reg_t arch_reg)
 {
+  assert(0 <= stbtail && stbtail < store_buffer_length);
   if (arch_reg == NOREG)
     return NOREG;
   release_reg(regmap[arch_reg]);
@@ -66,9 +70,13 @@ Reg_t Remapping_Regfile_t::rename_reg(Reg_t arch_reg)
 
 Reg_t Remapping_Regfile_t::allocate_store_buffer()
 {
+  assert(0 <= stbtail && stbtail < store_buffer_length);
   assert(! store_buffer_full());
   Reg_t n = stbuf();
+  
   stbtail = (stbtail+1) % store_buffer_length;
+  assert(0 <= stbtail && stbtail < store_buffer_length);
+  
   acquire_reg(n);		// mark entry in use
   _busy[n] = true;
   return n;

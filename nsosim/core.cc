@@ -31,8 +31,11 @@ void Core_t::clock_port() {
     return;			// memory bank is busy
 
   memory[mem_channel(port.addr())][mem_bank(port.addr())].activate(cycle+port.latency(), h);
-  if (h->insn.rd() == NOREG)	// stores retire immediately
+  if (h->insn.rd() == NOREG) {	// stores retire immediately
     h->status = History_t::Retired;
+    regs.value_is_ready(h->stbpos);
+    regs.release_reg(h->stbpos);
+  }
   else {
     if (regs.bus_busy(port.latency()))
       return;
@@ -54,6 +57,10 @@ bool Core_t::clock_pipeline() {
     regs.value_is_ready(h->insn.rd());
     regs.release_reg(h->insn.rd());
     h->status = History_t::Retired;
+    if (attributes[h->insn.opcode()] & ATTR_st) {
+      regs.value_is_ready(h->stbpos);
+      regs.release_reg(h->stbpos);
+    }
 #ifdef VERIFY
     if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
       ++mismatches;
@@ -137,12 +144,12 @@ bool Core_t::clock_pipeline() {
       // special hack for internally substituted CAS instruction
       if (! (attr & ATTR_amo)) 
 	ir.op.rs3 = check_store_buffer(addr);
-      h->lsqpos = regs.allocate_store_buffer();
-      s.reg[h->lsqpos].a = addr;
+      h->stbpos = regs.allocate_store_buffer();
+      s.reg[h->stbpos].a = addr;
       mem_checker_used = true; // prevent issuing loads
     }
     else
-      h->lsqpos = regs.stbuf();
+      h->stbpos = regs.stbuf();
     if ((attr & ATTR_ld) & !(attr & ATTR_amo))
       h->status = History_t::Queued_stbchk;
   }
@@ -209,7 +216,7 @@ bool Core_t::clock_pipeline() {
 
 	  // special hack for internally substituted CAS instruction
 	  if (! (attr & ATTR_amo)) {
-	    ir.op.rs3 = check_store_buffer((s.reg[ir.rs1()].x+ir.immed())&~0x7L, h->lsqpos);
+	    ir.op.rs3 = check_store_buffer((s.reg[ir.rs1()].x+ir.immed())&~0x7L, h->stbpos);
 	    if (ir.rs3() != NOREG) {
 	      regs.acquire_reg(ir.rs3());
 	      flags |= FLAG_stbhit;
@@ -237,8 +244,8 @@ bool Core_t::clock_pipeline() {
   if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) {
     assert(!port.active());
     port.request(mem_addr(ir), latency[ir.opcode()], h);
-    if (attributes[ir.opcode()] & ATTR_st)
-      regs.release_reg(h->lsqpos);
+    //    if (attributes[ir.opcode()] & ATTR_st)
+    //      regs.release_reg(h->stbpos);
   }
     
   // simulate reading register file
@@ -268,16 +275,16 @@ bool Core_t::clock_pipeline() {
   else
     h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
 #endif
-
-  if (ir.rd() == NOREG) {
-    h->status = (attributes[ir.opcode()] & ATTR_st) ? History_t::Executing :History_t::Retired;
+  
+  if (ir.rd()==NOREG && !(attributes[ir.opcode()] & ATTR_st)) {
+    h->status = History_t::Retired; // branches, fence...
   }
   else {
-    if (! (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)))
+    if (ir.rd()!=NOREG && !(attributes[ir.opcode()] & ATTR_ld))
       regs.reserve_bus(latency[ir.opcode()], h);
     h->status = History_t::Executing;
+    _inflight--;
   }
-  --_inflight;
 
  finish_cycle:
   ++cycle;
@@ -294,7 +301,7 @@ bool Core_t::clock_pipeline() {
   h->pc = pc;
   h->ref = *i;
   h->status = History_t::Dispatch;
-  h->lsqpos = NOREG;
+  h->stbpos = NOREG;
 
   return dispatched;		// was instruction dispatched?
 }
@@ -445,7 +452,7 @@ void Core_t::reset() {
   h->pc = pc;
   h->ref = *i;
   h->status = History_t::Dispatch;
-  h->lsqpos = NOREG;
+  h->stbpos = NOREG;
 }
 
 
