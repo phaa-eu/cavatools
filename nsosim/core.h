@@ -2,6 +2,14 @@
   Copyright (c) 2025 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
+enum Reason_t { Ready, Regs_busy, Bus_busy,
+		No_freereg, IQ_full, Stb_full, St_unknown_addr,
+		Br_regs_busy, Br_bus_busy, Flush_wait,
+		Port_busy, Stb_checker_busy, Dependency_detected,
+};
+
+
+
 union simreg_t {
   reg_t x;			// for integer
   freg_t f;			// float and double
@@ -53,6 +61,8 @@ private:
   Insn_t* i;			// current decoded instruction
   Addr_t pc;			// at this address
 
+  bool mem_checker_used;	// in this cycle
+  
   friend long ooo_riscv_syscall(hart_t* h, long a0);
   friend int clone_proxy(hart_t* h);
 
@@ -106,6 +116,11 @@ public:
     return rob[cycle % dispatch_history].expected_rd;
   }
 #endif
+
+
+  Reason_t ready_to_dispatch(Insn_t ir);
+  Reason_t ready_to_execute(History_t* h);
+
 };
 
 long ooo_riscv_syscall(hart_t* h, long a0);

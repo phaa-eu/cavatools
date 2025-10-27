@@ -48,6 +48,7 @@ public:
   Port_t() { last=0; }
   History_t* clock_port();
   bool full() { return last==port_queue_length; }
+  bool empty() { return last==0; }
   void request(uintptr_t a, long long l, History_t* h, Remapping_Regfile_t* rf);
   void display(WINDOW* w, int y, int x, class Core_t* c);
 };

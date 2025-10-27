@@ -13,8 +13,7 @@
 #include "core.h"
 #include "display.h"
 
-unsigned long number = 0;
-
+bool wide_display = false;
 
 
 // show opcode highlighting execution status
@@ -64,19 +63,22 @@ void History_t::display(WINDOW* w, Core_t* c)
   }
 
 #ifdef VERIFY
-#ifdef WIDE
-  extern const char* reg_name[];
-  if (ref.rd() == NOREG) {
-    if (attributes[ref.opcode()] & ATTR_st)
-      wprintw(w, "%4s[%16lx %16lx] ", "data", expected_rd, actual_rd);
+  if (wide_display) {
+    extern const char* reg_name[];
+    if (ref.rd() == NOREG) {
+      if (attributes[ref.opcode()] & ATTR_st)
+	wprintw(w, "%4s[%16lx %16lx] ", "data", expected_rd, actual_rd);
+      else
+	wprintw(w, "%40s", "");
+    }
     else
-      wprintw(w, "%40s", "");
+      wprintw(w, "%4s[%16lx %16lx] ", reg_name[ref.rd()], expected_rd, actual_rd);
   }
-  else
-    wprintw(w, "%4s[%16lx %16lx] ", reg_name[ref.rd()], expected_rd, actual_rd);
-#endif
   bool mismatch = status==History_t::Retired ? actual_rd != expected_rd : false;
-  if (mismatch) wattron(w, A_REVERSE);
+  if (mismatch) {
+    wattron(w, A_REVERSE);
+    wide_display = true;
+  }
 #endif
   
   char buf[256];;
@@ -84,9 +86,9 @@ void History_t::display(WINDOW* w, Core_t* c)
   wprintw(w, "%s", buf);
   
 #ifdef VERIFY
-#ifdef WIDE
-  wprintw(w, "=?%8lx: ", expected_pc);
-#endif
+  if (wide_display) {
+    wprintw(w, "=?%8lx: ", expected_pc);
+  }
 #endif
 
   if (status == History_t::Retired) {
@@ -130,9 +132,8 @@ void History_t::display(WINDOW* w, Core_t* c)
       if (c->regs.busy(stbpos)) wattron(w,  A_REVERSE);
       wprintw(w, ";  [sb%d=%d]", stbpos-max_phy_regs, c->regs.uses(stbpos));
       if (c->regs.busy(stbpos)) wattroff(w,  A_REVERSE);
-#ifdef WIDE
-      wprintw(w, "[%16lx]", c->s.reg[stbpos].a);
-#endif
+      if (wide_display)
+	wprintw(w, "[%16lx]", c->s.reg[stbpos].a);
     }
   }
 
@@ -194,49 +195,47 @@ static void show_flags(WINDOW* w, unsigned flags)
 void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
 {
   wmove(w, y, 0);
-#ifdef WIDE
-  wprintw(w, "sb[");
-  for (int k=0; k<store_buffer_length; ++k) {
-    if (c->regs.busy(k+max_phy_regs)) wattron(w, A_REVERSE);
-    int u = c->regs.uses(k+max_phy_regs);
-    assert(u >= 0);
-    wprintw(w, "%c", u==0 ? ' ' : u>9 ? '*' : u+'0');
-    if (c->regs.busy(k+max_phy_regs)) wattroff(w, A_REVERSE);
-  }
-  wprintw(w, "]    busy[");
-  for (int k=0; k<max_phy_regs; ++k) {
-    if (c->regs.busy(k)) wattron(w, A_REVERSE);
-    int u = c->regs.uses(k);
-    assert(u >= 0);
-    wprintw(w, "%c", u==0 ? ' ' : u>9 ? '*' : u+'0');
-    if (c->regs.busy(k)) wattroff(w, A_REVERSE);
-  }
-  wprintw(w, "]\n");
-  --lines;			    // account for register busy line
-  ++y;
+  if (wide_display) {
+    wprintw(w, "sb[");
+    for (int k=0; k<store_buffer_length; ++k) {
+      if (c->regs.busy(k+max_phy_regs)) wattron(w, A_REVERSE);
+      int u = c->regs.uses(k+max_phy_regs);
+      assert(u >= 0);
+      wprintw(w, "%c", u==0 ? ' ' : u>9 ? '*' : u+'0');
+      if (c->regs.busy(k+max_phy_regs)) wattroff(w, A_REVERSE);
+    }
+    wprintw(w, "]    busy[");
+    for (int k=0; k<max_phy_regs; ++k) {
+      if (c->regs.busy(k)) wattron(w, A_REVERSE);
+      int u = c->regs.uses(k);
+      assert(u >= 0);
+      wprintw(w, "%c", u==0 ? ' ' : u>9 ? '*' : u+'0');
+      if (c->regs.busy(k)) wattroff(w, A_REVERSE);
+    }
+    wprintw(w, "]\n");
+    --lines;			    // account for register busy line
+    ++y;
 
-  wmove(w, y, 0);
-  wprintw(w, "wheel=[");
-  for (int k=0; k<max_latency+1; ++k) {
-    wprintw(w, "%c", c->regs.wheel[k] ? '*' : '.');
+    wmove(w, y, 0);
+    wprintw(w, "wheel=[");
+    for (int k=0; k<max_latency+1; ++k) {
+      wprintw(w, "%c", c->regs.wheel[k] ? '*' : '.');
+    }
+    wprintw(w, "]\n");
+    --lines;
+    ++y;
   }
-  wprintw(w, "]\n");
-  --lines;
-  ++y;
-#endif
 
   wmove(w, y, x);
   wattron(w, A_UNDERLINE);
   wprintw(w, "  cycle\tflags\t");
 #ifdef VERIFY
-#ifdef WIDE
-  wprintw(w, "\t     Expected\t\tActual\t");
+  if (wide_display)
+    wprintw(w, "\t     Expected\t\tActual\t");
 #endif
-#endif
-  wprintw(w, "\tpc label\t       pc  hex insn  opcode\t\treg(renamed=uses), [stbuf]");
-#ifdef WIDE
-  wprintw(w, "  inflight=%lld, last=%d, stbtail=%d", c->inflight(), c->last, c->regs.stbtail);
-#endif
+  wprintw(w, "\tpc label\t\t       pc  hex insn  opcode\t\treg(renamed=uses), [stbuf]");
+  if (wide_display)
+    wprintw(w, "  inflight=%lld, last=%d, stbtail=%d", c->inflight(), c->last, c->regs.stbtail);
 #ifdef VERIFY
   if (mismatches > 0) {
     wattron(w, A_REVERSE|A_BLINK);
@@ -419,150 +418,4 @@ static void fastrun_without_display(Core_t* cpu)
   } // infinite loop
 }
 
-
-
-
-#define remember_cycle() { frontwin=(frontwin+1)%window_buffers; WINDOW* w=winbuf[frontwin]; wclear(w); display_memory(w, 0, 0); display_header(w, 2, 0); display_history(w, 3, 0, LINES-5); wrefresh(w); }
-
-void core_t::safe_cycle()
-{
-  hart_t* h = this;
-  single_step();		// use uspike state
-  expected = i->rd()==NOREG ? ~0 : h->s.xrf[i->rd()];
-  
-  simulate_cycle();
-  remember_cycle();
-}
-
-
-void core_t::interactive()
-{
-  initscr();                    /* Start curses mode */
-  keypad(stdscr, true);         /* Need all keys */
-  nonl();
-  cbreak();                     /* Line buffering disabled */
-  noecho();
-  nodelay(stdscr, true);
-  //start_color();
-
-  for (int k=0; k<window_buffers; ++k)
-    winbuf[k] = newwin(LINES-msglines, COLS, 0, 0);
-
-  //msgwin = newwin(msglines,		COLS,	LINES-msglines,	0);
-  
-  bool freerun = false;
-  long framerate = 20000;
-  //display_help();
-  
-  WINDOW* w = winbuf[frontwin];
-  int ch;
-  long unsigned stop_cycle = ULONG_MAX;
-  //  for (int ch=getch(); ch!='q'; ch=getch()) {
-  
- infinite_loop:
-  while ((ch=getch()) == ERR) {
-    if (freerun && cycle < stop_cycle) {
-      safe_cycle();
-      wrefresh(winbuf[frontwin]);
-    }
-    if (framerate)
-      usleep(framerate);
-  }
-  
-  if ('0' <= ch && ch <= '9') {
-    number = 10*number + ch-'0';
-    goto infinite_loop;
-  }
-  
-  switch (ch) {
-  case 'q':
-    endwin();
-    return;
-  case 'h':
-    help_screen();
-    while ((ch=getch()) == ERR)
-      usleep(100000);
-    goto infinite_loop;
-      
-  case 'f':
-    if (behind > 0) {
-      --behind;
-      overwrite(winbuf[ (frontwin-behind+window_buffers) % window_buffers ], stdscr);
-      refresh();
-      goto infinite_loop;
-    }
-    // fall into single step!
-  case 's':
-    framerate = 20000;
-    freerun = false;
-    behind = 0;
-    number = 0;
-    safe_cycle();
-    wrefresh(winbuf[frontwin]);
-    break;
-  case 'c':
-    framerate = 20000;
-    freerun = true;
-    behind = 0;
-    if (number) {
-      stop_cycle = number;
-      number = 0;
-    }
-    break;
-  case 'C':
-    framerate = 0;
-    freerun = true;
-    behind = 0;
-    if (number) {
-      stop_cycle = number;
-      number = 0;
-    }
-    break;
-  case 'g':
-    fastrun_without_display(this);
-    break;
-
-  case 'b':
-    if (behind < window_buffers)
-      ++behind;
-    else
-      beep();
-    overwrite(winbuf[ (frontwin-behind+window_buffers) % window_buffers ], stdscr);
-    refresh();
-    goto infinite_loop;
-  }
-  goto infinite_loop;
-}
-
-
-void show_number_vertical(WINDOW* w, int y, int x, int n, int digits)
-{
-  char digit[digits];
-  for (int k=0; k<digits; ++k) {
-    digit[k] = n % 10 + '0';
-    n /= 10;
-  }
-  for (int k=digits-1; k>=0; k--)
-    if (digit[k] == '0')
-      digit[k] = ' ';
-    else
-      break;
-  for (int k=0; k<digits; ++k)
-    mvwprintw(w, y+digits-1-k, x, "%c", digit[k]);
-}
-
-void display_busy(bool busy[])
-{
-  int lines, cols;
-  getmaxyx(msgwin, lines, cols);
-  wclear(msgwin);
-  for (int k=0; k<max_phy_regs; ++k) {
-    if (!busy[k])
-      continue;
-    wattron( msgwin, A_REVERSE);
-    show_number_vertical(msgwin, 0, k, k, lines);
-    wattroff(msgwin, A_REVERSE);
-  }
-  wnoutrefresh(msgwin);
-}
 #endif

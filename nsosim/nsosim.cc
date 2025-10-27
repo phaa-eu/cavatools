@@ -144,7 +144,7 @@ void interactive(Core_t* cpu)
 	  usleep(framerate);
       }
       else {
-	fprintf(stderr, "\r\33[2K%lld cycles, %lld instructions executed", cycle, cpu->insns());
+	fprintf(stderr, "\r\33[2K%lld cycles, %lld instructions IPC=%5.3f", cycle, cpu->insns(), (double)cpu->insns()/cycle);
       }
     }
   }

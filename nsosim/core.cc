@@ -21,6 +21,12 @@ long long mismatches;
 bool Core_t::clock_pipeline() {
   uint16_t& flags = cycle_flags[cycle % cycle_history];
 
+  mem_checker_used = false;
+  Addr_t addr;
+  bool dispatched = false;
+  unsigned tmpflags = 0;
+  ATTR_bv_t attr;
+
   History_t* h = port.clock_port();
   if (h) {
     if (h->insn.rd() == NOREG) {	// stores retire immediately
@@ -56,63 +62,27 @@ bool Core_t::clock_pipeline() {
   // Try to dispatch new instruction
   h = nextrob();
   Insn_t ir = *i;
-  ATTR_bv_t attr = attributes[ir.opcode()];
-  Addr_t addr;
-  bool mem_checker_used = false;
-  bool dispatched = false;
-  unsigned tmpflags = 0;
+  switch (ready_to_dispatch(ir)) {
+  case Br_regs_busy:	flags |= FLAG_busy;		goto issue_from_queue;
+  case Br_bus_busy:	flags |= FLAG_regbus;		goto issue_from_queue;
+  case Flush_wait:	flags |= FLAG_serialize;	goto issue_from_queue;
+    
+  case No_freereg:	flags |= FLAG_nofree;	goto issue_from_queue;
+  case IQ_full:		flags |= FLAG_qfull;	goto issue_from_queue;
+  case Stb_full:	flags |= FLAG_stbfull;	goto issue_from_queue;
+  case St_unknown_addr:	flags |= FLAG_stuaddr;	goto issue_from_queue;
 
-  // conditions that prevent dispatch into issue queue
+  default:
+    abort;
+  case Ready:
+    break;
+  }
 
-  if (regs.no_free_reg()) {
-    flags |= FLAG_nofree;
-    goto issue_from_queue;
-  }
-  if (last == issue_queue_length) {
-    flags |= FLAG_qfull;
-    goto issue_from_queue;	// issue queue is full
-  }
   
-  rename_input_regs(ir);
-
-  // branches execute immediately
-  if (attr & (ATTR_uj|ATTR_cj)) {
-    if (!ready_insn(ir)) {
-      flags |= FLAG_busy;
-      goto issue_from_queue;	// branch registers not ready
-    }
-    if (ir.rd()!=NOREG && regs.bus_busy(latency[ir.opcode()])) {
-      flags |= FLAG_regbus;
-      goto issue_from_queue;	// branch registers not ready
-    }
-  }
-  else if (attr & (ATTR_st | ATTR_amo|ATTR_ex)) {
-    // stores need valid address and space in store buffer
-    if (attr & ATTR_st) {
-      if (regs.store_buffer_full()) {
-	flags |= FLAG_stbfull;
-	goto issue_from_queue;	// lsq full
-      }
-      if (regs.busy(ir.rs1())) {
-	flags |= FLAG_stuaddr;
-	goto issue_from_queue;	// unknown store address
-      }
-    }
-    // atomic memory operations, ecalls and CSR instructions
-    if (attr & (ATTR_amo|ATTR_ex)) {
-      flags |= FLAG_serialize;
-      if (last > 0)		// issue all deferred instructions
-	goto issue_from_queue;
-      if (port.full())		// including pending memory operations
-	goto issue_from_queue;
-      for (int r=0; r<max_phy_regs; ++r) {
-	if (regs.busy(r))
-	  goto issue_from_queue; // and flush pipelines
-      }
-    }
-  }
+  attr = attributes[ir.opcode()];
 
   // commit instruction for dispatch
+  rename_input_regs(ir);
   regs.acquire_reg(ir.rs1());
   if (!ir.longimmed()) {
     regs.acquire_reg(ir.rs2());
@@ -121,6 +91,10 @@ bool Core_t::clock_pipeline() {
   ir.op_rd = regs.rename_reg(ir.rd());
   h->status = History_t::Queued;
 
+
+
+
+  
   if (attr & (ATTR_ld|ATTR_st)) {
     addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
 
@@ -178,55 +152,23 @@ bool Core_t::clock_pipeline() {
   // find first ready instruction
   for (int k=0; k<last; ++k) {
     h = queue[k];
-    
-    if (h->status == History_t::Queued_noport || h->status == History_t::Queued_nochk)
+    if (h->status != History_t::Queued_stbchk)
       h->status = History_t::Queued;
+    switch (ready_to_execute(h)) {
+    case Regs_busy:		tmpflags |= FLAG_busy;		continue;
+    case Bus_busy:		tmpflags |= FLAG_regbus;	continue;
+    case Port_busy:		tmpflags |= FLAG_noport;	continue;
+    case Stb_checker_busy:	tmpflags |= FLAG_busy;		continue;
+    case Dependency_detected:	flags |= FLAG_stbhit;		goto finish_cycle;
+    default:  abort();
       
-    ir = h->insn;
-    attr = attributes[ir.opcode()];
-    if (ready_insn(ir)) {
-      // check register file write bus
-      if (ir.rd() != NOREG) {
-	if (regs.bus_busy(latency[ir.opcode()])) {
-	  tmpflags |= FLAG_regbus;
-	  continue;
-	}
-      }
-      // memory operations have extra conditions
-      if (attr & (ATTR_ld|ATTR_st)) {
-	// memory operation cannot issue if port is busy
-	if (port.full()) {
-	  tmpflags |= FLAG_noport;
-	  h->status = History_t::Queued_noport;
-	  continue;
-	}
-	if (h->status == History_t::Queued_stbchk) {
-	  if (mem_checker_used) {
-	    tmpflags |= FLAG_stbchk;
-	    continue;
-	  }
-	  h->status = History_t::Queued;
-
-	  // special hack for internally substituted CAS instruction
-	  if (! (attr & ATTR_amo)) {
-	    ir.op.rs3 = check_store_buffer((s.reg[ir.rs1()].x+ir.immed())&~0x7L, h->stbpos);
-	    if (ir.rs3() != NOREG) {
-	      regs.acquire_reg(ir.rs3());
-	      flags |= FLAG_stbhit;
-	      h->insn = ir;
-	      if (regs.busy(h->insn.rs3())) // store not retired
-		goto finish_cycle;	    // cycle "used up"
-	    }
-	  }
-	}
-      }
-      // remove from queue
+    case Ready:			// fremove from queue
       for (int j=k+1; j<last; ++j)
 	queue[j-1] = queue[j];
       --last;
       goto execute_instruction;
     }
-  }
+  } // if here there was nothing to issue
   flags |= tmpflags;		// reasons could not issue
   goto finish_cycle;		// no ready instruction in queue
 
@@ -438,3 +380,90 @@ void Core_t::reset() {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+Reason_t Core_t::ready_to_execute(History_t* h)
+{
+  Insn_t ir = h->insn;
+  ATTR_bv_t attr = attributes[ir.opcode()];
+
+  if (!ready_insn(ir))
+    return Regs_busy;
+
+  if (ir.rd()!=NOREG && regs.bus_busy(latency[ir.opcode()]))
+    return Bus_busy;
+
+  if (! (attr & (ATTR_ld|ATTR_st)))
+    return Ready;
+
+  // memory operations have extra conditions
+  if (port.full())
+    return Port_busy;
+
+  if (h->status != History_t::Queued_stbchk)
+    return Ready;
+
+  // loads need store buffer check
+  if (mem_checker_used)
+    return Stb_checker_busy;
+  
+  // special hack for internally substituted CAS instruction
+  if (! (attr & ATTR_amo)) {
+    ir.op.rs3 = check_store_buffer((s.reg[ir.rs1()].x+ir.immed())&~0x7L, h->stbpos);
+    if (ir.rs3() != NOREG) {
+      regs.acquire_reg(ir.rs3());
+      h->insn = ir;
+    }
+  }
+  h->status = History_t::Queued;
+  return regs.busy(h->insn.rs3()) ? Dependency_detected : Ready;
+}
+
+
+Reason_t Core_t::ready_to_dispatch(Insn_t ir)
+{
+  ATTR_bv_t attr = attributes[ir.opcode()];
+  if (regs.no_free_reg())
+    return No_freereg;
+  if (last == issue_queue_length)
+    return IQ_full;
+  
+  rename_input_regs(ir);
+  
+  // branches must execute immediately
+  if (attr & (ATTR_uj|ATTR_cj)) {
+    if (!ready_insn(ir))
+      return Br_regs_busy;
+    if (ir.rd()!=NOREG && regs.bus_busy(latency[ir.opcode()]))
+      return Br_bus_busy;
+  }
+  else if (attr & (ATTR_st | ATTR_amo|ATTR_ex)) {
+    // stores need valid address and space in store buffer
+    if (attr & ATTR_st) {
+      if (regs.store_buffer_full())
+	return Stb_full;
+      if (regs.busy(ir.rs1()))
+	return St_unknown_addr;
+    }
+    // AMO, ecall, other serializing instructions
+    if (attr & (ATTR_amo|ATTR_ex)) {
+      if (last > 0 || !port.empty())
+	return Flush_wait;
+      for (int r=0; r<max_phy_regs; ++r) {
+	if (regs.busy(r))
+	  return Flush_wait;
+      }
+    }
+  }
+  return Ready;
+}
