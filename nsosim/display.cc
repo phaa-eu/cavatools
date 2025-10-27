@@ -8,13 +8,10 @@
 #include "caveat.h"
 #include "hart.h"
 
-#include "memory.h"
 #include "components.h"
+#include "memory.h"
 #include "core.h"
-
-const int msglines = 3;
-static WINDOW* msgwin;
-
+#include "display.h"
 
 unsigned long number = 0;
 
@@ -77,9 +74,9 @@ void History_t::display(WINDOW* w, Core_t* c)
   }
   else
     wprintw(w, "%4s[%16lx %16lx] ", reg_name[ref.rd()], expected_rd, actual_rd);
+#endif
   bool mismatch = status==History_t::Retired ? actual_rd != expected_rd : false;
   if (mismatch) wattron(w, A_REVERSE);
-#endif
 #endif
   
   char buf[256];;
@@ -231,8 +228,10 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
   wmove(w, y, x);
   wattron(w, A_UNDERLINE);
   wprintw(w, "  cycle\tflags\t");
-#ifdef VERIFYf
+#ifdef VERIFY
+#ifdef WIDE
   wprintw(w, "\t     Expected\t\tActual\t");
+#endif
 #endif
   wprintw(w, "\tpc label\t       pc  hex insn  opcode\t\treg(renamed=uses), [stbuf]");
 #ifdef WIDE
@@ -294,52 +293,68 @@ void Memory_t::display(WINDOW* w, int y, int x)
 
 void Port_t::display(WINDOW* w, int y, int x, Core_t* c)
 {
-  wmove(w, y, x);
-  if (!active()) {
-    wprintw(w, "(nothing)");
+  if (last == 0) {
+    wmove(w, 0, x);
+    wprintw(w, "(empty)");
     return;
   }
-  
-  History_t* h = history();
-  Insn_t ir = h->insn;
 
-  //wprintw(w, "r%d", ir.rd());
-  c->show_reg(w, ir.rd(), ' ', h->ref.rd());
-  if (h->stbpos != NOREG)
-    wprintw(w, ",sb%d", h->stbpos-max_phy_regs);
-  wprintw(w, "[%d]", mem_bank(addr()));
-  wprintw(w, "+%d", latency());
-  return;
+  for (int k=0; k<last; ++k) {
+    wmove(w, y+k, x);
+    wprintw(w, "[%d]", k);
+    
+    History_t* h = queue[k].history;
+    Insn_t ir = h->insn;
 
-  unsigned win_attr;
-  if (attributes[ir.opcode()] & ATTR_ld)           win_attr |= A_BOLD;
-  if (attributes[ir.opcode()] & ATTR_st)           win_attr |= A_REVERSE;
-  if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) win_attr |= A_UNDERLINE;
-  wattron(w, win_attr);
+    char sep = ' ';
+    if (ir.rd()) {
+      c->show_reg(w, ir.rd(), sep, h->ref.rd());
+      sep = ',';
+    }
+    if (h->stbpos != NOREG)
+      wprintw(w, "%csb%d", sep, h->stbpos-max_phy_regs);
+    wprintw(w, "[%d]", mem_bank(queue[k].addr));
+    wprintw(w, "+%d", queue[k].latency);
+
+#if 0
+    unsigned win_attr;
+    if (attributes[ir.opcode()] & ATTR_ld)           win_attr |= A_BOLD;
+    if (attributes[ir.opcode()] & ATTR_st)           win_attr |= A_REVERSE;
+    if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) win_attr |= A_UNDERLINE;
+    wattron(w, win_attr);
   
-  if (h->stbpos != NOREG) {
-    wprintw(w, "[sb%d]", h->stbpos-max_phy_regs);
-    wprintw(w, "+%d", latency());
+    if (h->stbpos != NOREG) {
+      wprintw(w, "[sb%d]", h->stbpos-max_phy_regs);
+      wprintw(w, "+%d", queue[k].latency);
+    }
+    wattroff(w, win_attr);
+#endif
+    
   }
-  wattroff(w, win_attr);
 }
 
  
-void display_memory_system(WINDOW* w, int y, int x)
-{
-  const int fieldwidth = 20;
-  wmove(w, y, x);
-  wprintw(w, "Channel");
-  for (int k=0; k<memory_banks; ++k) {
-    wmove(w, y, x+8+k*fieldwidth);
-    wprintw(w, "bank[%d]", k);
+void display_memory_system(WINDOW* w, int y0, int x0)
+{  
+  wmove(w, y0, x0);
+  for (int j=0; j<banks_per_line; ++j) {
+    wmove(w, y0, port_width + j*bank_width);
+    wprintw(w, "bank");
+    char sep = '[';
+    for (int i=0; i<(memory_banks+banks_per_line-1)/banks_per_line; ++i) {
+      wprintw(w, "%c%d", sep, i*banks_per_line+j);
+      sep = ',';
+    }
+    wprintw(w, "]");
   }
-  for (int j=0; j<memory_channels; ++j) {
-    wmove(w, y+j+1, 0);
-    wprintw(w, "%7d ", j);
-    for (int k=0; k<memory_banks; ++k)
-      memory[j][k].display(w, y+1+j, x+8+k*fieldwidth);
+  
+  for (int i=0; i<(memory_banks+banks_per_line-1)/banks_per_line; ++i) {
+    for (int j=0; j<banks_per_line; ++j) {
+      memory[0][i*banks_per_line+j].display(w, y0+1+i, x0+port_width+j*bank_width);
+    }
   }
+  //for (int k=0; k<memory_banks; ++k)
+  //  memory[j][k].display(w, y+1+j, x+8+k*fieldwidth);
 }
 
 

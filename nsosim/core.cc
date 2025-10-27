@@ -9,51 +9,36 @@
 #include "caveat.h"
 #include "hart.h"
 
-#include "memory.h"
 #include "components.h"
+#include "memory.h"
 #include "core.h"
 
 //thread_local long long cycle;
 long long cycle;
 long long mismatches;
-
-
-void Core_t::clock_port() {
-    // Launch new memory operation if:
-  //   valid request in port
-  //   register write bus avail (if needed)
-  //   memory bank is idle
-  if (!port.active())
-    return;			// idle
-  History_t* h = port.history();
-  
-  if (memory[mem_channel(port.addr())][mem_bank(port.addr())].active())
-    return;			// memory bank is busy
-
-  memory[mem_channel(port.addr())][mem_bank(port.addr())].activate(cycle+port.latency(), h);
-  if (h->insn.rd() == NOREG) {	// stores retire immediately
-    h->status = History_t::Retired;
-    regs.value_is_ready(h->stbpos);
-    regs.release_reg(h->stbpos);
-  }
-  else {
-    if (regs.bus_busy(port.latency()))
-      return;
-    regs.reserve_bus(port.latency(), h);
-    h->status = History_t::Executing;
-  }
-  _inflight--;
-  port.deactivate();
-}
   
 
 bool Core_t::clock_pipeline() {
   uint16_t& flags = cycle_flags[cycle % cycle_history];
 
-  clock_port();
+  History_t* h = port.clock_port();
+  if (h) {
+    if (h->insn.rd() == NOREG) {	// stores retire immediately
+      h->status = History_t::Retired;
+      regs.value_is_ready(h->stbpos);
+      regs.release_reg(h->stbpos);
+    }
+    else {
+      if (regs.bus_busy(latency[h->insn.opcode()]))
+	return 0;
+      regs.reserve_bus(latency[h->insn.opcode()], h);
+      h->status = History_t::Executing;
+    }
+    _inflight--;
+  }
 
   // retire pipelined instruction
-  History_t* h = regs.simulate_write_reg();
+  h = regs.simulate_write_reg();
   if (h) {
     regs.value_is_ready(h->insn.rd());
     regs.release_reg(h->insn.rd());
@@ -118,7 +103,7 @@ bool Core_t::clock_pipeline() {
       flags |= FLAG_serialize;
       if (last > 0)		// issue all deferred instructions
 	goto issue_from_queue;
-      if (port.active())	// including pending memory operations
+      if (port.full())		// including pending memory operations
 	goto issue_from_queue;
       for (int r=0; r<max_phy_regs; ++r) {
 	if (regs.busy(r))
@@ -210,7 +195,7 @@ bool Core_t::clock_pipeline() {
       // memory operations have extra conditions
       if (attr & (ATTR_ld|ATTR_st)) {
 	// memory operation cannot issue if port is busy
-	if (port.active()) {
+	if (port.full()) {
 	  tmpflags |= FLAG_noport;
 	  h->status = History_t::Queued_noport;
 	  continue;
@@ -250,8 +235,9 @@ bool Core_t::clock_pipeline() {
 
   ir = h->insn;
   if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) {
-    assert(!port.active());
-    port.request(mem_addr(ir), latency[ir.opcode()], h);
+    assert(!port.full());
+    Remapping_Regfile_t* rf = (ir.rd()==NOREG) ? 0 : &regs;
+    port.request(mem_addr(ir), latency[ir.opcode()], h, rf);
     //    if (attributes[ir.opcode()] & ATTR_st)
     //      regs.release_reg(h->stbpos);
   }
@@ -267,8 +253,17 @@ bool Core_t::clock_pipeline() {
   // instruction, whereas if we issued from queue ir and h->pc are
   // associated with instruction just dequeued.  Therefore if we
   // jumped it must have been a branch being dispatched this cycle.
-    
+
+#ifdef VERIFY
+  if (ir.opcode() != Op_ecall)
+    addr = perform(&ir, h->pc, h);
+  else {
+    s.reg[ir.rd()].a = h->expected_rd;
+    addr = 0;
+  }
+#else
   addr = perform(&ir, h->pc, h);
+#endif
   if (addr) {		// if no taken branch pc already incremented
     pc = addr;
     bb = find_bb(pc);
@@ -378,7 +373,7 @@ uintptr_t Core_t::get_rd_from_spike(Reg_t n) {
   if (n < 32)
     return ((hart_t*)this)->s.xrf[n];
   else
-    return (uintptr_t)((hart_t*)this)->s.frf[n].v[0];
+    return (uintptr_t)((hart_t*)this)->s.frf[n-32].v[0];
 }
 
 uintptr_t Core_t::get_pc_from_spike() {
@@ -410,29 +405,6 @@ int clone_proxy(hart_t* h)
   Core_t* child = new Core_t(parent);
   return clone_thread(child);
 }
-
-
-void Core_t::test_run()
-{
-  while (1) {
-    uintptr_t jumped = perform(i, pc, &rob[0]);
-    if (jumped) {
-      pc = jumped;
-      bb = find_bb(pc);
-      i = insnp(bb+1);
-    }
-    else {
-      pc += i->compressed() ? 2 : 4;
-      if (++i >= insnp(bb+1)+bb->count) {
-	bb = find_bb(pc);
-	i = insnp(bb+1);
-      }
-    }
-    ++cycle;
-    ++_insns;
-  }
-}
-
 
 
 static void null_simulator(class hart_t* h, Header_t* bb, uintptr_t* ap) { }

@@ -74,7 +74,6 @@ public:
     return a;
   }
 
-  void clock_port();
   bool clock_pipeline();
   void show_reg(WINDOW* w, Reg_t n, char sep, int ref);
   
@@ -94,7 +93,6 @@ public:
   Core_t* next() { return (Core_t*)hart_t::next(); }
 
   long long insns() { return _insns; }
-  void test_run();
   
   friend void clock_memory_system(Core_t* cpu);
   friend void display_history(WINDOW* w, int y, int x, Core_t* c, int lines);

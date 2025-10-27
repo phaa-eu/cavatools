@@ -10,6 +10,8 @@ endif
 
 # comment this out to disable instruction-by-instruction verification
 V := -DVERIFY
+#V := -DVERIFY -DWIDE
+
 
 B := $(RVTOOLS)/riscv-isa-sim
 
@@ -32,6 +34,7 @@ nsosim:  $(BINS) $(LIBS)
 
 #memory.o components.o core.o display.o perform.o nsosim.o:  core.h memory.h components.h
 $(BINS):  core.h memory.h components.h
+display.o nsosim.o:  display.h
 
 install:  nsosim
 	cp nsosim $(CAVA)/bin/.

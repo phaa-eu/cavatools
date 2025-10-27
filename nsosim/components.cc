@@ -9,8 +9,8 @@
 #include "caveat.h"
 #include "hart.h"
 
-#include "memory.h"
 #include "components.h"
+#include "memory.h"
 #include "core.h"
 
 void Remapping_Regfile_t::reset()

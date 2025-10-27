@@ -20,6 +20,7 @@
 #include "arithmetic.h"
 
 #include "components.h"
+#include "memory.h"
 #include "core.h"
 	
 #ifdef SPIKE
@@ -99,19 +100,15 @@ Addr_t Core_t::perform(Insn_t* i, Addr_t pc, History_t* h)
 #define fence(x)
 #define fence_i(x)
       
-  //#define ebreak() return true
-#ifdef VERIFY
-#define ebreak()
-#else
 #define ebreak() kill(tid(), SIGTRAP)
-#endif
+
       
 
   //#define stop debug.addval(s.reg[i->rd()].x); goto end_bb
   //#define stop        return pc
 #define stop        goto jumped;
 
-#define branch(test, taken, fall)  { pc=(test)?(taken):(fall); stop; }
+#define branch(test, taken, fall)  { if (test) { pc=(taken); stop; } else pc=(fall); }
 #define jump(npc)  { pc=(npc); stop; }
 #define reg_jump(npc)  { pc=(npc); stop; }
   

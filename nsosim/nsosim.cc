@@ -12,9 +12,10 @@
 #include "caveat.h"
 #include "hart.h"
 
-#include "memory.h"
 #include "components.h"
+#include "memory.h"
 #include "core.h"
+#include "display.h"
 
 option<long> conf_report("report", 1, "Status report per second");
 option<bool> conf_visual("visual", true, false, "Interactive visual mode");
@@ -134,9 +135,9 @@ void interactive(Core_t* cpu)
       frontwin=(frontwin+1)%window_buffers;
       WINDOW* w=winbuf[frontwin];
       wclear(w);
-      display_history(w, 3, 0, cpu, LINES-3);
       display_memory_system(w, 0, 0);
-      cpu->port.display(w, 2, 0, cpu);
+      cpu->port.display(w, 0, 0, cpu);
+      display_history(w, memory_display_lines, 0, cpu, LINES-3);
       if (framerate >= 0) {
 	wrefresh(w);
 	if (framerate > 0)

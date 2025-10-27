@@ -47,23 +47,6 @@ public:
 };
 
 
-class Port_t {
-  uintptr_t _addr;		// address of memory reference
-  int _latency;			// of operation
-  History_t* _history;		// on behalf of this instruction
-  bool _active;			// valid pending request
-public:
-  bool active() { return _active; }
-  int latency() { return _latency; }
-  uintptr_t addr() { return _addr; }
-  History_t* history() { return _history; }
-
-  void request(uintptr_t a, long long l, History_t* h) { _active=true; _addr=a; _latency=l; _history=h; }
-  void deactivate() { _active=false; }
-  void display(WINDOW* w, int y, int x, class Core_t* c);
-};
-
-
 // Store buffer implemented within physical register file structure to share code.
 // It consists of a range of registers with their busy[] and uses[] entries.
 // The register value s.reg[].a holds the address.
