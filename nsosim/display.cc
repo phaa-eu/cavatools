@@ -193,6 +193,16 @@ const char* reason_name[] = {
   "WAW",
 };
 
+void Core_t::display_stall_reasons(WINDOW* w, int y, int x)
+{
+  wmove(w, y, x);
+  wprintw(w, "Reason  Dispatch  Execute\n");
+  for (int k=0; k<(int)Number_of_Reasons; ++k)
+    wprintw(w, "%-7s %8.2f %8.2f\n", reason_name[k],
+	    100.0*dispatch_stalls[k]/cycle,
+	    100.0*execute_stalls [k]/cycle);
+}
+
 static void show_flags(WINDOW* w, Reason_t dispatch, Reason_t execute)
 {
   wprintw(w, "%-7s %-7s", reason_name[dispatch], reason_name[execute]);

@@ -143,8 +143,11 @@ void interactive(Core_t* cpu)
 	if (framerate > 0)
 	  usleep(framerate);
       }
-      else {
-	fprintf(stderr, "\r\33[2K%lld cycles, %lld instructions IPC=%5.3f", cycle, cpu->insns(), (double)cpu->insns()/cycle);
+      else if (cycle % (1*1024) == 0) {
+	clear();
+	printw("%lld cycles, %lld instructions IPC=%5.3f\n", cycle, cpu->insns(), (double)cpu->insns()/cycle);
+	cpu->display_stall_reasons(stdscr, 2, 0);
+	refresh();
       }
     }
   }

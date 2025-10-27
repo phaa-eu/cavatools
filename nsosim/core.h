@@ -6,6 +6,7 @@ enum Reason_t { Idle, Ready, Regs_busy, Bus_busy,
 		No_freereg, IQ_full, Stb_full, St_unknown_addr,
 		Br_regs_busy, Br_bus_busy, Flush_wait,
 		Port_busy, Stb_checker_busy, Dependency_detected,
+		Number_of_Reasons
 };
 extern const char* reason_name[];
 
@@ -45,6 +46,8 @@ private:
 
   Reason_t not_dispatch[cycle_history];	// reason did not dispatch this cycle
   Reason_t not_execute [cycle_history];	// reason did not execute this cycle
+  long long dispatch_stalls[Number_of_Reasons];
+  long long execute_stalls[Number_of_Reasons];
 
   // Current instruction waiting for dispatch
   Header_t* bb;			// current basic blocka
@@ -96,6 +99,7 @@ public:
   
   friend void clock_memory_system(Core_t* cpu);
   friend void display_history(WINDOW* w, int y, int x, Core_t* c, int lines);
+  void display_stall_reasons(WINDOW* w, int y, int x);
   friend void interactive(Core_t* cpu);
 
 #ifdef VERIFY

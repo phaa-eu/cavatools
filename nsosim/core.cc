@@ -218,6 +218,8 @@ bool Core_t::clock_pipeline() {
  finish_cycle:
   not_dispatch[cycle % cycle_history] = why_dispatch;
   not_execute [cycle % cycle_history] = why_execute;
+  dispatch_stalls[why_dispatch]++;
+  execute_stalls [why_execute ]++;
   ++cycle;
   
   // following code just for display, gets rewritten next iteration
