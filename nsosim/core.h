@@ -2,11 +2,12 @@
   Copyright (c) 2025 Peter Hsu.  All Rights Reserved.  See LICENCE file for details.
 */
 
-enum Reason_t { Ready, Regs_busy, Bus_busy,
+enum Reason_t { Idle, Ready, Regs_busy, Bus_busy,
 		No_freereg, IQ_full, Stb_full, St_unknown_addr,
 		Br_regs_busy, Br_bus_busy, Flush_wait,
 		Port_busy, Stb_checker_busy, Dependency_detected,
 };
+extern const char* reason_name[];
 
 
 
@@ -41,20 +42,9 @@ private:
 
   // Structures for visual debugging
   History_t rob[dispatch_history];     // phantom reorder buffer
-      
-  uint16_t cycle_flags[cycle_history]; // what happend this cycle
-#define FLAG_busy	0x001	// instruction has busy registers
-#define FLAG_qfull	0x002	// issue queue is full
-#define FLAG_stuaddr	0x004	// store address not yet available
-#define FLAG_stbfull	0x008	// store buffer is full
-#define FLAG_serialize	0x010	// waiting for pipeline to flush
-#define FLAG_nofree	0x020	// register free list is empty
-#define FLAG_stbhit	0x040	// load store buffer check hit
-#define FLAG_endmem	0x100	// retired a memory operation
-#define FLAG_noport	0x200	// memory port busy
-#define FLAG_stbchk	0x400	// store buffer checker busy
-#define FLAG_regbus	0x1000	// register file write bus busy
-  
+
+  Reason_t not_dispatch[cycle_history];	// reason did not dispatch this cycle
+  Reason_t not_execute [cycle_history];	// reason did not execute this cycle
 
   // Current instruction waiting for dispatch
   Header_t* bb;			// current basic blocka

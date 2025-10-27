@@ -176,19 +176,26 @@ void help_screen()
   refresh();
 }
 
-static void show_flags(WINDOW* w, unsigned flags)
+const char* reason_name[] = {
+  "-",
+  "",				// no clutter
+  "Regs",
+  "Bus",
+  "Free",
+  "Qfull",
+  "SBfull",
+  "Addr",
+  "Bregs",
+  "Bbus",
+  "Flush",
+  "Port",
+  "Check",
+  "WAW",
+};
+
+static void show_flags(WINDOW* w, Reason_t dispatch, Reason_t execute)
 {
-  wprintw(w, "%c", (flags&FLAG_busy)		? 'b' : ' ');
-  wprintw(w, "%c", (flags&FLAG_regbus)		? 'r' : ' ');
-  wprintw(w, "%c", (flags&FLAG_qfull)		? 'f' : ' ');
-  wprintw(w, "%c", (flags&FLAG_stuaddr)		? 'a' : ' ');
-  wprintw(w, "%c", (flags&FLAG_stbfull)		? 's' : ' ');
-  wprintw(w, "%c", (flags&FLAG_nofree)		? 'f' : ' ');
-  wprintw(w, "%c", (flags&FLAG_serialize)	? '!' : ' ');
-  wprintw(w, "%c", (flags&FLAG_stbhit)		? 'h' : ' ');
-  wprintw(w, "%c", (flags&FLAG_endmem)		? 'm' : ' ');
-  wprintw(w, "%c", (flags&FLAG_noport)		? 'p' : ' ');
-  wprintw(w, "%c", (flags&FLAG_stbchk)		? 'c' : ' ');
+  wprintw(w, "%-7s %-7s", reason_name[dispatch], reason_name[execute]);
   wprintw(w, "\t");
 }
 
@@ -256,7 +263,7 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
       continue;
     wmove(w, y+when%lines, x);
     wprintw(w, "%7ld ", when);
-    show_flags(w, c->cycle_flags[when % cycle_history]);
+    show_flags(w, c->not_dispatch[when % cycle_history], c->not_execute[when % cycle_history]);
     if (when == c->rob[k].clock) {
       c->rob[k].display(w, c);
       k = (k-1+dispatch_history) % dispatch_history;

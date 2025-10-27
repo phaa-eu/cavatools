@@ -19,13 +19,14 @@ long long mismatches;
   
 
 bool Core_t::clock_pipeline() {
-  uint16_t& flags = cycle_flags[cycle % cycle_history];
-
   mem_checker_used = false;
   Addr_t addr;
   bool dispatched = false;
   unsigned tmpflags = 0;
   ATTR_bv_t attr;
+
+  Reason_t why_dispatch = Idle;
+  Reason_t why_execute  = Idle;
 
   History_t* h = port.clock_port();
   if (h) {
@@ -62,22 +63,9 @@ bool Core_t::clock_pipeline() {
   // Try to dispatch new instruction
   h = nextrob();
   Insn_t ir = *i;
-  switch (ready_to_dispatch(ir)) {
-  case Br_regs_busy:	flags |= FLAG_busy;		goto issue_from_queue;
-  case Br_bus_busy:	flags |= FLAG_regbus;		goto issue_from_queue;
-  case Flush_wait:	flags |= FLAG_serialize;	goto issue_from_queue;
-    
-  case No_freereg:	flags |= FLAG_nofree;	goto issue_from_queue;
-  case IQ_full:		flags |= FLAG_qfull;	goto issue_from_queue;
-  case Stb_full:	flags |= FLAG_stbfull;	goto issue_from_queue;
-  case St_unknown_addr:	flags |= FLAG_stuaddr;	goto issue_from_queue;
-
-  default:
-    abort;
-  case Ready:
-    break;
-  }
-
+  why_dispatch = ready_to_dispatch(ir);
+  if (why_dispatch != Ready)
+    goto issue_from_queue;
   
   attr = attributes[ir.opcode()];
 
@@ -154,22 +142,17 @@ bool Core_t::clock_pipeline() {
     h = queue[k];
     if (h->status != History_t::Queued_stbchk)
       h->status = History_t::Queued;
-    switch (ready_to_execute(h)) {
-    case Regs_busy:		tmpflags |= FLAG_busy;		continue;
-    case Bus_busy:		tmpflags |= FLAG_regbus;	continue;
-    case Port_busy:		tmpflags |= FLAG_noport;	continue;
-    case Stb_checker_busy:	tmpflags |= FLAG_busy;		continue;
-    case Dependency_detected:	flags |= FLAG_stbhit;		goto finish_cycle;
-    default:  abort();
-      
-    case Ready:			// fremove from queue
+    why_execute = ready_to_execute(h);
+    if (why_execute == Ready) {
       for (int j=k+1; j<last; ++j)
 	queue[j-1] = queue[j];
       --last;
       goto execute_instruction;
     }
-  } // if here there was nothing to issue
-  flags |= tmpflags;		// reasons could not issue
+    else if (why_execute == Dependency_detected)
+      goto finish_cycle;
+  }
+  // if here there was nothing to issue
   goto finish_cycle;		// no ready instruction in queue
 
  execute_instruction:
@@ -233,10 +216,13 @@ bool Core_t::clock_pipeline() {
     _inflight--;
 
  finish_cycle:
+  not_dispatch[cycle % cycle_history] = why_dispatch;
+  not_execute [cycle % cycle_history] = why_execute;
   ++cycle;
-  cycle_flags[cycle % cycle_history] = 0;
   
   // following code just for display, gets rewritten next iteration
+  not_dispatch[cycle % cycle_history] = Idle;
+  not_execute [cycle % cycle_history] = Idle;
   ir = *i;
   rename_input_regs(ir);
 
@@ -362,7 +348,8 @@ void Core_t::reset() {
   
   memset(&s.reg, 0, sizeof s.reg);
   memset(rob, 0, sizeof rob);
-  memset(cycle_flags, 0, sizeof cycle_flags);
+  memset(not_dispatch, 0, sizeof not_dispatch);
+  memset(not_execute,  0, sizeof not_execute);
 
   // get started
   pc = get_state();
