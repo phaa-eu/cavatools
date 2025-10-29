@@ -65,30 +65,42 @@ void History_t::display(WINDOW* w, Core_t* c)
 #ifdef VERIFY
   if (wide_display) {
     extern const char* reg_name[];
+    bool bad_rd = status==History_t::Retired && actual_rd!=expected_rd;
     if (ref.rd() == NOREG) {
-      if (attributes[ref.opcode()] & ATTR_st)
+      if (attributes[ref.opcode()] & ATTR_st) {
+	if (bad_rd) wattron(w, A_REVERSE);
 	wprintw(w, "%4s[%16lx %16lx] ", "data", expected_rd, actual_rd);
+	if (bad_rd) wattroff(w, A_REVERSE);
+      }
       else
 	wprintw(w, "%40s", "");
     }
-    else
+    else {
+      if (bad_rd) wattron(w, A_REVERSE);
       wprintw(w, "%4s[%16lx %16lx] ", reg_name[ref.rd()], expected_rd, actual_rd);
+      if (bad_rd) wattroff(w, A_REVERSE);
+    }
   }
-  bool mismatch = status==History_t::Retired ? actual_rd != expected_rd : false;
-  if (mismatch) {
-    wattron(w, A_REVERSE);
-    wide_display = true;
-  }
+  //bool mismatch = status==History_t::Retired ? actual_rd != expected_rd : false;
+  //if (mismatch) {
+  //  wattron(w, A_REVERSE);
+  //  wide_display = true;
+  //}
 #endif
   
   char buf[256];;
   slabelpc(buf, pc);
-  wprintw(w, "%s", buf);
-  
+
 #ifdef VERIFY
+  bool bad_pc = status==History_t::Retired && pc!=expected_pc;
+  if (bad_pc) wattron(w, A_REVERSE);
+  wprintw(w, "%s", buf);
   if (wide_display) {
     wprintw(w, "=?%8lx: ", expected_pc);
   }
+  if (bad_pc) wattroff(w, A_REVERSE);
+#else
+  wprintw(w, "%s", buf);
 #endif
 
   if (status == History_t::Retired) {
@@ -138,8 +150,9 @@ void History_t::display(WINDOW* w, Core_t* c)
   }
 
 #ifdef VERIFY
-  if (mismatches) wattroff(w, A_REVERSE);
+  //if (mismatches) wattroff(w, A_REVERSE);
 #endif
+
   switch (status) {
   case History_t::Retired:	wattroff(w, A_DIM); break;
   case History_t::Dispatch:	wattroff(w, A_UNDERLINE); break;
@@ -188,6 +201,7 @@ const char* reason_name[] = {
   "Bregs",
   "Bbus",
   "Flush",
+  "Jumped",
   "Port",
   "Check",
   "WAW",
@@ -197,10 +211,17 @@ void Core_t::display_stall_reasons(WINDOW* w, int y, int x)
 {
   wmove(w, y, x);
   wprintw(w, "Reason  Dispatch  Execute\n");
-  for (int k=0; k<(int)Number_of_Reasons; ++k)
-    wprintw(w, "%-7s %8.2f %8.2f\n", reason_name[k],
+  for (int k=0; k<(int)Number_of_Reasons; ++k) {
+    const char* name;
+    switch (k) {
+    Idle:	name = "Idle";		break;
+    Ready:	name = "Ready";		break;
+    default:	name = reason_name[k];	break;
+    }
+    wprintw(w, "%-7s %8.2f %8.2f\n", name,
 	    100.0*dispatch_stalls[k]/cycle,
 	    100.0*execute_stalls [k]/cycle);
+  }
 }
 
 static void show_flags(WINDOW* w, Reason_t dispatch, Reason_t execute)
@@ -245,7 +266,7 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
 
   wmove(w, y, x);
   wattron(w, A_UNDERLINE);
-  wprintw(w, "  cycle\tflags\t");
+  wprintw(w, "  cycle\tDispatch Execute\t");
 #ifdef VERIFY
   if (wide_display)
     wprintw(w, "\t     Expected\t\tActual\t");
@@ -274,11 +295,32 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
     wmove(w, y+when%lines, x);
     wprintw(w, "%7ld ", when);
     show_flags(w, c->not_dispatch[when % cycle_history], c->not_execute[when % cycle_history]);
+
+    //if (c->not_dispatch[when % cycle_history] == Br_jumped)
+    //  wprintw(w, "%16lx", c->rob[k+1].expecfted_rd);
+    
     if (when == c->rob[k].clock) {
+#ifdef PRETTY
+      switch (c->rob[k].status) {
+      case History_t::Dispatch:		color_dispatch();	break;
+      case History_t::Immediate:	color_immediate();	break;
+      case History_t::Queued:
+      case History_t::Queued_stbchk:
+      case History_t::Queued_noport:
+      case History_t::Queued_nochk:	color_queued();		break;
+      case History_t::Executing:	color_execute();	break;
+      case History_t::Retired:		color_retired();	break;
+      }
+#endif
+      
       c->rob[k].display(w, c);
       k = (k-1+dispatch_history) % dispatch_history;
+      
+#ifdef PRETTY
+      color_default();
+#endif
     }
-    wprintw(w, "\n");
+    //wprintw(w, "\n");
   }
 }
 

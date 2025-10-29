@@ -96,12 +96,8 @@ void interactive(Core_t* cpu)
   noecho();
   nodelay(stdscr, true);
 
-#if 0
-  start_color();
-  init_pair(0, COLOR_WHITE,	COLOR_BLACK);
-  init_pair(1, COLOR_GREEN,	COLOR_BLACK);
-  init_pair(2, COLOR_RED,	COLOR_BLACK);
-  //  attron(COLOR_PAIR(0));
+#if PRETTY
+  init_colors();
 #endif
 
   for (int k=0; k<window_buffers; ++k)
@@ -120,12 +116,11 @@ void interactive(Core_t* cpu)
       if (last_cycle_dispatched) {
 	h->expected_pc = cpu->get_pc_from_spike();
 	cpu->single_step();
-	//h->expected_rd = (h->ref.rd()==NOREG) ? 0 : cpu->get_rd_from_spike(h->ref.rd());
-	if (h->ref.rd()==NOREG && (attributes[h->ref.opcode()] & ATTR_st))
-	  h->expected_rd = cpu->get_rd_from_spike(h->ref.rs2());
-	else
-	  h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
       }
+      if (h->ref.rd()==NOREG && (attributes[h->ref.opcode()] & ATTR_st))
+	h->expected_rd = cpu->get_rd_from_spike(h->ref.rs2());
+      else
+	h->expected_rd = cpu->get_rd_from_spike(h->ref.rd());
       clock_memory_system();
       last_cycle_dispatched = cpu->clock_pipeline();
 #else
@@ -220,7 +215,10 @@ void interactive(Core_t* cpu)
     framerate = -1;
     clear();
     goto infinite_loop;
-    
+
+  case 'w':
+    wide_display = true;
+    goto infinite_loop;
   }
   stop_cycle = cycle;
   goto infinite_loop;

@@ -4,7 +4,7 @@
 
 enum Reason_t { Idle, Ready, Regs_busy, Bus_busy,
 		No_freereg, IQ_full, Stb_full, St_unknown_addr,
-		Br_regs_busy, Br_bus_busy, Flush_wait,
+		Br_regs_busy, Br_bus_busy, Flush_wait, Br_jumped,
 		Port_busy, Stb_checker_busy, Dependency_detected,
 		Number_of_Reasons
 };
@@ -55,6 +55,8 @@ private:
   Addr_t pc;			// at this address
 
   bool mem_checker_used;	// in this cycle
+  History_t* immediate_h;	// instruction that executed immediately
+  bool inhibit_dispatch;	// due to taken branch
   
   friend long ooo_riscv_syscall(hart_t* h, long a0);
   friend int clone_proxy(hart_t* h);
@@ -102,20 +104,14 @@ public:
   void display_stall_reasons(WINDOW* w, int y, int x);
   friend void interactive(Core_t* cpu);
 
-#ifdef VERIFY
-  template<typename op>	int32_t amo_int32(uintptr_t a, op f, uintptr_t*& ap) {
-    return rob[cycle % dispatch_history].expected_rd;
-  }
-  template<typename op>	int64_t amo_int64(uintptr_t a, op f, uintptr_t*& ap) {
-    return rob[cycle % dispatch_history].expected_rd;
-  }
-#endif
-
-
   Reason_t ready_to_dispatch(Insn_t ir);
   Reason_t ready_to_execute(History_t* h);
+
+  void writeback_stage();
+  Addr_t execute_instruction(History_t* h);
 
 };
 
 long ooo_riscv_syscall(hart_t* h, long a0);
 int clone_proxy(hart_t* h);
+

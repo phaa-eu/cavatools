@@ -20,126 +20,39 @@ long long mismatches;
 
 bool Core_t::clock_pipeline() {
   mem_checker_used = false;
-  Addr_t addr;
   bool dispatched = false;
-  unsigned tmpflags = 0;
-  ATTR_bv_t attr;
 
   Reason_t why_dispatch = Idle;
   Reason_t why_execute  = Idle;
 
-  History_t* h = port.clock_port();
-  if (h) {
-    if (h->insn.rd() == NOREG) {	// stores retire immediately
-      h->status = History_t::Retired;
-      regs.value_is_ready(h->stbpos);
-      regs.release_reg(h->stbpos);
-    }
-    else {
-      if (regs.bus_busy(latency[h->insn.opcode()]))
-	return 0;
-      regs.reserve_bus(latency[h->insn.opcode()], h);
-      h->status = History_t::Executing;
-    }
-    _inflight--;
-  }
+  writeback_stage();
 
-  // retire pipelined instruction
-  h = regs.simulate_write_reg();
-  if (h) {
+  // execute immediate instruction
+  if (immediate_h) {
+    History_t* h = immediate_h;
+    Addr_t jumped = execute_instruction(h);
+    if (jumped) { // if no taken branch pc already incremented
+      pc = jumped;
+      bb = find_bb(pc);
+      i = insnp(bb+1);
+      inhibit_dispatch = true;
+    }
     regs.value_is_ready(h->insn.rd());
     regs.release_reg(h->insn.rd());
     h->status = History_t::Retired;
-    if (attributes[h->insn.opcode()] & ATTR_st) {
-      regs.value_is_ready(h->stbpos);
-      regs.release_reg(h->stbpos);
-    }
+    immediate_h = 0;
+
 #ifdef VERIFY
     if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
       ++mismatches;
 #endif
-  }  
-
-  // Try to dispatch new instruction
-  h = nextrob();
-  Insn_t ir = *i;
-  why_dispatch = ready_to_dispatch(ir);
-  if (why_dispatch != Ready)
-    goto issue_from_queue;
-  
-  attr = attributes[ir.opcode()];
-
-  // commit instruction for dispatch
-  rename_input_regs(ir);
-  regs.acquire_reg(ir.rs1());
-  if (!ir.longimmed()) {
-    regs.acquire_reg(ir.rs2());
-    regs.acquire_reg(ir.rs3());
-  }
-  ir.op_rd = regs.rename_reg(ir.rd());
-  h->status = History_t::Queued;
-
-
-
-
-  
-  if (attr & (ATTR_ld|ATTR_st)) {
-    addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
-
-    // search for write-after-write dependency
-    if (attr & ATTR_st) {
-      assert(!regs.store_buffer_full());
-      // special hack for internally substituted CAS instruction
-      if (! (attr & ATTR_amo)) 
-	ir.op.rs3 = check_store_buffer(addr);
-      h->stbpos = regs.allocate_store_buffer();
-      s.reg[h->stbpos].a = addr;
-      mem_checker_used = true; // prevent issuing loads
-    }
-    else
-      h->stbpos = regs.stbuf();
-    if ((attr & ATTR_ld) & !(attr & ATTR_amo))
-      h->status = History_t::Queued_stbchk;
-  }
-  h->insn = ir;
-
-  // advance pc sequentially, but taken branch will override
-  pc += ir.compressed() ? 2 : 4;
-  if (++i >= insnp(bb+1)+bb->count) {
-    bb = find_bb(pc);
-    i = insnp(bb+1);
   }
 
-  // branches, AMO execute immediately
-
-  // also integers
-  //if ((attr==0) || (attr & (ATTR_uj|ATTR_cj|ATTR_amo|ATTR_ex))) {
-
-  if ((attr & (ATTR_uj|ATTR_cj|ATTR_amo|ATTR_ex)) ||
-      ir.opcode()==Op_addi   || ir.opcode()==Op_add ||
-      ir.opcode()==Op_c_addi || ir.opcode()==Op_c_add) {
-    
-    //assert(ready_insn(ir));
-    // put at front of issue queue
-    for (int k=last; k>0; --k)
-      queue[k] = queue[k-1];
-    queue[0] = h;
-    ++last;
-  }
-  else // everything else goes in back of queue
-    queue[last++] = h;
-  
-  // enter into phantom ROB
-  dispatched = true;
-  _inflight++;
-  _insns++;
-  memset(&rob[insns() % dispatch_history], 0, sizeof(History_t));
-
- issue_from_queue:
-
+  // try to issue from queue
   // find first ready instruction
   for (int k=0; k<last; ++k) {
-    h = queue[k];
+    History_t* h = queue[k];
+    Insn_t ir = h->insn;
     if (h->status != History_t::Queued_stbchk)
       h->status = History_t::Queued;
     why_execute = ready_to_execute(h);
@@ -147,73 +60,84 @@ bool Core_t::clock_pipeline() {
       for (int j=k+1; j<last; ++j)
 	queue[j-1] = queue[j];
       --last;
-      goto execute_instruction;
+      
+      if (h->insn.rd()!=NOREG && !(attributes[h->insn.opcode()] & ATTR_ld))
+	regs.reserve_bus(latency[h->insn.opcode()], h);
+      execute_instruction(h);
+      break;
     }
     else if (why_execute == Dependency_detected)
-      goto finish_cycle;
+      break;
   }
-  // if here there was nothing to issue
-  goto finish_cycle;		// no ready instruction in queue
 
- execute_instruction:
-  // Note instruction is in ir but pc is in h->pc.
+  History_t* h = nextrob();
+  h->pc = pc;
+  h->ref = h->insn = *i;
+  h->status = History_t::Dispatch;
+  h->stbpos = NOREG;
+  // note h->expect_rd and h->expect_pc already filled
+  Insn_t ir = h->insn;
 
-  ir = h->insn;
-  if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) {
-    assert(!port.full());
-    Remapping_Regfile_t* rf = (ir.rd()==NOREG) ? 0 : &regs;
-    port.request(mem_addr(ir), latency[ir.opcode()], h, rf);
-    //    if (attributes[ir.opcode()] & ATTR_st)
-    //      regs.release_reg(h->stbpos);
+  if (inhibit_dispatch) {
+    why_dispatch = Br_jumped;
+    inhibit_dispatch = false;
   }
+  else if ((why_dispatch=ready_to_dispatch(ir)) == Ready) {
+    // commit instruction for dispatch
+    rename_input_regs(ir);
+    regs.acquire_reg(ir.rs1());
+    if (!ir.longimmed()) {
+      regs.acquire_reg(ir.rs2());
+      regs.acquire_reg(ir.rs3());
+    }
+    ir.op_rd = regs.rename_reg(ir.rd());
+    h->status = History_t::Queued;
+
+    ATTR_bv_t attr = attributes[ir.opcode()];
+    // loads and stores need special treatment
+    if (attr & (ATTR_ld|ATTR_st)) {
+
+      // search for write-after-write dependency
+      if (attr & ATTR_st) {
+	Addr_t addr = (s.reg[ir.rs1()].x + ir.immed()) & ~0x7L;
+	assert(!regs.store_buffer_full());
+	// special hack for internally substituted CAS instruction
+	if (! (attr & ATTR_amo)) 
+	  ir.op.rs3 = check_store_buffer(addr);
+	h->stbpos = regs.allocate_store_buffer();
+	s.reg[h->stbpos].a = addr;
+	mem_checker_used = true; // prevent issuing loads
+      }
+      else
+	h->stbpos = regs.stbuf();
+      if ((attr & ATTR_ld) & !(attr & ATTR_amo))
+	h->status = History_t::Queued_stbchk;
+    }
+    h->insn = ir;
+    // advance pc sequentially, but taken branch will override
+    pc += ir.compressed() ? 2 : 4;
+    if (++i >= insnp(bb+1)+bb->count) {
+      bb = find_bb(pc);
+      i = insnp(bb+1);
+    }
+
+    // integer instructions can execute immmediately if ready
+    // branches and serializing instructions must execute here
     
-  // simulate reading register file
-  regs.release_reg(ir.rs1());
-  if (!ir.longimmed()) {
-    regs.release_reg(ir.rs2());
-    regs.release_reg(ir.rs3());
+    if (ready_insn(ir) && (attr & ~(ATTR_cj|ATTR_uj|ATTR_ex)) == 0) {
+      immediate_h = h;
+      h->status = History_t::Immediate;
+    }
+    // everything else goes in issue queue
+    else
+      queue[last++] = h;
+    
+    // enter into phantom ROB
+    dispatched = true;
+    _inflight++;
+    _insns++;
+    //memset(&rob[insns() % dispatch_history], 0, sizeof(History_t));
   }
-  
-  // Tricky code here:  pc is actually associated with dispatched
-  // instruction, whereas if we issued from queue ir and h->pc are
-  // associated with instruction just dequeued.  Therefore if we
-  // jumped it must have been a branch being dispatched this cycle.
-
-#ifdef VERIFY
-  if (ir.opcode() != Op_ecall)
-    addr = perform(&ir, h->pc, h);
-  else {
-    s.reg[ir.rd()].a = h->expected_rd;
-    addr = 0;
-  }
-#else
-  addr = perform(&ir, h->pc, h);
-#endif
-  if (addr) {		// if no taken branch pc already incremented
-    pc = addr;
-    bb = find_bb(pc);
-    i = insnp(bb+1);
-  }
-  
-#ifdef VERIFY
-  if (attributes[ir.opcode()] & ATTR_ld)
-    h->actual_rd = h->expected_rd;
-  else if (attributes[ir.opcode()] & ATTR_st)
-    h->actual_rd = s.reg[ir.rs2()].a;
-  else
-    h->actual_rd = ir.rd()!=NOREG ? s.reg[ir.rd()].a : 0;
-#endif
-  
-  if (ir.rd()==NOREG && !(attributes[ir.opcode()] & ATTR_st)) {
-    h->status = History_t::Retired; // branches, fence...
-  }
-  else {
-    if (ir.rd()!=NOREG && !(attributes[ir.opcode()] & ATTR_ld))
-      regs.reserve_bus(latency[ir.opcode()], h);
-    h->status = History_t::Executing;
-  }
-  if (! (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)))
-    _inflight--;
 
  finish_cycle:
   not_dispatch[cycle % cycle_history] = why_dispatch;
@@ -221,32 +145,37 @@ bool Core_t::clock_pipeline() {
   dispatch_stalls[why_dispatch]++;
   execute_stalls [why_execute ]++;
   ++cycle;
-  
   // following code just for display, gets rewritten next iteration
   not_dispatch[cycle % cycle_history] = Idle;
   not_execute [cycle % cycle_history] = Idle;
-  ir = *i;
-  rename_input_regs(ir);
-
-  // prepare next history
-  h = nextrob();
-  h->clock = cycle;
-  h->insn = ir;
-  h->pc = pc;
-  h->ref = *i;
-  h->status = History_t::Dispatch;
-  h->stbpos = NOREG;
-
+  {
+    // prepare next history
+    History_t* h = nextrob();
+    h->clock = cycle;
+    h->pc = pc;
+    h->ref = *i;
+    h->insn = *i;
+    rename_input_regs(h->insn);
+    h->stbpos = NOREG;
+    h->status = History_t::Dispatch;
+  }
   return dispatched;		// was instruction dispatched?
 }
 
 void Core_t::rename_input_regs(Insn_t& ir)
 {
+  ir.op_rs1 = regs.map(ir.rs1());
+  if (! ir.longimmed()) {
+    ir.op.rs2 = regs.map(ir.rs2());
+    ir.op.rs3 = regs.map(ir.rs3());
+  }
+#if 0
   if (ir.rs1() != NOREG) ir.op_rs1 = regs.map(ir.rs1());
   if (! ir.longimmed()) {
     if (ir.rs2() != NOREG) ir.op.rs2 = regs.map(ir.rs2());
     if (ir.rs3() != NOREG) ir.op.rs3 = regs.map(ir.rs3());
   }
+#endif
 }
 
 bool Core_t::ready_insn(Insn_t ir)
@@ -353,6 +282,9 @@ void Core_t::reset() {
   memset(not_dispatch, 0, sizeof not_dispatch);
   memset(not_execute,  0, sizeof not_execute);
 
+  mem_checker_used = false;
+  immediate_h = 0;
+
   // get started
   pc = get_state();
   bb = find_bb(pc);
@@ -455,4 +387,91 @@ Reason_t Core_t::ready_to_dispatch(Insn_t ir)
     }
   }
   return Ready;
+}
+
+
+void Core_t::writeback_stage()
+{
+  History_t* h = port.clock_port();
+  if (h) {
+    if (h->insn.rd() == NOREG) {	// stores retire immediately
+      h->status = History_t::Retired;
+      regs.value_is_ready(h->stbpos);
+      regs.release_reg(h->stbpos);
+      _inflight--;
+    }
+    else if (! regs.bus_busy(latency[h->insn.opcode()])) {
+      regs.reserve_bus(latency[h->insn.opcode()], h);
+      h->status = History_t::Executing;
+      _inflight--;
+    }
+  }
+  
+  // retire pipelined instruction
+  h = regs.simulate_write_reg();
+  if (h) {
+    regs.value_is_ready(h->insn.rd());
+    regs.release_reg(h->insn.rd());
+    h->status = History_t::Retired;
+    if (attributes[h->insn.opcode()] & ATTR_st) {
+      regs.value_is_ready(h->stbpos);
+      regs.release_reg(h->stbpos);
+    }
+#ifdef VERIFY
+    if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
+      ++mismatches;
+#endif
+  }  
+}
+
+
+Addr_t Core_t::execute_instruction(History_t* h)
+{
+  Insn_t ir = h->insn;
+  if (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)) {
+    assert(!port.full());
+    Remapping_Regfile_t* rf = (ir.rd()==NOREG) ? 0 : &regs;
+    port.request(mem_addr(ir), latency[ir.opcode()], h, rf);
+    //    if (attributes[ir.opcode()] & ATTR_st)
+    //      regs.release_reg(h->stbpos);
+  }
+    
+  // simulate reading register file
+  regs.release_reg(ir.rs1());
+  if (!ir.longimmed()) {
+    regs.release_reg(ir.rs2());
+    regs.release_reg(ir.rs3());
+  }
+
+  // Tricky code here:  pc is actually associated with dispatched
+  // instruction, whereas if we issued from queue h->pc is
+  // associated with instruction just dequeued.  Therefore if we
+  // jumped it must have been a branch being dispatched this cycle.
+
+  Addr_t jumped = perform(&h->insn, h->pc, h);
+#if 0
+  if (jumped) {	  // if no taken branch pc already incremented
+    pc = jumped;
+    bb = find_bb(pc);
+    i = insnp(bb+1);
+  }
+#endif
+
+#ifdef VERIFY
+  h->actual_rd = s.reg[ir.rd()==NOREG && (attributes[ir.opcode()]&ATTR_st) ? ir.rs2() : ir.rd()].a;
+#endif
+  
+  if (ir.rd()==NOREG && !(attributes[ir.opcode()] & ATTR_st)) {
+    h->status = History_t::Retired; // branches, fence...
+#ifdef VERIFY
+    if (h->actual_rd != h->expected_rd || h->pc != h->expected_pc)
+      ++mismatches;
+#endif
+  }
+  else
+    h->status = History_t::Executing;
+  if (! (attributes[ir.opcode()] & (ATTR_ld|ATTR_st)))
+    _inflight--;
+
+  return jumped;
 }

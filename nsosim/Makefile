@@ -9,7 +9,9 @@ CAVA := $(HOME)
 endif
 
 # comment this out to disable instruction-by-instruction verification
-V := -DVERIFY
+V :=           -DPRETTY
+#V := -DVERIFY -DPRETTY
+#V := -DVERIFY
 
 B := $(RVTOOLS)/riscv-isa-sim
 

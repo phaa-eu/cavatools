@@ -40,7 +40,7 @@ public:
   uintptr_t actual_rd;		// for display
   uintptr_t expected_pc;
 #endif
-  enum Status_t { Retired, Executing, Queued, Queued_stbchk, Queued_noport, Queued_nochk, Dispatch } status;
+  enum Status_t { Retired, Immediate, Executing, Queued, Queued_stbchk, Queued_noport, Queued_nochk, Dispatch } status;
   Reg_t stbpos;			// store address in register here
   
   void display(WINDOW* w, class Core_t*);
