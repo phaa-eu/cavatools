@@ -28,8 +28,8 @@ inline float32_t n32(float  x)  { union { float32_t t; float  f; } cv; cv.f=x; r
 inline float64_t n64(double x)  { union { float64_t t; double f; } cv; cv.f=x; return cv.t; }
     
 thread_local Header_t mismatch_header = Header_t(0, 0, 0, false);
-thread_local Header_t* mismatch = &mismatch_header;
-thread_local Header_t** target = &mismatch;
+thread_local Header_t* mismatch_target = &mismatch_header;
+thread_local Header_t** target = &mismatch_target;
 
 #ifdef SPIKE
 #include "spike_insns.h"
@@ -162,11 +162,11 @@ void hart_t::default_interpreter()
 #define ebreak() kill(tid(), SIGTRAP)
 
 #define stop debug.addval(s.xrf[i->rd()]); goto end_bb
-#define spike_stop  target=&mismatch; stop
+#define spike_stop  target=&mismatch_target; stop
 
 #define branch(test, taken, fall)  { if (test) { pc=(taken); target=(Header_t**)(i+1); } else { pc=(fall); target=(Header_t**)(i+2); } stop; }
 #define jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
-#define reg_jump(npc)  { pc=(npc); target=&mismatch; stop; }
+#define reg_jump(npc)  { pc=(npc); target=&mismatch_target; stop; }
       //#define reg_jump(npc)  { pc=(npc); target=(Header_t**)(i+1); stop; }
       
       switch (i->opcode()) {
@@ -249,7 +249,14 @@ void substitute_cas(uintptr_t pc, Insn_t* i3)
 bool hart_t::single_step()
 {
   uintptr_t addresses[10];	// address list is one per hart
-  Header_t* bb = bbptr(&tcache.array[0]);
+  
+#if INF_TC
+  Insn_t insn[4];
+  Header_t* bb = (Header_t*)insn;
+#else
+  Header_t* bb = tcache.array0();
+#endif
+
   bb->addr = pc;
   bb->count = 1;
   Insn_t* i = (Insn_t*)bb + 2;	// skip over header

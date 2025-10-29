@@ -89,9 +89,13 @@ struct alignas(8) Header_t {
 };
 static_assert(sizeof(Header_t) == 16);
 
+
 struct Tentry_t {
   uint64_t never_directly_accessed;
 };
+
+static inline Tentry_t* tcptr(Header_t* p) { return (Tentry_t*)p; }
+static inline Tentry_t* tcptr(Insn_t*   p) { return (Tentry_t*)p; }
 
 static inline Insn_t* insnp(Tentry_t* p) { return (Insn_t*)p; }
 static inline Insn_t* insnp(Header_t* p) { return (Insn_t*)p; }
@@ -99,11 +103,27 @@ static inline Insn_t* insnp(Header_t* p) { return (Insn_t*)p; }
 static inline Header_t* bbptr(Tentry_t* p) { return (Header_t*)p; }
 static inline Header_t* bbptr(Insn_t*   p) { return (Header_t*)p; }
 
-static inline Tentry_t* tcptr(Header_t* p) { return (Tentry_t*)p; }
-static inline Tentry_t* tcptr(Insn_t*   p) { return (Tentry_t*)p; }
+#ifdef INF_TC
+
+#include <map>
+using namespace std;
 
 class Tcache_t {
+  map<uintptr_t, Header_t*> table;
 public:
+  Header_t* find(uintptr_t pc) { auto it=table.find(pc); return it==table.end() ? 0 : it->second; }
+  Header_t* add(Header_t* wbb, size_t n) {
+    Header_t* bb = (Header_t*)new uint64_t[n];
+    memcpy(bb, wbb, n*sizeof(uint64_t));
+    table.insert({bb->addr, bb});
+    return bb;
+  }
+  size_t flushed() { return 0; }
+};
+
+#else
+
+class Tcache_t {
   Tentry_t* array;		// array of headers, instructions, link pointers
   size_t _size;			// current number of entries
   // hash table links are integer index relative to array
@@ -115,6 +135,8 @@ public:
   friend class Counters_t;
   
 public:
+  Header_t* array0() { return bbptr(&array[0]); }
+  
   size_t size() { return _size; }
   size_t flushed() { return _flushed; }
   
@@ -159,6 +181,9 @@ public:
     _flushed = 0;
   }
 };
+
+#endif
+
 
 
 typedef void (*simfunc_t)(class hart_t* h, Header_t* bb, uintptr_t* ap);

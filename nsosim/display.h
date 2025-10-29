@@ -11,8 +11,8 @@ inline void init_colors() {
   start_color();
   init_pair(6, COLOR_WHITE,	COLOR_BLACK); // default
   init_pair(1, COLOR_WHITE,	COLOR_BLACK); // next to dispatch
-  init_pair(2, COLOR_MAGENTA,	COLOR_BLACK); // immediate execution
-  init_pair(3, COLOR_RED,	COLOR_BLACK); // queued for issue
+  init_pair(2, COLOR_RED,	COLOR_BLACK); // immediate execution
+  init_pair(3, COLOR_YELLOW,	COLOR_BLACK); // queued for issue
   init_pair(4, COLOR_GREEN,	COLOR_BLACK); // in execution
   init_pair(5, COLOR_WHITE,	COLOR_BLACK); // retired
 }  
