@@ -103,7 +103,7 @@ static inline Insn_t* insnp(Header_t* p) { return (Insn_t*)p; }
 static inline Header_t* bbptr(Tentry_t* p) { return (Header_t*)p; }
 static inline Header_t* bbptr(Insn_t*   p) { return (Header_t*)p; }
 
-#ifdef INF_TC
+#ifndef OLD_TCACHE
 
 #include <map>
 using namespace std;

@@ -180,7 +180,8 @@ void hart_t::default_interpreter()
     target = (Header_t**)(insnp(bb+1) + bb->count);
   end_bb:
     WRITE_REG(0, 0);
-    simulator(this, bb, addresses);
+    if (simulator)
+      simulator(this, bb, addresses);
   }
 }
 
@@ -250,7 +251,7 @@ bool hart_t::single_step()
 {
   uintptr_t addresses[10];	// address list is one per hart
   
-#if INF_TC
+#ifndef OLD_TCACHE
   Insn_t insn[4];
   Header_t* bb = (Header_t*)insn;
 #else
@@ -289,6 +290,7 @@ bool hart_t::single_step()
   if (conf_show()) {
     print(oldpc, i, stdout);
   }
-  simulator(this, bb, addresses);
+  if (simulator)
+    simulator(this, bb, addresses);
   return false;
 }

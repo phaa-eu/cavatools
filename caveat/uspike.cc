@@ -45,10 +45,6 @@ void status_report()
     fprintf(stderr, "(%d cores)", hart_t::num_harts());
 }
 
-void simulator(hart_t* h, Header_t* bb, uintptr_t* ap)
-{
-}
-
 int my_clone_proxy(class hart_t* parent)
 {
   hart_t* child = new hart_t(parent);
@@ -107,7 +103,7 @@ int main(int argc, const char* argv[], const char* envp[])
     help_exit();
   // before creating harts
   mycpu = new hart_t(argc, argv, envp);
-  mycpu->simulator = simulator;
+  mycpu->simulator = 0;
   mycpu->clone = my_clone_proxy;
   mycpu->riscv_syscall = default_riscv_syscall;
   mycpu->interpreter = my_interpreter;

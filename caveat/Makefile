@@ -7,10 +7,7 @@ ifndef CAVA
 CAVA := $(HOME)
 endif
 
-#CXXFLAGS += -DINF_TC
-
-MINUS_O := -Ofast -Wswitch -DINF_TC
-#MINUS_O := -Ofast -Wswitch
+MINUS_O := -Ofast -Wswitch
 
 #MINUS_O := -Ofast -Wswitch -DDEBUG
 #MINUS_O := -O0 -DDEBUG -Wswitch
