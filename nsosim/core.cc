@@ -250,6 +250,12 @@ long ooo_riscv_syscall(hart_t* h, long a0)
   long a4 = c->s.reg[c->regs.map(14)].x;
   long a5 = c->s.reg[c->regs.map(15)].x;
   long rvnum = c->s.reg[c->regs.map(17)].x;
+#if 0
+  if (rvnum == 214) {
+    fprintf(stderr, "\nbrk called\n");
+    return c->nextrob()->expected_rd;
+  }
+#endif
   long rv = proxy_syscall(rvnum, a0, a1, a2, a3, a4, a5, h);
   return rv;
 }

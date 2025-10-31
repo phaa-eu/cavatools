@@ -138,12 +138,18 @@ void interactive(Core_t* cpu)
 	if (framerate > 0)
 	  usleep(framerate);
       }
+      else {
+	fprintf(stderr, "\r\33[2K%lld cycles, %lld instructions IPC=%5.3f mismatches=%lld", cycle, cpu->insns(), (double)cpu->insns()/cycle, mismatches);
+      }
+#if 0
       else if (cycle % (1*1024) == 0) {
 	clear();
 	printw("%lld cycles, %lld instructions IPC=%5.3f\n", cycle, cpu->insns(), (double)cpu->insns()/cycle);
+	printw("\t%lld mismatches\n", mismatches);
 	cpu->display_stall_reasons(stdscr, 2, 0);
 	refresh();
       }
+#endif
     }
   }
   wrefresh(winbuf[frontwin]);
@@ -213,7 +219,8 @@ void interactive(Core_t* cpu)
     number = 0;
     behind = 0;
     framerate = -1;
-    clear();
+    //clear();
+    endwin();
     goto infinite_loop;
 
   case 'w':

@@ -84,7 +84,8 @@ Addr_t Core_t::perform(Insn_t* i, Addr_t pc, History_t* h)
   
 #define amo_int32(a, b, c)  		h->expected_rd
 #define amo_int64(a, b, c)  		h->expected_rd
-#define riscv_syscall(a, b) 		h->expected_rd
+  //#define riscv_syscall(a, b) 		h->expected_rd
+#define riscv_syscall(a, b) 		fprintf(stderr, "ecall!\n"), h->expected_rd
 
 #else
   

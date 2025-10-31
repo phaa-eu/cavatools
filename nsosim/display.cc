@@ -269,7 +269,7 @@ void display_history(WINDOW* w, int y, int x, Core_t* c, int lines)
   wprintw(w, "  cycle\tDispatch Execute\t");
 #ifdef VERIFY
   if (wide_display)
-    wprintw(w, "\t     Expected\t\tActual\t");
+    wprintw(w, "     Expected\t\tActual\t");
 #endif
   wprintw(w, "\tpc label\t\t       pc  hex insn  opcode\t\treg(renamed=uses), [stbuf]");
   if (wide_display)
