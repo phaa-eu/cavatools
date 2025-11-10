@@ -394,25 +394,27 @@ void Port_t::display(WINDOW* w, int y, int x, Core_t* c)
  
 void display_memory_system(WINDOW* w, int y0, int x0)
 {  
-  wmove(w, y0, x0);
-  for (int j=0; j<banks_per_line; ++j) {
+  int full_lines  = (memory_banks-1) / banks_per_line;
+  int final_banks = memory_banks - banks_per_line*full_lines;
+  int labels = full_lines>0 ? banks_per_line : memory_banks;
+  
+  for (int j=0; j<labels; ++j) {
     wmove(w, y0, port_width + j*bank_width);
     wprintw(w, "bank");
     char sep = '[';
-    for (int i=0; i<(memory_banks+banks_per_line-1)/banks_per_line; ++i) {
+    for (int i=0; i<full_lines; ++i) {
       wprintw(w, "%c%d", sep, i*banks_per_line+j);
       sep = ',';
     }
-    wprintw(w, "]");
+    wprintw(w, "%c%d]", sep, full_lines*banks_per_line+j);
   }
-  
-  for (int i=0; i<(memory_banks+banks_per_line-1)/banks_per_line; ++i) {
-    for (int j=0; j<banks_per_line; ++j) {
+
+  for (int i=0; i<full_lines; ++i) {
+    for (int j=0; j<banks_per_line; ++j)
       memory[0][i*banks_per_line+j].display(w, y0+1+i, x0+port_width+j*bank_width);
-    }
   }
-  //for (int k=0; k<memory_banks; ++k)
-  //  memory[j][k].display(w, y+1+j, x+8+k*fieldwidth);
+  for (int j=0; j<final_banks; ++j)
+    memory[0][full_lines*banks_per_line+j].display(w, y0+1+full_lines, x0+port_width+j*bank_width);
 }
 
 

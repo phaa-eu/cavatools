@@ -4,7 +4,7 @@
 
 extern long long cycle;		// count number of processor cycles
 
-const int issue_queue_length = 16;
+const int issue_queue_length = 32;
 
 const int dispatch_history = 4096;
 const int cycle_history = 4*dispatch_history;
@@ -12,7 +12,7 @@ const int cycle_history = 4*dispatch_history;
 typedef uintptr_t Addr_t;
 typedef uint8_t Reg_t;
 
-const int store_buffer_length = 8;
+const int store_buffer_length = 4;
 
 // timing wheel for simulating pipelines
 const int num_write_ports = 1;
@@ -23,7 +23,7 @@ extern uint8_t latency[];	// for each opcode
 //   First part holds physical registers with a free list.
 //   Second part holds lsq entries.
 //
-const int max_phy_regs = 64 + issue_queue_length + 16;
+const int max_phy_regs = 64 + issue_queue_length + 4;
 const int regfile_size = max_phy_regs + store_buffer_length;
 
 

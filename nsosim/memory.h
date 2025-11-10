@@ -4,7 +4,7 @@
 
 #define memory_word_size 	8	// in bytes
 #define memory_channels		1
-#define memory_banks 		8
+#define memory_banks 		4
 
 #define port_queue_length	2
 

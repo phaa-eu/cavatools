@@ -23,8 +23,8 @@ option<bool> conf_visual("visual", true, false, "Interactive visual mode");
 #if 1
 option<int> conf_fp("fp", 3, "Latency floating point");
 option<int> conf_ld("ld", 4, "Latency loads");
-//option<int> conf_st("st", 20, "Latency stores");
-option<int> conf_st("st", 10, "Latency stores");
+option<int> conf_st("st", 20, "Latency stores");
+//option<int> conf_st("st", 10, "Latency stores");
 option<int> conf_alu("alu", 1, "Latency ALU");
 #else
 option<int> conf_fp("fp", 1, "Latency floating point");
@@ -219,8 +219,7 @@ void interactive(Core_t* cpu)
     number = 0;
     behind = 0;
     framerate = -1;
-    //clear();
-    endwin();
+    clear();
     goto infinite_loop;
 
   case 'w':
